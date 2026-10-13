@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+backend/.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# 本机数据 —— 绝不入库
+*.db
+*.db-wal
+*.db-shm
+secrets.bin
+settings.json
+
+# 构建产物
+build/
+dist/
+*.spec
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+.DS_Store
