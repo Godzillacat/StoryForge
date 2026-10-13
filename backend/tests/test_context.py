@@ -1,0 +1,116 @@
+from app.runtime.context import SLOT_REGISTRY, build_context
+
+
+class FakeSource:
+    def __init__(self, **fields):
+        self._fields = fields
+
+    def project_core(self):
+        return self._fields.get("project_core")
+
+    def parsed_idea(self):
+        return self._fields.get("parsed_idea")
+
+    def raw_idea(self):
+        return self._fields.get("raw_idea")
+
+    def story_bible(self):
+        return self._fields.get("story_bible")
+
+    def architecture(self):
+        return self._fields.get("architecture")
+
+    def tool_library(self):
+        return self._fields.get("tool_library")
+
+    def summarize(self, slot_key, text):
+        return f"[摘要]{text[:5]}"
+
+
+def test_registry_priority_order_matches_spec():
+    assert SLOT_REGISTRY["project_core"].priority > SLOT_REGISTRY["parsed_idea"].priority
+    assert SLOT_REGISTRY["parsed_idea"].priority > SLOT_REGISTRY["tool_library"].priority
+    assert SLOT_REGISTRY["tool_library"].priority > SLOT_REGISTRY["style_samples"].priority
+
+
+def test_never_trim_slots_are_marked_never():
+    assert SLOT_REGISTRY["project_core"].over_budget == "never"
+
+
+def test_build_context_returns_requested_slots():
+    source = FakeSource(project_core="项目：验尸官", parsed_idea="题材：悬疑")
+    bundle = build_context(["parsed_idea", "project_core"], source, token_budget=10_000)
+    assert bundle.contents == {"project_core": "项目：验尸官", "parsed_idea": "题材：悬疑"}
+    assert bundle.trimmed == {}
+    assert bundle.over_budget is False
+
+
+def test_missing_slot_is_skipped_not_errored():
+    source = FakeSource(project_core="项目：验尸官")
+    bundle = build_context(["project_core", "story_bible"], source, token_budget=10_000)
+    assert "story_bible" not in bundle.contents
+    assert "story_bible" not in bundle.trimmed
+
+
+def test_unknown_slot_key_is_skipped():
+    source = FakeSource(project_core="项目：验尸官")
+    bundle = build_context(["project_core", "不存在的槽位"], source, token_budget=10_000)
+    assert list(bundle.contents) == ["project_core"]
+
+
+def test_under_budget_content_is_untouched():
+    source = FakeSource(parsed_idea="题材：悬疑", raw_idea="一个能听见死者遗言的验尸官")
+    bundle = build_context(["parsed_idea", "raw_idea"], source, token_budget=1_000_000)
+    assert bundle.contents["raw_idea"] == "一个能听见死者遗言的验尸官"
+    assert bundle.over_budget is False
+
+
+def test_lowest_priority_slot_is_dropped_first_when_over_budget():
+    # estimate_tokens 对 CJK 约 1 token/字
+    source = FakeSource(
+        project_core="短",
+        parsed_idea="解析卡" * 20,      # 60 tokens
+        raw_idea="灵感原话" * 50,        # 200 tokens
+    )
+    bundle = build_context(
+        ["parsed_idea", "raw_idea", "project_core"], source, token_budget=80
+    )
+    assert bundle.over_budget is True
+    assert "project_core" in bundle.contents        # 最高优先级保留
+    assert "raw_idea" not in bundle.contents        # 最低优先级丢弃
+    assert bundle.trimmed["raw_idea"] == "已丢弃"
+    assert bundle.estimated_tokens <= 80
+
+
+def test_summarizable_slot_is_compressed_before_dropping():
+    source = FakeSource(
+        project_core="短",
+        parsed_idea="解析卡" * 100,     # 300 tokens
+    )
+    bundle = build_context(["parsed_idea", "project_core"], source, token_budget=60)
+    assert bundle.contents["parsed_idea"] == "[摘要]解析卡解析卡"  # summarize 的产出
+    assert bundle.trimmed["parsed_idea"] == "压缩为要点"
+
+
+def test_drop_is_preferred_over_summarize_for_drop_slots():
+    source = FakeSource(project_core="短", tool_library="工具库" * 200)
+    bundle = build_context(["tool_library", "project_core"], source, token_budget=60)
+    assert "tool_library" not in bundle.contents
+    assert bundle.trimmed["tool_library"] == "已丢弃"
+
+
+def test_trimmed_records_are_populated_for_ui_to_display():
+    source = FakeSource(project_core="短", raw_idea="灵感" * 500)
+    bundle = build_context(["raw_idea", "project_core"], source, token_budget=50)
+    assert set(bundle.trimmed) == {"raw_idea"}
+
+
+def test_estimated_tokens_is_reported():
+    source = FakeSource(project_core="项目" * 10)
+    bundle = build_context(["project_core"], source, token_budget=10_000)
+    assert bundle.estimated_tokens == 20
+
+
+def test_build_context_with_no_slots():
+    bundle = build_context([], FakeSource(), token_budget=100)
+    assert bundle.contents == {} and bundle.trimmed == {} and bundle.estimated_tokens == 0
