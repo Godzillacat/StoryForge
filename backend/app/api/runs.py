@@ -3,38 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.api._serializers import _run_out
 from app.api.schemas import RunRequest
-from app.db.models import GenerationRun
 from app.db.session import get_session
 from app.services import run_service
 from app.services.runtime_service import RuntimeService
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
-
-
-def _run_out(run: GenerationRun) -> dict:
-    return {
-        "id": run.id,
-        "project_id": run.project_id,
-        "agent_id": run.agent_id,
-        "agent_version_id": run.agent_version_id,
-        "provider_id": run.provider_id,
-        "model": run.model,
-        "params": run.params_json,
-        "rendered_prompt": run.rendered_prompt,
-        "raw_output": run.raw_output,
-        "parsed_json": run.parsed_json,
-        "structured": run.structured,
-        "parse_error": run.parse_error,
-        "prompt_tokens": run.prompt_tokens,
-        "completion_tokens": run.completion_tokens,
-        "cost_estimate": run.cost_estimate,
-        "duration_ms": run.duration_ms,
-        "status": run.status,
-        "error": run.error_json,
-        "trimmed": run.trimmed_json,
-        "created_at": run.created_at.isoformat(),
-    }
 
 
 @router.get("")

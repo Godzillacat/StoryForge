@@ -3,33 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api._serializers import _idea_out
+from app.api._serializers import _idea_out, _run_out
 from app.db.session import get_session
 from app.services import agent_service, idea_service, project_service
 from app.services.runtime_service import RuntimeService
 
 router = APIRouter(prefix="/api/projects", tags=["ideas"])
-
-
-def _run_out(run) -> dict:
-    return {
-        "id": run.id,
-        "agent_id": run.agent_id,
-        "agent_version_id": run.agent_version_id,
-        "model": run.model,
-        "rendered_prompt": run.rendered_prompt,
-        "raw_output": run.raw_output,
-        "parsed_json": run.parsed_json,
-        "structured": run.structured,
-        "parse_error": run.parse_error,
-        "prompt_tokens": run.prompt_tokens,
-        "completion_tokens": run.completion_tokens,
-        "cost_estimate": run.cost_estimate,
-        "duration_ms": run.duration_ms,
-        "status": run.status,
-        "error": run.error_json,
-        "trimmed": run.trimmed_json,
-    }
 
 
 @router.post("/{project_id}/ideas/{idea_id}/parse")
@@ -49,7 +28,7 @@ def parse_idea(project_id: str, idea_id: str, session: Session = Depends(get_ses
 
     service = RuntimeService(session)
     try:
-        run, result = service.execute(project_id, parser.id)
+        run, result = service.execute(project_id, parser.id, extra={"raw_idea_id": idea_id})
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

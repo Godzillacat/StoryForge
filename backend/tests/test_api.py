@@ -18,7 +18,7 @@ def client():
         seed_tools(session)
         # 跑智能体需要一家启用的服务商，这是产品行为不是测试特例。
         # 这里补上前置条件：真实 HTTP 调用被 _patch_client 替换，密钥留空即可。
-        if session.scalars(select(Provider)).first() is None:
+        if session.scalars(select(Provider).where(Provider.enabled.is_(True))).first() is None:
             session.add(
                 Provider(
                     name="测试服务商",
@@ -68,6 +68,24 @@ def test_parse_returns_run_for_debug_console(client, monkeypatch):
     payload = resp.json()
     assert payload["run"]["rendered_prompt"]
     assert payload["run"]["raw_output"]
+
+
+def test_parse_uses_the_idea_that_was_requested(client, monkeypatch):
+    project = client.post("/api/projects", json={"name": "p"}).json()
+    client.post(f"/api/projects/{project['id']}/ideas", json={"raw_text": "第一个灵感：验尸官"})
+    second = client.post(
+        f"/api/projects/{project['id']}/ideas", json={"raw_text": "第二个灵感：灯塔看守人"}
+    ).json()
+    _patch_client(
+        monkeypatch,
+        '{"genre": "悬疑", "premise": "x", "protagonist_desire": "y", "conflict_source": "z", "open_questions": []}',
+    )
+
+    client.post(f"/api/projects/{project['id']}/ideas/{second['id']}/parse")
+
+    runs = client.get("/api/runs", params={"project_id": project["id"]}).json()
+    assert "第二个灵感：灯塔看守人" in runs[0]["rendered_prompt"]
+    assert "第一个灵感：验尸官" not in runs[0]["rendered_prompt"]
 
 
 def test_agents_listed_with_current_version(client):

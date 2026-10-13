@@ -72,3 +72,18 @@ def test_summarize_truncates_long_text(session):
     summarized = source.summarize("raw_idea", "字" * 300)
     assert len(summarized) < 300
     assert summarized.endswith("……")
+
+
+def test_raw_idea_returns_the_requested_idea_not_the_oldest(session):
+    project = _seed(session)
+    first = session.query(Idea).filter_by(project_id=project.id).one()
+    second = Idea(project_id=project.id, raw_text="第二个灵感：海边的灯塔看守人")
+    session.add(second)
+    session.commit()
+
+    from app.services.slot_source import DbSlotSource
+
+    source = DbSlotSource(session, project.id, extra_slots={"raw_idea_id": second.id})
+    assert source.raw_idea() == "第二个灵感：海边的灯塔看守人"
+    # 不传 extra_slots 时保持原行为（取最早一条），供其它槽位调用方使用
+    assert DbSlotSource(session, project.id).raw_idea() == first.raw_text

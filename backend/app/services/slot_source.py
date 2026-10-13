@@ -17,15 +17,29 @@ _SUMMARY_LIMIT = 120
 
 
 class DbSlotSource:
-    def __init__(self, session: Session, project_id: str, tool_summary: str = "") -> None:
+    def __init__(
+        self,
+        session: Session,
+        project_id: str,
+        tool_summary: str = "",
+        extra_slots: dict | None = None,
+    ) -> None:
         self._session = session
         self._project_id = project_id
         self._tool_summary = tool_summary
+        # 调用方显式指定的槽位来源（如「解析这条灵感」里的 raw_idea_id），
+        # 优先于按时间取默认值，避免解析结果与作者所指的原话对不上。
+        self._extra = extra_slots or {}
 
     def _project(self) -> Project | None:
         return self._session.get(Project, self._project_id)
 
     def _idea(self) -> Idea | None:
+        requested = self._extra.get("raw_idea_id")
+        if requested:
+            idea = self._session.get(Idea, requested)
+            if idea is not None:
+                return idea
         return self._session.scalars(
             select(Idea).where(Idea.project_id == self._project_id).order_by(Idea.created_at)
         ).first()

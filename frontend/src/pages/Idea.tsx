@@ -21,6 +21,7 @@ export default function Idea() {
   const [draft, setDraft] = useState('')
   const [run, setRun] = useState<RunView | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -38,9 +39,15 @@ export default function Idea() {
 
   async function addIdea() {
     if (!draft.trim() || !projectId) return
-    const idea = await api.createIdea(projectId, draft.trim())
-    setIdeas((prev) => [...prev, idea])
-    setDraft('')
+    setSaveError(null)
+    try {
+      const idea = await api.createIdea(projectId, draft.trim())
+      setIdeas((prev) => [...prev, idea])
+      setDraft('')
+    } catch (error) {
+      // 保存失败不能默默无事发生：草稿留在输入框里，作者才不丢刚写的原话
+      setSaveError((error as Error).message)
+    }
   }
 
   async function parse() {
@@ -94,6 +101,11 @@ export default function Idea() {
             {busy ? '解析中…' : '解析'}
           </button>
         </div>
+        {saveError && (
+          <div className="rounded bg-rose-950/40 p-3 text-sm text-rose-300">
+            灵感没存上：{saveError}
+          </div>
+        )}
       </section>
 
       {current && (

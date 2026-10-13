@@ -22,6 +22,13 @@ class Provider(IdMixin, TimestampMixin, Base):
 
 
 class Setting(IdMixin, TimestampMixin, Base):
+    """P1a 未使用：全局设置目前存在 ``settings.json``，经 ``app.config`` 读写。
+
+    保留此表是因为它在设计文档的数据模型里（§4.3）。P1a 不读写它，
+    以免出现「DB 与 settings.json 两套设置机制」；后续切片若要用，
+    必须先决定单一权威来源。
+    """
+
     __tablename__ = "setting"
 
     key: Mapped[str] = mapped_column(String(120), unique=True, index=True)

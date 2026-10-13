@@ -6085,6 +6085,9 @@ git commit -m "feat(frontend): 五页应用与接口接通"
 
 ### Task 13: 端到端验收
 
+> **最终整支复查（2026-10-14）记：本计划曾夸大了交付范围。** P1a 实际只交付了「角色卡字段（每智能体绑定模型 / 参数档字段）+ 调试台 + 费用记账」；「模型分路」（按任务分派模型）与「参数档生效」并未实现——`config` 的 `model_routing` 从未被读取，`resolve_provider` 只认版本上的 `model_binding_json`，预置阵容也未填该字段，`param_profile` 只存不生效。此二者连同管线编排、A/B 并排生成一并留在 P3。更正已同步到 `CLAUDE.md` §7 说明与 §8 变更记录。
+
+
 **Files:**
 - Create: `docs/superpowers/plans/2026-10-13-p1a-acceptance.md`（验收记录）
 - Modify: `CLAUDE.md` §7（阶段记录与路线图状态）
@@ -6164,3 +6167,7 @@ git commit -m "docs: P1a 验收记录与进度更新"
 ## 附：不在本计划范围内
 
 世界观与人物（P1b）、卷章纲与场景卡（P1c）、正文生成与两道检查（P2）、管线编排与 A/B 生成（P3）、影响面分析与快照分支（P4）、阅读器与打包（P5）。spec §1.3 已列明，本计划不建相关表、接口与页面。
+
+## 账本（Ledger）
+
+- 2026-10-14 · `Setting` 表（`app/db/models/config_models.py`）保留但不使用：P1a 的全局设置一律经 `settings.json` 与 `app.config` 读写，此表在 P1a 既不被读也不被写。保留它是因为它属于设计文档 §4.3 的数据模型；但为避免出现「数据库与 settings.json 两套设置机制」，后续切片若要用它，必须先裁定唯一权威来源，不得再平行开一条。

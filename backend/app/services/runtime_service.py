@@ -64,7 +64,7 @@ class RuntimeService:
         binding = version.model_binding_json or {}
         settings = config.load_settings()
 
-        source = DbSlotSource(self._session, project_id)
+        source = DbSlotSource(self._session, project_id, extra_slots=extra)
         inp = ExecuteInput(
             project_id=project_id,
             agent_id=agent.id,

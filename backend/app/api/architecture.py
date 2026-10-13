@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api._serializers import _run_out
 from app.api.schemas import ArchitectureAdopt
 from app.db.session import get_session
 from app.services import agent_service, architecture_service
@@ -33,27 +34,7 @@ def recommend(project_id: str, session: Session = Depends(get_session)) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return {
-        "run": {
-            "id": run.id,
-            "agent_id": run.agent_id,
-            "agent_version_id": run.agent_version_id,
-            "provider_id": run.provider_id,
-            "model": run.model,
-            "params": run.params_json,
-            "rendered_prompt": run.rendered_prompt,
-            "raw_output": run.raw_output,
-            "parsed_json": run.parsed_json,
-            "structured": run.structured,
-            "parse_error": run.parse_error,
-            "prompt_tokens": run.prompt_tokens,
-            "completion_tokens": run.completion_tokens,
-            "cost_estimate": run.cost_estimate,
-            "duration_ms": run.duration_ms,
-            "status": run.status,
-            "error": run.error_json,
-            "trimmed": run.trimmed_json,
-            "created_at": run.created_at.isoformat(),
-        },
+        "run": _run_out(run),
         "options": (result.parsed or {}).get("options", []) if result.structured else [],
         "story_bible_v0": (result.parsed or {}).get("story_bible_v0", {}) if result.structured else {},
         "structured": result.structured,
