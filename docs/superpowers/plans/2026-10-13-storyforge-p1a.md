@@ -2137,7 +2137,7 @@ cd "d:/Practical Project/AIProject/Experiment/StoryForge/backend"
 uv run pytest tests/test_render.py tests/test_llm.py -v
 ```
 
-Expected: 5 + 11 = 16 passed。
+Expected: 15 passed（test_render 5 项 + test_llm 10 项，其中错误分类是 5 个参数化用例）。
 
 - [ ] **Step 7: 提交**
 
