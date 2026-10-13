@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
-import { api, type Agent, type AgentVersion, type Project, type RunView } from '../api/client'
+import { api, type Agent, type AgentVersion, type RunView } from '../api/client'
 import RunTrace from '../components/RunTrace'
 
 export default function Studio() {
   const [agents, setAgents] = useState<Agent[]>([])
-  const [projects, setProjects] = useState<Project[]>([])
   const [projectId, setProjectId] = useState('')
   const [selected, setSelected] = useState<Agent | null>(null)
   const [versions, setVersions] = useState<AgentVersion[]>([])
@@ -14,8 +13,8 @@ export default function Studio() {
 
   useEffect(() => {
     api.listAgents().then(setAgents)
+    // 调试台只需要一个项目来跑，不列项目列表 —— 项目切换在别的页做
     api.listProjects().then((list) => {
-      setProjects(list)
       if (list[0]) setProjectId(list[0].id)
     })
   }, [])
