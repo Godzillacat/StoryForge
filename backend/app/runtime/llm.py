@@ -148,6 +148,7 @@ class HttpxChatClient(ChatClient):
     async def stream(
         self, config: ChatConfig, messages: list[dict], params: dict
     ) -> AsyncIterator[str]:
+        buffer: list[str] = []
         async with httpx.AsyncClient(transport=self._transport, timeout=self._timeout) as client:
             try:
                 async with client.stream(
@@ -178,8 +179,11 @@ class HttpxChatClient(ChatClient):
                         delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
                         content = delta.get("content")
                         if content:
+                            buffer.append(content)
                             yield content
             except ChatFailure:
                 raise
             except Exception as exc:  # noqa: BLE001
-                raise self._wrap_transport_error(exc) from exc
+                failure = self._wrap_transport_error(exc)
+                failure.partial_text = "".join(buffer)
+                raise failure from exc

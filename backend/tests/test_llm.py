@@ -88,3 +88,21 @@ async def test_stream_yields_content_chunks():
 
     chunks = [c async for c in _client(handler).stream(CONFIG, MESSAGES, {})]
     assert chunks == ["你", "好"]
+
+
+async def test_stream_failure_preserves_content_already_received():
+    # 先吐两个 data 块，然后传输层中断
+    def handler(request):
+        async def body():
+            yield b'data: {"choices":[{"delta":{"content":"\xe4\xbd\xa0"}}]}\n\n'
+            yield b'data: {"choices":[{"delta":{"content":"\xe5\xa5\xbd"}}]}\n\n'
+            raise httpx.ReadError("connection dropped")
+
+        return httpx.Response(200, content=body(), headers={"content-type": "text/event-stream"})
+
+    chunks = []
+    with pytest.raises(ChatFailure) as exc:
+        async for chunk in _client(handler).stream(CONFIG, MESSAGES, {}):
+            chunks.append(chunk)
+    assert chunks == ["你", "好"]
+    assert exc.value.partial_text == "你好"
