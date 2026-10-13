@@ -3678,11 +3678,17 @@ def client():
     with SessionLocal() as session:
         seed_agents(session)
         seed_tools(session)
-        # 跑智能体必须先有可用服务商，否则 execute 会按设计报错。
+        # 跑智能体必须先有「启用」的服务商，否则 execute 会按设计报错。
         # 这里补上前提条件，而不是让用例去借别的用例留下的那一行。
-        if not session.query(Provider).first():
+        # 判断同样只认启用的：停了用的一条不算前提条件已满足。
+        if not session.query(Provider).filter(Provider.enabled.is_(True)).first():
             session.add(
-                Provider(name="测试服务商", kind="custom", base_url="https://api.example.com/v1")
+                Provider(
+                    name="测试服务商",
+                    kind="custom",
+                    base_url="https://api.example.com/v1",
+                    enabled=True,
+                )
             )
             session.commit()
     with TestClient(app) as c:
@@ -4813,11 +4819,19 @@ cd "d:/Practical Project/AIProject/Experiment/StoryForge"
 pnpm create vite frontend --template react-ts
 cd frontend
 pnpm install
+# Tailwind 固定在三版：四版改成了 CSS-first 配置与 @tailwindcss/vite 插件，
+# 本计划的 tailwind.config.js 与 postcss 链路是三版的写法。
 pnpm add -D tailwindcss@^3 postcss autoprefixer vitest @testing-library/react jsdom
 pnpm add react-router-dom
 pnpm add @tiptap/react @tiptap/starter-kit @tiptap/pm
 pnpm add -D @types/node
 pnpm exec tailwindcss init -p
+```
+
+然后锁定构建工具版本，避免脚手架默认带上的版本与下面的 `vite.config.ts` 写法漂移：
+
+```bash
+pnpm add -D vite@^7 @vitejs/plugin-react@^5
 ```
 
 - [ ] **Step 2: 写 `frontend/vite.config.ts`**
