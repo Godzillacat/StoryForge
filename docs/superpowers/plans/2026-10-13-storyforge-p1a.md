@@ -1276,7 +1276,12 @@ def _try_parse(candidate: str) -> Any | None:
 
 
 def extract_json(text: str) -> Any | None:
-    """从可能带 Markdown 围栏或前后废话的返回里取出 JSON 对象。"""
+    """从可能带 Markdown 围栏或前后废话的返回里取出 JSON 对象。
+
+    围栏取最后一个可解析的块：模型常在正式答案前先复述一个模板示例，
+    取第一个会把示例当成结果，静默返回「格式合法但内容错」的数据。
+    宁可解析失败降级为纯文本，也不接受看似合法的错数据。
+    """
     if text is None:
         return None
     stripped = text.strip()
@@ -1284,7 +1289,7 @@ def extract_json(text: str) -> Any | None:
     if parsed is not None:
         return parsed
 
-    for match in _FENCE_RE.finditer(text):
+    for match in reversed(list(_FENCE_RE.finditer(text))):
         parsed = _try_parse(match.group(1).strip())
         if parsed is not None:
             return parsed
