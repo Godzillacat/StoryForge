@@ -102,3 +102,23 @@ def test_execute_raises_when_no_provider_configured(session):
     service = RuntimeService(session, client=HttpxChatClient(transport=httpx.MockTransport(_ok_handler())))
     with pytest.raises(ValueError, match="没有可用的服务商"):
         service.execute(project.id, agent.id)
+
+
+def test_execute_persists_parse_error_reason(session):
+    project, provider, agent, version = _seed(session)
+    # 返回合法 JSON，但缺少必填的 genre，触发契约校验失败
+    service = RuntimeService(
+        session,
+        client=HttpxChatClient(
+            transport=httpx.MockTransport(_ok_handler('{"not_genre": 1}'))
+        ),
+    )
+
+    run, result = service.execute(project.id, agent.id)
+
+    assert result.structured is False
+    assert result.parse_error is not None
+    stored = session.get(GenerationRun, run.id)
+    assert stored.structured is False
+    assert stored.parse_error == result.parse_error
+    assert "genre" in stored.parse_error

@@ -94,6 +94,8 @@ class RuntimeService:
             raw_output=result.raw_output,
             parsed_json=result.parsed,
             structured=result.structured,
+            # 契约失败的原因必须落库，否则调试台无法解释「为什么没结构化」
+            parse_error=result.parse_error,
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
             cost_estimate=result.cost_estimate,

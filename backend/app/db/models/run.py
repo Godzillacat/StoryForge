@@ -26,6 +26,8 @@ class GenerationRun(IdMixin, TimestampMixin, Base):
     raw_output: Mapped[str] = mapped_column(Text, default="")
     parsed_json: Mapped[Any | None] = mapped_column(JSON, default=None)
     structured: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 契约校验失败的具体原因。structured=False 时调试台靠它解释为什么
+    parse_error: Mapped[str | None] = mapped_column(Text, default=None)
     prompt_tokens: Mapped[int] = mapped_column(default=0)
     completion_tokens: Mapped[int] = mapped_column(default=0)
     cost_estimate: Mapped[float] = mapped_column(Float, default=0.0)
