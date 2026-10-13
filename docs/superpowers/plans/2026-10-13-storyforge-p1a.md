@@ -3625,6 +3625,15 @@ git commit -m "feat(tools): 创作工具库内置模板"
 
 ### Task 11: 后端 API 层
 
+> **实施时的两处修正（评审裁定，以实施结果为准，下方代码块未逐块回改）：**
+>
+> 1. **路由不下库。** 本任务代码块在 `api/architecture.py`、`api/ideas.py`、`api/runs.py`、`api/tools.py` 里直接写了 `select(...)` / `session.get(...)`，违反 CLAUDE.md 的硬约束「`api` 不写业务逻辑」。实施时改成：
+>    - `agent_service.find_by_task_type(session, task_type) -> Agent | None`
+>    - 新增 `services/run_service.py`：`list_runs(session, project_id=None, agent_id=None, limit=50)`、`get_run(session, run_id)`
+>    - 新增 `services/tool_service.py`：`list_tools(session, category=None)`
+>    路由只留参数校验、调服务、拼响应。响应体、状态码、错误文案一律不变。
+> 2. **`_idea_out` 去重。** `api/projects.py` 与 `api/ideas.py` 里的两份 `_idea_out` 逐字相同（原说明称「两处返回结构略有不同」，经核对该说法不成立）。实施时只保留一份并两处 import。`_run_out` 的两份**不是**重复（`runs.py` 是真超集），保持原样。
+
 **Files:**
 - Create: `backend/app/api/schemas.py`
 - Create: `backend/app/api/projects.py`、`ideas.py`、`architecture.py`、`agents.py`、`providers.py`、`runs.py`、`tools.py`
@@ -4837,7 +4846,7 @@ pnpm add -D vite@^7 @vitejs/plugin-react@^5
 - [ ] **Step 2: 写 `frontend/vite.config.ts`**
 
 ```ts
-/// <reference types="vitest" />
+/// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
@@ -5762,7 +5771,6 @@ import RunTrace from '../components/RunTrace'
 
 export default function Studio() {
   const [agents, setAgents] = useState<Agent[]>([])
-  const [projects, setProjects] = useState<Project[]>([])
   const [projectId, setProjectId] = useState('')
   const [selected, setSelected] = useState<Agent | null>(null)
   const [versions, setVersions] = useState<AgentVersion[]>([])
@@ -5772,8 +5780,8 @@ export default function Studio() {
 
   useEffect(() => {
     api.listAgents().then(setAgents)
+    // 调试台只需要一个项目来跑，不列项目列表 —— 项目切换在别的页做
     api.listProjects().then((list) => {
-      setProjects(list)
       if (list[0]) setProjectId(list[0].id)
     })
   }, [])
