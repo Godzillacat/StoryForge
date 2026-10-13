@@ -28,6 +28,7 @@ class SlotSource(Protocol):
     def story_bible(self) -> str | None: ...
     def architecture(self) -> str | None: ...
     def tool_library(self) -> str | None: ...
+    def style_samples(self) -> str | None: ...
     def summarize(self, slot_key: str, text: str) -> str: ...
 
 
@@ -94,14 +95,14 @@ def build_context(
             continue
         if spec.over_budget == "summarize":
             compressed = summarize(spec.key, contents[spec.key])
-            trimmed[spec.key] = "压缩为要点"
         else:
             compressed = ""
-            trimmed[spec.key] = "已丢弃"
         if compressed:
             contents[spec.key] = compressed
+            trimmed[spec.key] = "压缩为要点"
         else:
             del contents[spec.key]
+            trimmed[spec.key] = "已丢弃"
 
     final_tokens = _tokens_of(contents)
     return ContextBundle(

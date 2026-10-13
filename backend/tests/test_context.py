@@ -23,6 +23,9 @@ class FakeSource:
     def tool_library(self):
         return self._fields.get("tool_library")
 
+    def style_samples(self):
+        return self._fields.get("style_samples")
+
     def summarize(self, slot_key, text):
         return f"[摘要]{text[:5]}"
 
@@ -116,3 +119,44 @@ def test_estimated_tokens_is_reported():
 def test_build_context_with_no_slots():
     bundle = build_context([], FakeSource(), token_budget=100)
     assert bundle.contents == {} and bundle.trimmed == {} and bundle.estimated_tokens == 0
+
+
+def test_style_samples_slot_is_requestable():
+    source = FakeSource(project_core="短", style_samples="他说话很短")
+    bundle = build_context(["style_samples", "project_core"], source, token_budget=10_000)
+    assert bundle.contents["style_samples"] == "他说话很短"
+
+
+def test_over_budget_is_true_when_never_slot_exceeds_budget():
+    source = FakeSource(project_core="字" * 500)
+    bundle = build_context(["project_core"], source, token_budget=10)
+    assert bundle.over_budget is True          # 裁完仍然超预算，如实上报
+    assert bundle.trimmed == {}                # 但确实没裁任何东西
+    assert "project_core" in bundle.contents   # never 槽位永不被裁
+
+
+def test_custom_compressor_overrides_source_summarize():
+    calls = []
+
+    def compressor(slot_key, text):
+        calls.append(slot_key)
+        return "压缩后"
+
+    source = FakeSource(project_core="短", parsed_idea="解析卡" * 100)
+    bundle = build_context(
+        ["parsed_idea", "project_core"], source, token_budget=60, compressor=compressor
+    )
+    assert calls == ["parsed_idea"]
+    assert bundle.contents["parsed_idea"] == "压缩后"
+    assert bundle.trimmed["parsed_idea"] == "压缩为要点"
+
+
+def test_summarize_returning_empty_marks_slot_as_dropped():
+    class EmptySummarizer(FakeSource):
+        def summarize(self, slot_key, text):
+            return ""
+
+    source = EmptySummarizer(project_core="短", parsed_idea="解析卡" * 100)
+    bundle = build_context(["parsed_idea", "project_core"], source, token_budget=60)
+    assert "parsed_idea" not in bundle.contents
+    assert bundle.trimmed["parsed_idea"] == "已丢弃"   # 记录必须如实反映「丢掉了」
