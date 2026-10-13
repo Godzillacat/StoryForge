@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app import config
@@ -7,15 +10,18 @@ from app.api import agents, architecture, ideas, projects, providers, runs, tool
 from app.db.session import SessionLocal, init_db
 from app.services.seed_service import seed_agents, seed_tools
 
-app = FastAPI(title="StoryForge", version="0.1.0")
 
-
-@app.on_event("startup")
-def _bootstrap() -> None:
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """建表并预置阵容与工具库。两个预置函数都是幂等的，每次启动跑一遍是安全的。"""
     init_db()
     with SessionLocal() as session:
         seed_agents(session)
         seed_tools(session)
+    yield
+
+
+app = FastAPI(title="StoryForge", version="0.1.0", lifespan=lifespan)
 
 
 @app.get("/api/health")
