@@ -24,6 +24,9 @@ build/
 dist/
 *.spec
 
+# SDD 工作区（临时产物，git history 才是记录）
+.superpowers/
+
 # 编辑器
 .vscode/
 .idea/
