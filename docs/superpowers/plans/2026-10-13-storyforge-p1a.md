@@ -425,9 +425,17 @@ def data_dir_path():
 
 @pytest.fixture()
 def session():
+    """每个测试一套干净的表。
+
+    不留跨用例的状态：seed_agents 之类「按名字去重」的逻辑一旦被前一个
+    用例写过的同名数据撞上，就会静默少建 —— 测出来的是污染，不是行为。
+    """
     from app.db import session as db_session
+    from app.db.base import Base
 
     db_session.init_db()
+    Base.metadata.drop_all(db_session.engine)
+    Base.metadata.create_all(db_session.engine)
     with db_session.SessionLocal() as s:
         yield s
 ```
@@ -3657,6 +3665,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from app.db.models import Provider
 from app.db.session import SessionLocal, init_db
 from app.main import app
 from app.runtime.llm import HttpxChatClient
@@ -3669,6 +3678,13 @@ def client():
     with SessionLocal() as session:
         seed_agents(session)
         seed_tools(session)
+        # 跑智能体必须先有可用服务商，否则 execute 会按设计报错。
+        # 这里补上前提条件，而不是让用例去借别的用例留下的那一行。
+        if not session.query(Provider).first():
+            session.add(
+                Provider(name="测试服务商", kind="custom", base_url="https://api.example.com/v1")
+            )
+            session.commit()
     with TestClient(app) as c:
         yield c
 
