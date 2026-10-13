@@ -75,7 +75,8 @@ def test_lowest_priority_slot_is_dropped_first_when_over_budget():
     bundle = build_context(
         ["parsed_idea", "raw_idea", "project_core"], source, token_budget=80
     )
-    assert bundle.over_budget is True
+    # over_budget 表示「裁完之后仍然超预算」，不是「裁过」。裁掉了什么由 trimmed 记录。
+    assert bundle.over_budget is False
     assert "project_core" in bundle.contents        # 最高优先级保留
     assert "raw_idea" not in bundle.contents        # 最低优先级丢弃
     assert bundle.trimmed["raw_idea"] == "已丢弃"
@@ -88,7 +89,8 @@ def test_summarizable_slot_is_compressed_before_dropping():
         parsed_idea="解析卡" * 100,     # 300 tokens
     )
     bundle = build_context(["parsed_idea", "project_core"], source, token_budget=60)
-    assert bundle.contents["parsed_idea"] == "[摘要]解析卡解析卡"  # summarize 的产出
+    # FakeSource.summarize 返回 f"[摘要]{text[:5]}"，"解析卡"*100 的前 5 字是 "解析卡解析"
+    assert bundle.contents["parsed_idea"] == "[摘要]解析卡解析"
     assert bundle.trimmed["parsed_idea"] == "压缩为要点"
 
 
