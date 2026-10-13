@@ -1,7 +1,9 @@
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from app.db.models import Provider
 from app.db.session import SessionLocal, init_db
 from app.main import app
 from app.runtime.llm import HttpxChatClient
@@ -14,6 +16,18 @@ def client():
     with SessionLocal() as session:
         seed_agents(session)
         seed_tools(session)
+        # 跑智能体需要一家启用的服务商，这是产品行为不是测试特例。
+        # 这里补上前置条件：真实 HTTP 调用被 _patch_client 替换，密钥留空即可。
+        if session.scalars(select(Provider)).first() is None:
+            session.add(
+                Provider(
+                    name="测试服务商",
+                    kind="custom",
+                    base_url="https://api.example.com/v1",
+                    enabled=True,
+                )
+            )
+            session.commit()
     with TestClient(app) as c:
         yield c
 
