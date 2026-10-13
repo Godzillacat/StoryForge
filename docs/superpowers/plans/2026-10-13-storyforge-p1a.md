@@ -779,6 +779,8 @@ class GenerationRun(IdMixin, TimestampMixin, Base):
     raw_output: Mapped[str] = mapped_column(Text, default="")
     parsed_json: Mapped[Any | None] = mapped_column(JSON, default=None)
     structured: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 契约校验失败的具体原因。structured=False 时调试台靠它解释为什么
+    parse_error: Mapped[str | None] = mapped_column(Text, default=None)
     prompt_tokens: Mapped[int] = mapped_column(default=0)
     completion_tokens: Mapped[int] = mapped_column(default=0)
     cost_estimate: Mapped[float] = mapped_column(Float, default=0.0)
@@ -2093,6 +2095,9 @@ class HttpxChatClient(ChatClient):
     async def stream(
         self, config: ChatConfig, messages: list[dict], params: dict
     ) -> AsyncIterator[str]:
+        # 已吐出的内容要攒起来：流中途断了，异常得带着它，
+        # 否则「失败不丢内容」只在非流式成立。
+        buffer: list[str] = []
         async with httpx.AsyncClient(transport=self._transport, timeout=self._timeout) as client:
             try:
                 async with client.stream(
@@ -2123,11 +2128,14 @@ class HttpxChatClient(ChatClient):
                         delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
                         content = delta.get("content")
                         if content:
+                            buffer.append(content)
                             yield content
             except ChatFailure:
                 raise
             except Exception as exc:  # noqa: BLE001
-                raise self._wrap_transport_error(exc) from exc
+                failure = self._wrap_transport_error(exc)
+                failure.partial_text = "".join(buffer)
+                raise failure from exc
 ```
 
 - [ ] **Step 6: 运行测试，确认通过**
@@ -2981,6 +2989,8 @@ class RuntimeService:
             raw_output=result.raw_output,
             parsed_json=result.parsed,
             structured=result.structured,
+            # 契约失败的原因必须落库，否则调试台无法解释「为什么没结构化」
+            parse_error=result.parse_error,
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
             cost_estimate=result.cost_estimate,
