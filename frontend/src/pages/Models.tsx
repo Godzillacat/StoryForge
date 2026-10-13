@@ -31,26 +31,38 @@ export default function Models() {
       setNotice('名称与接口地址都要填')
       return
     }
-    const created = await api.createProvider({
-      name: form.name.trim(),
-      kind: 'custom',
-      base_url: form.base_url.trim(),
-      api_key: form.api_key || undefined,
-    })
-    setProviders((prev) => [...prev, created])
-    setForm({ name: '', base_url: '', api_key: '' })
-    setNotice('已添加。接口地址填到 /v1 为止，例如 https://api.deepseek.com/v1')
+    try {
+      const created = await api.createProvider({
+        name: form.name.trim(),
+        kind: 'custom',
+        base_url: form.base_url.trim(),
+        api_key: form.api_key || undefined,
+      })
+      setProviders((prev) => [...prev, created])
+      setForm({ name: '', base_url: '', api_key: '' })
+      setNotice('已添加。接口地址填到 /v1 为止，例如 https://api.deepseek.com/v1')
+    } catch (error) {
+      setNotice((error as Error).message)
+    }
   }
 
   async function test(id: string) {
-    const result = await api.testProvider(id)
-    setNotice(`${result.ok ? '正常' : '失败'}：${result.message}`)
+    try {
+      const result = await api.testProvider(id)
+      setNotice(`${result.ok ? '正常' : '失败'}：${result.message}`)
+    } catch (error) {
+      setNotice((error as Error).message)
+    }
   }
 
   async function saveBudget(value: number) {
     if (!settings) return
-    const updated = await api.updateSettings({ context_token_budget: value })
-    setSettings(updated)
+    try {
+      const updated = await api.updateSettings({ context_token_budget: value })
+      setSettings(updated)
+    } catch (error) {
+      setNotice((error as Error).message)
+    }
   }
 
   return (

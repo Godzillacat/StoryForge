@@ -27,20 +27,28 @@ export default function Studio() {
 
   async function saveVersion() {
     if (!selected) return
-    await api.createVersion(selected.id, { system_prompt: draftPrompt, note: '手动编辑' })
-    const refreshed = await api.listAgents()
-    setAgents(refreshed)
-    setSelected(refreshed.find((a) => a.id === selected.id) ?? null)
-    setNotice('已保存为新版本')
+    try {
+      await api.createVersion(selected.id, { system_prompt: draftPrompt, note: '手动编辑' })
+      const refreshed = await api.listAgents()
+      setAgents(refreshed)
+      setSelected(refreshed.find((a) => a.id === selected.id) ?? null)
+      setNotice('已保存为新版本')
+    } catch (error) {
+      setNotice((error as Error).message)
+    }
   }
 
   async function rollback(versionId: string) {
     if (!selected) return
-    await api.rollback(selected.id, versionId)
-    const refreshed = await api.listAgents()
-    setAgents(refreshed)
-    setSelected(refreshed.find((a) => a.id === selected.id) ?? null)
-    setNotice('已回滚')
+    try {
+      await api.rollback(selected.id, versionId)
+      const refreshed = await api.listAgents()
+      setAgents(refreshed)
+      setSelected(refreshed.find((a) => a.id === selected.id) ?? null)
+      setNotice('已回滚')
+    } catch (error) {
+      setNotice((error as Error).message)
+    }
   }
 
   async function runOnce() {

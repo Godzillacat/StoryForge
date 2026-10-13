@@ -53,16 +53,20 @@ export default function Architecture() {
             target_word_ratio: a.target_word_ratio,
           }))
 
-    const saved = await api.adoptArchitecture(projectId, {
-      tool_ref: chosen.tool,
-      logline: bible.logline,
-      theme: bible.theme,
-      premise: bible.premise,
-      ending_direction: bible.ending_direction,
-      acts: actPayload,
-    })
-    setActs(saved.acts)
-    setMessage('已写入项目结构')
+    try {
+      const saved = await api.adoptArchitecture(projectId, {
+        tool_ref: chosen.tool,
+        logline: bible.logline,
+        theme: bible.theme,
+        premise: bible.premise,
+        ending_direction: bible.ending_direction,
+        acts: actPayload,
+      })
+      setActs(saved.acts)
+      setMessage('已写入项目结构')
+    } catch (error) {
+      setMessage((error as Error).message)
+    }
   }
 
   return (

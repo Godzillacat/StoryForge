@@ -25,6 +25,7 @@ def _run_out(run: GenerationRun) -> dict:
         "raw_output": run.raw_output,
         "parsed_json": run.parsed_json,
         "structured": run.structured,
+        "parse_error": run.parse_error,
         "prompt_tokens": run.prompt_tokens,
         "completion_tokens": run.completion_tokens,
         "cost_estimate": run.cost_estimate,

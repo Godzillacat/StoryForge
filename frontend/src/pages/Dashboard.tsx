@@ -6,9 +6,13 @@ export default function Dashboard() {
   const [selected, setSelected] = useState<Project | null>(null)
   const [cost, setCost] = useState<CostSummary | null>(null)
   const [name, setName] = useState('')
+  const [notice, setNotice] = useState('')
 
   useEffect(() => {
-    api.listProjects().then(setProjects)
+    api
+      .listProjects()
+      .then(setProjects)
+      .catch((error) => setNotice((error as Error).message))
   }, [])
 
   useEffect(() => {
@@ -17,15 +21,22 @@ export default function Dashboard() {
 
   async function create() {
     if (!name.trim()) return
-    const project = await api.createProject({ name: name.trim() })
-    setProjects((prev) => [project, ...prev])
-    setSelected(project)
-    setName('')
+    try {
+      const project = await api.createProject({ name: name.trim() })
+      setProjects((prev) => [project, ...prev])
+      setSelected(project)
+      setName('')
+      setNotice('')
+    } catch (error) {
+      setNotice((error as Error).message)
+    }
   }
 
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-semibold">故事仪表盘</h2>
+
+      {notice && <p className="rounded bg-amber-950/40 p-3 text-sm text-amber-300">{notice}</p>}
 
       <div className="flex gap-2">
         <input
@@ -55,7 +66,9 @@ export default function Dashboard() {
               </div>
             </button>
           ))}
-          {projects.length === 0 && <p className="text-sm text-slate-500">还没有项目，先建一个。</p>}
+          {projects.length === 0 && !notice && (
+            <p className="text-sm text-slate-500">还没有项目，先建一个。</p>
+          )}
         </section>
 
         <section className="rounded border border-slate-800 p-4">
