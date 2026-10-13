@@ -425,9 +425,17 @@ def data_dir_path():
 
 @pytest.fixture()
 def session():
+    """每个测试一套干净的表。
+
+    不留跨用例的状态：seed_agents 之类「按名字去重」的逻辑一旦被前一个
+    用例写过的同名数据撞上，就会静默少建 —— 测出来的是污染，不是行为。
+    """
     from app.db import session as db_session
+    from app.db.base import Base
 
     db_session.init_db()
+    Base.metadata.drop_all(db_session.engine)
+    Base.metadata.create_all(db_session.engine)
     with db_session.SessionLocal() as s:
         yield s
 ```
@@ -779,6 +787,8 @@ class GenerationRun(IdMixin, TimestampMixin, Base):
     raw_output: Mapped[str] = mapped_column(Text, default="")
     parsed_json: Mapped[Any | None] = mapped_column(JSON, default=None)
     structured: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 契约校验失败的具体原因。structured=False 时调试台靠它解释为什么
+    parse_error: Mapped[str | None] = mapped_column(Text, default=None)
     prompt_tokens: Mapped[int] = mapped_column(default=0)
     completion_tokens: Mapped[int] = mapped_column(default=0)
     cost_estimate: Mapped[float] = mapped_column(Float, default=0.0)
@@ -1276,7 +1286,12 @@ def _try_parse(candidate: str) -> Any | None:
 
 
 def extract_json(text: str) -> Any | None:
-    """从可能带 Markdown 围栏或前后废话的返回里取出 JSON 对象。"""
+    """从可能带 Markdown 围栏或前后废话的返回里取出 JSON 对象。
+
+    围栏取最后一个可解析的块：模型常在正式答案前先复述一个模板示例，
+    取第一个会把示例当成结果，静默返回「格式合法但内容错」的数据。
+    宁可解析失败降级为纯文本，也不接受看似合法的错数据。
+    """
     if text is None:
         return None
     stripped = text.strip()
@@ -1284,7 +1299,7 @@ def extract_json(text: str) -> Any | None:
     if parsed is not None:
         return parsed
 
-    for match in _FENCE_RE.finditer(text):
+    for match in reversed(list(_FENCE_RE.finditer(text))):
         parsed = _try_parse(match.group(1).strip())
         if parsed is not None:
             return parsed
@@ -1562,7 +1577,8 @@ def test_lowest_priority_slot_is_dropped_first_when_over_budget():
     bundle = build_context(
         ["parsed_idea", "raw_idea", "project_core"], source, token_budget=80
     )
-    assert bundle.over_budget is True
+    # over_budget 表示「裁完之后仍然超预算」，不是「裁过」。裁掉了什么由 trimmed 记录。
+    assert bundle.over_budget is False
     assert "project_core" in bundle.contents        # 最高优先级保留
     assert "raw_idea" not in bundle.contents        # 最低优先级丢弃
     assert bundle.trimmed["raw_idea"] == "已丢弃"
@@ -1575,7 +1591,8 @@ def test_summarizable_slot_is_compressed_before_dropping():
         parsed_idea="解析卡" * 100,     # 300 tokens
     )
     bundle = build_context(["parsed_idea", "project_core"], source, token_budget=60)
-    assert bundle.contents["parsed_idea"] == "[摘要]解析卡解析卡"  # summarize 的产出
+    # FakeSource.summarize 返回 f"[摘要]{text[:5]}"，"解析卡"*100 的前 5 字是 "解析卡解析"
+    assert bundle.contents["parsed_idea"] == "[摘要]解析卡解析"
     assert bundle.trimmed["parsed_idea"] == "压缩为要点"
 
 
@@ -2086,6 +2103,9 @@ class HttpxChatClient(ChatClient):
     async def stream(
         self, config: ChatConfig, messages: list[dict], params: dict
     ) -> AsyncIterator[str]:
+        # 已吐出的内容要攒起来：流中途断了，异常得带着它，
+        # 否则「失败不丢内容」只在非流式成立。
+        buffer: list[str] = []
         async with httpx.AsyncClient(transport=self._transport, timeout=self._timeout) as client:
             try:
                 async with client.stream(
@@ -2116,11 +2136,14 @@ class HttpxChatClient(ChatClient):
                         delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
                         content = delta.get("content")
                         if content:
+                            buffer.append(content)
                             yield content
             except ChatFailure:
                 raise
             except Exception as exc:  # noqa: BLE001
-                raise self._wrap_transport_error(exc) from exc
+                failure = self._wrap_transport_error(exc)
+                failure.partial_text = "".join(buffer)
+                raise failure from exc
 ```
 
 - [ ] **Step 6: 运行测试，确认通过**
@@ -2130,7 +2153,7 @@ cd "d:/Practical Project/AIProject/Experiment/StoryForge/backend"
 uv run pytest tests/test_render.py tests/test_llm.py -v
 ```
 
-Expected: 5 + 11 = 16 passed。
+Expected: 15 passed（test_render 5 项 + test_llm 10 项，其中错误分类是 5 个参数化用例）。
 
 - [ ] **Step 7: 提交**
 
@@ -2974,6 +2997,8 @@ class RuntimeService:
             raw_output=result.raw_output,
             parsed_json=result.parsed,
             structured=result.structured,
+            # 契约失败的原因必须落库，否则调试台无法解释「为什么没结构化」
+            parse_error=result.parse_error,
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
             cost_estimate=result.cost_estimate,
@@ -3600,6 +3625,15 @@ git commit -m "feat(tools): 创作工具库内置模板"
 
 ### Task 11: 后端 API 层
 
+> **实施时的两处修正（评审裁定，以实施结果为准，下方代码块未逐块回改）：**
+>
+> 1. **路由不下库。** 本任务代码块在 `api/architecture.py`、`api/ideas.py`、`api/runs.py`、`api/tools.py` 里直接写了 `select(...)` / `session.get(...)`，违反 CLAUDE.md 的硬约束「`api` 不写业务逻辑」。实施时改成：
+>    - `agent_service.find_by_task_type(session, task_type) -> Agent | None`
+>    - 新增 `services/run_service.py`：`list_runs(session, project_id=None, agent_id=None, limit=50)`、`get_run(session, run_id)`
+>    - 新增 `services/tool_service.py`：`list_tools(session, category=None)`
+>    路由只留参数校验、调服务、拼响应。响应体、状态码、错误文案一律不变。
+> 2. **`_idea_out` 去重。** `api/projects.py` 与 `api/ideas.py` 里的两份 `_idea_out` 逐字相同（原说明称「两处返回结构略有不同」，经核对该说法不成立）。实施时只保留一份并两处 import。`_run_out` 的两份**不是**重复（`runs.py` 是真超集），保持原样。
+
 **Files:**
 - Create: `backend/app/api/schemas.py`
 - Create: `backend/app/api/projects.py`、`ideas.py`、`architecture.py`、`agents.py`、`providers.py`、`runs.py`、`tools.py`
@@ -3640,6 +3674,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from app.db.models import Provider
 from app.db.session import SessionLocal, init_db
 from app.main import app
 from app.runtime.llm import HttpxChatClient
@@ -3652,6 +3687,19 @@ def client():
     with SessionLocal() as session:
         seed_agents(session)
         seed_tools(session)
+        # 跑智能体必须先有「启用」的服务商，否则 execute 会按设计报错。
+        # 这里补上前提条件，而不是让用例去借别的用例留下的那一行。
+        # 判断同样只认启用的：停了用的一条不算前提条件已满足。
+        if not session.query(Provider).filter(Provider.enabled.is_(True)).first():
+            session.add(
+                Provider(
+                    name="测试服务商",
+                    kind="custom",
+                    base_url="https://api.example.com/v1",
+                    enabled=True,
+                )
+            )
+            session.commit()
     with TestClient(app) as c:
         yield c
 
@@ -4780,6 +4828,8 @@ cd "d:/Practical Project/AIProject/Experiment/StoryForge"
 pnpm create vite frontend --template react-ts
 cd frontend
 pnpm install
+# Tailwind 固定在三版：四版改成了 CSS-first 配置与 @tailwindcss/vite 插件，
+# 本计划的 tailwind.config.js 与 postcss 链路是三版的写法。
 pnpm add -D tailwindcss@^3 postcss autoprefixer vitest @testing-library/react jsdom
 pnpm add react-router-dom
 pnpm add @tiptap/react @tiptap/starter-kit @tiptap/pm
@@ -4787,10 +4837,16 @@ pnpm add -D @types/node
 pnpm exec tailwindcss init -p
 ```
 
+然后锁定构建工具版本，避免脚手架默认带上的版本与下面的 `vite.config.ts` 写法漂移：
+
+```bash
+pnpm add -D vite@^7 @vitejs/plugin-react@^5
+```
+
 - [ ] **Step 2: 写 `frontend/vite.config.ts`**
 
 ```ts
-/// <reference types="vitest" />
+/// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
@@ -5715,7 +5771,6 @@ import RunTrace from '../components/RunTrace'
 
 export default function Studio() {
   const [agents, setAgents] = useState<Agent[]>([])
-  const [projects, setProjects] = useState<Project[]>([])
   const [projectId, setProjectId] = useState('')
   const [selected, setSelected] = useState<Agent | null>(null)
   const [versions, setVersions] = useState<AgentVersion[]>([])
@@ -5725,8 +5780,8 @@ export default function Studio() {
 
   useEffect(() => {
     api.listAgents().then(setAgents)
+    // 调试台只需要一个项目来跑，不列项目列表 —— 项目切换在别的页做
     api.listProjects().then((list) => {
-      setProjects(list)
       if (list[0]) setProjectId(list[0].id)
     })
   }, [])
@@ -6030,6 +6085,9 @@ git commit -m "feat(frontend): 五页应用与接口接通"
 
 ### Task 13: 端到端验收
 
+> **最终整支复查（2026-10-14）记：本计划曾夸大了交付范围。** P1a 实际只交付了「角色卡字段（每智能体绑定模型 / 参数档字段）+ 调试台 + 费用记账」；「模型分路」（按任务分派模型）与「参数档生效」并未实现——`config` 的 `model_routing` 从未被读取，`resolve_provider` 只认版本上的 `model_binding_json`，预置阵容也未填该字段，`param_profile` 只存不生效。此二者连同管线编排、A/B 并排生成一并留在 P3。更正已同步到 `CLAUDE.md` §7 说明与 §8 变更记录。
+
+
 **Files:**
 - Create: `docs/superpowers/plans/2026-10-13-p1a-acceptance.md`（验收记录）
 - Modify: `CLAUDE.md` §7（阶段记录与路线图状态）
@@ -6109,3 +6167,7 @@ git commit -m "docs: P1a 验收记录与进度更新"
 ## 附：不在本计划范围内
 
 世界观与人物（P1b）、卷章纲与场景卡（P1c）、正文生成与两道检查（P2）、管线编排与 A/B 生成（P3）、影响面分析与快照分支（P4）、阅读器与打包（P5）。spec §1.3 已列明，本计划不建相关表、接口与页面。
+
+## 账本（Ledger）
+
+- 2026-10-14 · `Setting` 表（`app/db/models/config_models.py`）保留但不使用：P1a 的全局设置一律经 `settings.json` 与 `app.config` 读写，此表在 P1a 既不被读也不被写。保留它是因为它属于设计文档 §4.3 的数据模型；但为避免出现「数据库与 settings.json 两套设置机制」，后续切片若要用它，必须先裁定唯一权威来源，不得再平行开一条。

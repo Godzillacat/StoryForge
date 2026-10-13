@@ -1,0 +1,29 @@
+{
+  "key": "hero_journey",
+  "category": "通用结构",
+  "name": "英雄之旅（12 阶段）",
+  "description": "坎贝尔式的 12 阶段内在旅程：主角离家、受试、蜕变，最终带着所得归来。适合成长与冒险题材，也适合把「内心转变」当作主线的故事。",
+  "definition": {
+    "slots": [
+      {"key": "ordinary_world", "label": "平凡世界", "hint": "主角熟悉却受限的日常，交代他与世界之间的错位"},
+      {"key": "call_to_adventure", "label": "冒险的召唤", "hint": "打破日常的消息或事件，任务与挑战浮现"},
+      {"key": "refusal_of_call", "label": "拒绝召唤", "hint": "主角的恐惧与犹疑，说明他为何一时不肯上路"},
+      {"key": "meeting_the_mentor", "label": "遇见导师", "hint": "给出指引、工具或勇气的角色，主角由此下定决心"},
+      {"key": "crossing_the_threshold", "label": "跨越第一道门槛", "hint": "正式离开熟悉区，踏入规则不同的新世界"},
+      {"key": "tests_allies_enemies", "label": "试炼、盟友、敌人", "hint": "新世界的规则检验，结识伙伴、结下敌手"},
+      {"key": "approach_inmost_cave", "label": "接近最深的洞穴", "hint": "逼近核心险境，压力与准备同时被推到顶"},
+      {"key": "ordeal", "label": "磨难", "hint": "最深的死地与最重的打击，主角被逼到身份的边缘"},
+      {"key": "reward", "label": "奖赏", "hint": "经历磨难后赢得的宝物、真相或和解"},
+      {"key": "the_road_back", "label": "归途", "hint": "带着奖赏返程，报复与追兵随之而来"},
+      {"key": "resurrection", "label": "复活", "hint": "最终的考验，主角以蜕变后的自己通过生死关"},
+      {"key": "return_with_elixir", "label": "带着灵药回归", "hint": "回归平凡世界，把所得带回，世界因此改变"}
+    ],
+    "notes": "12 阶段是内在旅程的骨架，不要求逐一对应章节；「磨难」必须真正改变主角，否则「复活」阶段会落空。"
+  },
+  "checklist": [
+    "平凡世界是否交代了主角的欠缺，让召唤有可打破的对象？",
+    "跨越门槛后，新世界的规则是否与平凡世界形成对照？",
+    "磨难是否是全书最重的一次打击，并真实改变了主角？",
+    "带回的「灵药」是否使平凡世界发生了可见的改变？"
+  ]
+}

@@ -160,7 +160,7 @@ pnpm build                                # 产物给后端同源托管
 | P4 | 控制力深化：影响面分析、锁定、快照与分支、伏笔账本闭环、逻辑自检图形化 | 未开始 |
 | P5 | 成品与发行：阅读器、朗读、EPUB 精修、批量队列、安装包 | 未开始 |
 
-> 说明：P1a 已把 P3 的「角色卡 + 调试台 + 模型分路 + 费用记账」提前做了，因为智能体运行时是产品地基，越早验证越好。P3 剩余的是管线编排与 A/B 并排生成。
+> 说明：P1a 已把 P3 的「角色卡（含每智能体绑定模型 / 参数档字段）、调试台、费用记账」提前做了，因为智能体运行时是产品地基，越早验证越好。**但「模型分路」（按任务分派模型）与「参数档生效」并未实现**：`config` 里的 `model_routing` 设置无人读取，`resolve_provider` 只认版本上的 `model_binding_json`（预置阵容也未填该字段），`param_profile` 只存不生效。这两项连同管线编排与 A/B 并排生成，仍属 P3。
 
 ### 阶段记录
 
@@ -171,6 +171,14 @@ pnpm build                                # 产物给后端同源托管
 - 决策：P1 按垂直切片拆为 P1a/P1b/P1c，先打通「故事内核」。
 - 产出设计文档 `docs/superpowers/specs/2026-10-13-storyforge-p1a-design.md`。
 - 待办：初始化 git 仓库。
+
+**2026-10-13 · P1a-T1：仓库骨架、配置与数据目录**
+
+- 建立后端骨架 `backend/`（uv 管理，Python 3.13），源码包 `app`，测试目录 `backend/tests/`（与 `app/` 平级，`uv run pytest` 可直接 import `app`）。
+- `app/config.py`：`%LOCALAPPDATA%\StoryForge` 数据目录唯一入口，`STORYFORGE_DATA_DIR` 环境变量可覆盖；提供 `data_dir/db_path/secrets_path/settings_path/project_assets_dir` 与 `load_settings/save_settings`。
+- `app/main.py`：FastAPI 装配入口，仅挂 `/api/health`。
+- 依赖锁定 fastapi>=0.143 / sqlalchemy>=2.1 / pydantic>=2.14 / httpx>=0.28 / jinja2>=3.1 / uvicorn>=0.54 / pytest>=9.1。
+- 测试：`backend/tests/test_config.py` 7 项全过；`uvicorn app.main:app` 起服务后 `/api/health` 返回 `{"status":"ok","data_dir":...}`。
 
 ---
 
@@ -184,6 +192,7 @@ pnpm build                                # 产物给后端同源托管
 | 2026-10-13 | P1 拆为 P1a/P1b/P1c 三个垂直切片 | 设计文档体量过大，一次做完无法验证 |
 | 2026-10-13 | 后端用 uv、前端用 pnpm | 上位文档未指定；本机已具备且性能更好 |
 | 2026-10-13 | 角色卡、调试台、模型分路、费用记账提前到 P1a | 智能体运行时是产品地基，需尽早验证；P3 保留管线编排 |
+| 2026-10-14 | 更正上一条：P1a 实际只交付了角色卡字段、调试台与费用记账；「模型分路」（按任务分派）与「参数档生效」并未实现，仍属 P3 | 最终整支复查发现原文夸大了交付范围 |
 
 ---
 
