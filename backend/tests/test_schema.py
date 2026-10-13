@@ -88,3 +88,27 @@ def test_apply_contract_without_schema_marks_unstructured():
     data, structured, err = apply_contract("自由文本", None)
     assert data is None and structured is False
     assert err == "该智能体未定义输出结构"
+
+
+def test_extract_prefers_last_fence_over_leading_example():
+    text = (
+        '这是一个模板示例：\n'
+        '```json\n'
+        '{"genre": "题材", "open_questions": []}\n'
+        '```\n'
+        '以下是正式结果：\n'
+        '```json\n'
+        '{"genre": "悬疑", "open_questions": ["对手是谁"]}\n'
+        '```\n'
+    )
+    assert extract_json(text) == {"genre": "悬疑", "open_questions": ["对手是谁"]}
+
+
+def test_apply_contract_uses_last_fence():
+    text = (
+        '```json\n{"genre": "题材", "open_questions": []}\n```\n'
+        '```json\n{"genre": "悬疑", "open_questions": []}\n```'
+    )
+    data, structured, err = apply_contract(text, SCHEMA)
+    assert structured is True and err is None
+    assert data["genre"] == "悬疑"
