@@ -172,6 +172,14 @@ pnpm build                                # 产物给后端同源托管
 - 产出设计文档 `docs/superpowers/specs/2026-10-13-storyforge-p1a-design.md`。
 - 待办：初始化 git 仓库。
 
+**2026-10-13 · P1a-T1：仓库骨架、配置与数据目录**
+
+- 建立后端骨架 `backend/`（uv 管理，Python 3.13），源码包 `app`，测试目录 `backend/tests/`（与 `app/` 平级，`uv run pytest` 可直接 import `app`）。
+- `app/config.py`：`%LOCALAPPDATA%\StoryForge` 数据目录唯一入口，`STORYFORGE_DATA_DIR` 环境变量可覆盖；提供 `data_dir/db_path/secrets_path/settings_path/project_assets_dir` 与 `load_settings/save_settings`。
+- `app/main.py`：FastAPI 装配入口，仅挂 `/api/health`。
+- 依赖锁定 fastapi>=0.143 / sqlalchemy>=2.1 / pydantic>=2.14 / httpx>=0.28 / jinja2>=3.1 / uvicorn>=0.54 / pytest>=9.1。
+- 测试：`backend/tests/test_config.py` 7 项全过；`uvicorn app.main:app` 起服务后 `/api/health` 返回 `{"status":"ok","data_dir":...}`。
+
 ---
 
 ## 8. 变更记录
