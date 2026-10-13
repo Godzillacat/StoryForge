@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.schemas import RunRequest
 from app.db.models import GenerationRun
 from app.db.session import get_session
+from app.services import run_service
 from app.services.runtime_service import RuntimeService
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
@@ -43,17 +43,12 @@ def list_runs(
     limit: int = Query(default=50, le=200),
     session: Session = Depends(get_session),
 ) -> list[dict]:
-    stmt = select(GenerationRun).order_by(GenerationRun.created_at.desc()).limit(limit)
-    if project_id:
-        stmt = stmt.where(GenerationRun.project_id == project_id)
-    if agent_id:
-        stmt = stmt.where(GenerationRun.agent_id == agent_id)
-    return [_run_out(r) for r in session.scalars(stmt)]
+    return [_run_out(r) for r in run_service.list_runs(session, project_id, agent_id, limit)]
 
 
 @router.get("/{run_id}")
 def get_run(run_id: str, session: Session = Depends(get_session)) -> dict:
-    run = session.get(GenerationRun, run_id)
+    run = run_service.get_run(session, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="运行记录不存在")
     return _run_out(run)

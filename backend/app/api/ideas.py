@@ -3,22 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api._serializers import _idea_out
 from app.db.session import get_session
-from app.services import idea_service, project_service
+from app.services import agent_service, idea_service, project_service
 from app.services.runtime_service import RuntimeService
 
 router = APIRouter(prefix="/api/projects", tags=["ideas"])
-
-
-def _idea_out(idea) -> dict:
-    return {
-        "id": idea.id,
-        "project_id": idea.project_id,
-        "raw_text": idea.raw_text,
-        "tags": idea.tags_json,
-        "parsed_json": idea.parsed_json,
-        "status": idea.status,
-    }
 
 
 def _run_out(run) -> dict:
@@ -52,7 +42,7 @@ def parse_idea(project_id: str, idea_id: str, session: Session = Depends(get_ses
         if not idea.raw_text.strip():
             raise HTTPException(status_code=400, detail="灵感原话为空，无法解析")
 
-    parser = _find_agent_by_task(session, "idea_parse")
+    parser = agent_service.find_by_task_type(session, "idea_parse")
     if parser is None:
         raise HTTPException(status_code=500, detail="找不到灵感解析智能体，请重新预置阵容")
 
@@ -69,13 +59,3 @@ def parse_idea(project_id: str, idea_id: str, session: Session = Depends(get_ses
         "parse_error": result.parse_error,
         "idea": _idea_out(idea_service.get_idea(session, idea_id)),
     }
-
-
-def _find_agent_by_task(session: Session, task_type: str):
-    from sqlalchemy import select
-
-    from app.db.models import Agent
-
-    return session.scalars(
-        select(Agent).where(Agent.task_type == task_type, Agent.enabled.is_(True))
-    ).first()

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import ToolTemplate
 from app.db.session import get_session
+from app.services import tool_service
 
 router = APIRouter(prefix="/api/tools", tags=["tools"])
 
@@ -14,9 +13,6 @@ router = APIRouter(prefix="/api/tools", tags=["tools"])
 def list_tools(
     category: str | None = None, session: Session = Depends(get_session)
 ) -> list[dict]:
-    stmt = select(ToolTemplate).order_by(ToolTemplate.category, ToolTemplate.key)
-    if category:
-        stmt = stmt.where(ToolTemplate.category == category)
     return [
         {
             "id": t.id,
@@ -28,5 +24,5 @@ def list_tools(
             "checklist": t.checklist_json,
             "builtin": t.builtin,
         }
-        for t in session.scalars(stmt)
+        for t in tool_service.list_tools(session, category)
     ]

@@ -12,6 +12,13 @@ def list_agents(session: Session) -> list[Agent]:
     return list(session.scalars(select(Agent).order_by(Agent.created_at)))
 
 
+def find_by_task_type(session: Session, task_type: str) -> Agent | None:
+    """取该任务类型下第一个启用的智能体。选题型属于业务判断，放服务层。"""
+    return session.scalars(
+        select(Agent).where(Agent.task_type == task_type, Agent.enabled.is_(True))
+    ).first()
+
+
 def get_version(session: Session, version_id: str) -> AgentVersion | None:
     return session.get(AgentVersion, version_id)
 

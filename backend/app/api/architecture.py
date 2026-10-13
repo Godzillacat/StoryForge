@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.schemas import ArchitectureAdopt
-from app.db.models import Agent
 from app.db.session import get_session
-from app.services import architecture_service
+from app.services import agent_service, architecture_service
 from app.services.runtime_service import RuntimeService
 
 router = APIRouter(prefix="/api/projects", tags=["architecture"])
@@ -24,9 +22,7 @@ def get_architecture(project_id: str, session: Session = Depends(get_session)) -
 
 @router.post("/{project_id}/architecture/recommend")
 def recommend(project_id: str, session: Session = Depends(get_session)) -> dict:
-    architect = session.scalars(
-        select(Agent).where(Agent.task_type == "architecture", Agent.enabled.is_(True))
-    ).first()
+    architect = agent_service.find_by_task_type(session, "architecture")
     if architect is None:
         raise HTTPException(status_code=500, detail="找不到架构师智能体，请重新预置阵容")
 

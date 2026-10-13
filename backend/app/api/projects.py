@@ -3,22 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api._serializers import _idea_out
 from app.api.schemas import IdeaCreate, ProjectCreate, ProjectUpdate
 from app.db.session import get_session
 from app.services import idea_service, project_service
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
-
-
-def _idea_out(idea) -> dict:
-    return {
-        "id": idea.id,
-        "project_id": idea.project_id,
-        "raw_text": idea.raw_text,
-        "tags": idea.tags_json,
-        "parsed_json": idea.parsed_json,
-        "status": idea.status,
-    }
 
 
 def _project_out(project) -> dict:
