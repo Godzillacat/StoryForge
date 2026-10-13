@@ -32,7 +32,7 @@ async def test_complete_returns_text_and_usage():
     assert result.partial is False and result.error is None
     assert captured["url"] == "https://api.example.com/v1/chat/completions"
     assert captured["auth"] == "Bearer sk-test"
-    assert '"model":"m1"' in captured["body"].replace("'", '"')
+    assert '"model":"m1"' in captured["body"]
 
 
 async def test_complete_missing_usage_falls_back_to_estimate():
