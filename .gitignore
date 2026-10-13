@@ -32,3 +32,6 @@ dist/
 .idea/
 *.swp
 .DS_Store
+
+# Claude Code 工作区（worktrees、本地设置）
+.claude/
