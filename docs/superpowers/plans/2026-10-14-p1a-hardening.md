@@ -259,19 +259,30 @@ git commit -m "feat(runtime): 由输出契约生成字段说明块"
 
 本文件已有 `FakeSource`、`_input(**overrides)`、`_client(handler)`、`_ok_handler(...)` 四个辅助件，直接复用。
 
-**先改一条会被这次改动打破的既有测试。** 文件末尾的 `test_rendered_prompt_reflects_context_and_template`（约第 92-95 行）断言：
+**先改两条会被这次改动打破的既有测试 —— 它们在两个不同的文件里，别只改一个。**
 
-```python
-    assert result.rendered_prompt == "解析这段灵感：能听见死者遗言的验尸官"
-```
+两处都是「渲染结果**等于**纯提示词」的等值断言；加了契约块之后必然失败（两处的 `output_schema` 都非空）。
 
-`_input()` 的默认 `output_schema` 是 `SCHEMA`（非空），所以加了契约块之后这条必然失败。把它改为只断言提示词本身仍在渲染结果里：
+`backend/tests/test_execute.py`，`test_rendered_prompt_reflects_context_and_template`（约第 92-95 行）：
 
 ```python
 async def test_rendered_prompt_reflects_context_and_template():
     source = FakeSource(raw_idea="能听见死者遗言的验尸官")
     result = await execute_run(_input(), source, _client(_ok_handler('{"genre":"悬疑"}')))
     assert result.rendered_prompt.startswith("解析这段灵感：能听见死者遗言的验尸官")
+```
+
+`backend/tests/test_runtime_service.py`，`test_execute_writes_generation_run`（约第 60 行），把
+
+```python
+    assert stored.rendered_prompt == "解析这段灵感：能听见死者遗言的验尸官"
+```
+
+改为
+
+```python
+    assert stored.rendered_prompt.startswith("解析这段灵感：能听见死者遗言的验尸官")
+    assert "【输出契约】" in stored.rendered_prompt
 ```
 
 **再加两条新测试**，追加到 `backend/tests/test_execute.py` 末尾：
@@ -724,9 +735,23 @@ DEFAULT_SETTINGS: dict = {
         result = _run_sync(execute_run, inp, source, self._resolve_client(self._resolve_timeout(binding)))
 ```
 
+**还要修一处测试补丁 —— 不修会打挂 `test_api.py` 里 5 条既有测试。**
+
+`backend/tests/test_api.py:177` 用单参 lambda 替换了 `_resolve_client`：
+
+```python
+    monkeypatch.setattr(RuntimeService, "_resolve_client", lambda self: fake)
+```
+
+`_resolve_client` 现在多了一个 `timeout` 参数，调用点会传两个实参，于是这个 lambda 会抛 `TypeError: <lambda>() takes 1 positional argument but 2 were given`。改为接收并忽略它（假传输层没有超时语义）：
+
+```python
+    monkeypatch.setattr(RuntimeService, "_resolve_client", lambda self, timeout: fake)
+```
+
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `uv run pytest tests/test_llm.py tests/test_runtime_service.py -v`
+Run: `uv run pytest tests/test_llm.py tests/test_runtime_service.py tests/test_api.py -v`
 Expected: 全部 PASS
 
 - [ ] **Step 5: Commit**
