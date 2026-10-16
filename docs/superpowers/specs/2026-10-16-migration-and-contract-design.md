@@ -87,11 +87,11 @@ CREATE TABLE IF NOT EXISTS schema_migration (
 所以 `init_db()` 分两条路，**判据是「库里有没有业务表」**：
 
 ```
-无业务表（全新库） → create_all() → 盖章为 latest_version() → 结束
+无业务表（全新库） → 盖章为 latest_version() → create_all() → 结束
 有业务表（存量库） → run_migrations() → create_all()（建模型新加的表）
 ```
 
-「盖最新版本」不是偷懒：那张表是模型此刻的定义建出来的，它**确实**处于最新结构，把它当成「还没跑过任何迁移」才是错的。
+「盖最新版本」不是偷懒：这张库即将由当前模型建出，它**确实**处于最新结构，把它当成「还没跑过任何迁移」才是错的。
 
 ### 3.2 模块
 
@@ -130,12 +130,14 @@ def pending(applied: int) -> tuple[Migration, ...]: ...
 
 ```
 if is_fresh_database(engine):
-    Base.metadata.create_all(engine)   # 模型就是最新结构
-    stamp(latest_version(), "全新库")   # 所以不跑历史迁移
+    stamp(latest_version(), "全新库")   # 先盖章
+    Base.metadata.create_all(engine)   # 再建表：模型就是最新结构，所以不跑历史迁移
     return
 run_migrations(engine)                 # 存量库：盖章 → 备份 → 补步骤
 Base.metadata.create_all(engine)       # 再建模型新加的表（迁移不建表）
 ```
+
+**全新库这一支必须先盖章、再建表。** 反过来（先建表、后盖章）一旦崩在中间（进程被杀、磁盘满、盖章本身抛错），库里会剩下「表是最新结构、却没有迁移记录」：下次启动 `is_fresh_database` 判存量、盖基线 0，于是当 P1b-2 真加进第一条改表的迁移时，它会去对一张**已有该列**的表执行 `ALTER` —— 永久失败、应用拒绝启动，要人工介入作者的库。按上面的顺序崩在中间只留下「已盖最新版本、表可能不全」：下次启动判存量、`pending` 为空、`create_all` 补建缺表，能自愈。
 
 `is_fresh_database` 的判据：`sqlite_master` 里**没有业务表**（排除 `sqlite_%` 与 `schema_migration`）。
 
