@@ -144,7 +144,7 @@ Base.metadata.create_all(engine)       # 再建模型新加的表（迁移不建
 1. **建迁移表**（`CREATE TABLE IF NOT EXISTS`）。
 2. **读已执行版本**（`MAX(version)`）；**没有记录就盖基线 0**，记 `note = "基线（迁移框架引入时的库结构）"`。
 3. **有未执行的步骤时先备份**：把 `storyforge.db` 连同 `-wal` / `-shm` 复制到 `%LOCALAPPDATA%\StoryForge\backups\pre-migration-v<目标版本>-<时间戳>\`。**没有步骤要执行就不备份**（空跑不产生垃圾）。
-4. **按序执行**，每步一个事务（`engine.begin()`）：执行该步的全部语句，成功后插入 `schema_migration` 行。
+4. **按序执行**，每步一个事务：执行该步的全部语句，成功后插入 `schema_migration` 行。**但不能用 `engine.begin()`** —— SQLAlchemy 的 pysqlite 走 legacy 事务控制，真的 `BEGIN` 只在第一条 DML 之前发出，而**纯 DDL 在 autocommit 下直接执行**，于是 `engine.begin()` 的回滚回不到它；一步里多条语句、靠前的 DDL 成功而靠后的失败时（`ALTER TABLE ADD COLUMN` + `UPDATE` 回填就是最经典的形状），会留下「结构改了、版本没记」的半迁移状态，**下次启动在「表已存在」上永久失败，要人工介入作者的库**。所以自己开事务：`AUTOCOMMIT` 让 SQLAlchemy 不发它自己的 `BEGIN`，手写的 `BEGIN`/`COMMIT` 才能真正生效。
 
 ### 3.4 失败行为
 
