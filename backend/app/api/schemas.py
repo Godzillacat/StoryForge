@@ -96,3 +96,25 @@ class AgentUpdate(BaseModel):
 
 class ProviderTest(BaseModel):
     model: str | None = None
+
+
+class EntryCreate(BaseModel):
+    type: str
+    name: str = Field(min_length=1, max_length=200)
+    aliases: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    summary: str = ""
+    description: str = ""
+    hardness: str | None = None
+    source_run_id: str | None = None
+
+
+class EntryUpdate(BaseModel):
+    type: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    aliases: list[str] | None = None
+    tags: list[str] | None = None
+    summary: str | None = None
+    description: str | None = None
+    hardness: str | None = None
+    source_run_id: str | None = None
