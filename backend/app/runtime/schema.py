@@ -86,12 +86,19 @@ def _validate_node(value: Any, schema: dict, path: str, errors: list[str]) -> No
 
     if expected == "object" or isinstance(value, dict):
         properties = schema.get("properties", {})
-        for key in schema.get("required", []):
+        required = schema.get("required", [])
+        for key in required:
             if key not in value:
                 errors.append(f"{path} 缺少必填字段 {key}")
         for key, sub_schema in properties.items():
-            if key in value:
-                _validate_node(value[key], sub_schema, f"{path}.{key}", errors)
+            if key not in value:
+                continue
+            # 可选字段的显式 null 视同「没提供」：模型把「这项为空」写成 null
+            # 是常见形态，而契约里没有 nullable 的表达方式。**必填不在此列** ——
+            # 那里 null 是真的缺东西，仍要按类型报错。
+            if value[key] is None and key not in required:
+                continue
+            _validate_node(value[key], sub_schema, f"{path}.{key}", errors)
 
     if expected == "array" or isinstance(value, list):
         item_schema = schema.get("items")
