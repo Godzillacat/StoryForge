@@ -1068,7 +1068,7 @@ def test_deleting_an_entry_removes_it_from_relations_list(client):
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.db.models import Provider
+from app.db.models import AgentVersion, Provider
 from app.db.session import SessionLocal, init_db
 from app.main import app
 from app.services.seed_service import seed_agents, seed_tools
@@ -1092,13 +1092,34 @@ def client():
                 )
             )
             session.commit()
+        # 跑智能体同样需要智能体自身绑定了模型：运行时不再把服务商显示名
+        # 当模型 ID 回落，没绑就会在解析阶段报错。预置阵容出厂不带模型名，
+        # 由作者在工作室里指定 —— 这里替测试补上这个前置条件。
+        for version in session.scalars(select(AgentVersion)):
+            binding = dict(version.model_binding_json or {})
+            if not binding.get("model"):
+                version.model_binding_json = {**binding, "model": "test-model"}
+                session.commit()
     with TestClient(app) as c:
         yield c
 ```
 
+**这段必须与 `test_api.py` 里的原件逐字一致（包括上面那段绑定模型的循环）** —— 它是上一轮 P1a 收口时补的，因为运行时改成了「没绑模型就报错」。少抄它，`/parse` 与 `/runs` 的既有用例会当场变红。
+
 （`conftest.py` 顶部已有 `import pytest`；`from app.db.base import Base` 等既有导入不动。）
 
-**同时把 `backend/tests/test_api.py` 里那份删掉**（第 13-32 行的 `@pytest.fixture()` + `def client()`），并从该文件顶部删掉因此不再使用的导入：`TestClient`、`SessionLocal`、`init_db`、`seed_agents`、`seed_tools`、`Provider`、`select`。**注意** `httpx`、`HttpxChatClient` 与 `RuntimeService` 是 `_patch_client` 要用的，必须留着；`pytest` 也留着（该文件还有 `monkeypatch` 用例）。
+**同时把 `backend/tests/test_api.py` 里那份删掉**（`@pytest.fixture()` + `def client()` 整段），并删掉因此不再使用的导入：`TestClient`、`SessionLocal`、`init_db`、`seed_agents`、`seed_tools`、`Provider`、`AgentVersion`、`select`、`from app.main import app`，以及 **`pytest`**（搬走之后该文件再无 `@pytest.fixture`，而 `monkeypatch` 是夹具参数、不需要 import pytest）。
+
+该文件搬完后**只应剩三个导入**：`httpx`、`RuntimeService`（在 `_patch_client` 里局部导入）、`HttpxChatClient`（同样在 `_patch_client` 里）。实际留下的：
+
+```python
+import httpx
+import pytest
+
+from app.runtime.llm import HttpxChatClient
+```
+
+`pytest` 这一行此时已无人使用 —— 一并删掉。
 
 搬完先跑一次全量，确认既有测试没被打破：
 
