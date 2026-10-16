@@ -1002,7 +1002,54 @@ def test_deleting_an_entry_removes_it_from_relations_list(client):
     assert client.get(f"/api/projects/{project['id']}/relations").json() == []
 ```
 
-> 该文件只用 `client` 夹具（`test_api.py` 里那个已预置阵容与服务商、并建表的夹具），不要再请求 `session` 夹具 —— 两者各自重建表，混用会把数据冲掉。
+**先做一件事：把 `client` 夹具从 `test_api.py` 搬进 `conftest.py`。**
+
+它现在定义在 `backend/tests/test_api.py:13-32`，而 **pytest 的夹具不跨测试模块共享** —— 新建的 `test_world_api.py` 直接用它只会得到 `fixture 'client' not found`。搬进 `conftest.py` 是它本来就该在的地方。
+
+`backend/tests/conftest.py` 末尾追加（连同它需要的导入）：
+
+```python
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+
+from app.db.models import Provider
+from app.db.session import SessionLocal, init_db
+from app.main import app
+from app.services.seed_service import seed_agents, seed_tools
+
+
+@pytest.fixture()
+def client():
+    init_db()
+    with SessionLocal() as session:
+        seed_agents(session)
+        seed_tools(session)
+        # 跑智能体需要一家启用的服务商，这是产品行为不是测试特例。
+        # 这里补上前置条件：真实 HTTP 调用被 _patch_client 替换，密钥留空即可。
+        if session.scalars(select(Provider).where(Provider.enabled.is_(True))).first() is None:
+            session.add(
+                Provider(
+                    name="测试服务商",
+                    kind="custom",
+                    base_url="https://api.example.com/v1",
+                    enabled=True,
+                )
+            )
+            session.commit()
+    with TestClient(app) as c:
+        yield c
+```
+
+（`conftest.py` 顶部已有 `import pytest`；`from app.db.base import Base` 等既有导入不动。）
+
+**同时把 `backend/tests/test_api.py` 里那份删掉**（第 13-32 行的 `@pytest.fixture()` + `def client()`），并从该文件顶部删掉因此不再使用的导入：`TestClient`、`SessionLocal`、`init_db`、`seed_agents`、`seed_tools`、`Provider`、`select`。**注意** `httpx`、`HttpxChatClient` 与 `RuntimeService` 是 `_patch_client` 要用的，必须留着；`pytest` 也留着（该文件还有 `monkeypatch` 用例）。
+
+搬完先跑一次全量，确认既有测试没被打破：
+
+Run: `uv run pytest -q`
+Expected: 全绿（此时代码未变，只是夹具换了位置）
+
+**然后**，该文件只用 `client` 夹具，不要再请求 `session` 夹具 —— 两者各自重建表，混用会把数据冲掉。
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1036,8 +1083,8 @@ Expected: 全部 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/api/world.py backend/tests/test_world_api.py
-git commit -m "feat(world): 类型清单接口与世界观的 HTTP 层测试"
+git add backend/app/api/world.py backend/tests/test_world_api.py backend/tests/conftest.py backend/tests/test_api.py
+git commit -m "feat(world): 类型清单接口与世界观的 HTTP 层测试；client 夹具移入 conftest"
 ```
 
 ---
@@ -2573,7 +2620,9 @@ cd frontend && pnpm dev
 
 - [ ] **Step 3: 记录结论**
 
-把复验结果（每次真实调用的耗时与 token、是否出现「未结构化」、候选质量、发现的新问题）写进 `CLAUDE.md` §7 的新阶段记录。若八步全过，把路线图的 P1b-1 标为完成。
+把复验结果（每次真实调用的耗时与 token、是否出现「未结构化」、候选质量、发现的新问题）写进 `CLAUDE.md` §7，**新增一条阶段记录**。
+
+**只写这条记录**：路线图表与 §8 变更记录由 Task 14 负责，不要在这里一并改 —— 否则两个任务会改同一张表。
 
 - [ ] **Step 4: Commit**
 
