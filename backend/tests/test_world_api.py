@@ -83,11 +83,11 @@ def test_deleting_an_entry_removes_it_from_relations_list(client):
 
 CANDIDATES = (
     '{"entries": ['
-    '{"type": "faction", "name": "记忆交易局", "aliases": ["交易局"],'
+    '{"type": "势力", "name": "记忆交易局", "aliases": ["交易局"],'
     ' "summary": "管记忆买卖的机构", "description": "", "hardness": ""},'
     '{"type": "规则体系", "name": "记忆不可复活", "aliases": [],'
     ' "summary": "硬规则", "description": "", "hardness": "硬规则"},'
-    '{"type": "place", "name": "雾港旧城", "aliases": ["旧城"],'
+    '{"type": "地理", "name": "雾港旧城", "aliases": ["旧城"],'
     ' "summary": "故事发生的南方小城", "description": "", "hardness": ""}],'
     ' "open_questions": ["记忆交易合法吗？"]}'
 )
@@ -229,3 +229,33 @@ def test_adopting_a_candidate_records_its_source_run(client, monkeypatch):
 
     assert created["source_run_id"] == run_id
     assert created["type"] == "faction"
+
+
+def test_candidates_come_back_normalized(client, monkeypatch):
+    """模型按契约块里教它的中文值返回类型与硬度，归一化要在边界做一次。
+
+    否则界面拿「规则体系」去匹配英文键的下拉会落空：类型显示成第一个
+    选项，规则类的硬度控件也不出现 —— 而硬度正是提示词要求模型为规则
+    类填的那一项。
+    """
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _seed_slots(project["id"])
+    _patch_runtime(monkeypatch, CANDIDATES)
+
+    body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
+
+    assert [e["type"] for e in body["entries"]] == ["faction", "rule", "place"]
+    assert [e["hardness"] for e in body["entries"]] == [None, "hard", None]
+
+
+def test_an_unknown_type_is_left_as_is(client, monkeypatch):
+    """归一不了就原样留着：作者会在表单里看到它并改掉，采纳时才报可读错误 ——
+    整批候选不该因为一条怪类型而拿不到。"""
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _seed_slots(project["id"])
+    _patch_runtime(monkeypatch, CANDIDATES.replace("规则体系", "魔法体系"))
+
+    body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
+
+    assert body["structured"] is True
+    assert body["entries"][1]["type"] == "魔法体系"

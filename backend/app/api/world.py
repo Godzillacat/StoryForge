@@ -8,7 +8,12 @@ from app.api.schemas import EntryCreate, EntryUpdate, RelationCreate
 from app.db.session import get_session
 from app.services import agent_service, world_service
 from app.services.runtime_service import RuntimeService
-from app.world_types import ENTRY_TYPES, HARDNESS_LEVELS
+from app.world_types import (
+    ENTRY_TYPES,
+    HARDNESS_LEVELS,
+    normalize_hardness,
+    normalize_type,
+)
 
 router = APIRouter(prefix="/api", tags=["world"])
 
@@ -21,6 +26,31 @@ def list_entry_types() -> dict:
         "types": [{"key": k, "label": v} for k, v in ENTRY_TYPES.items()],
         "hardness": [{"key": k, "label": v} for k, v in HARDNESS_LEVELS.items()],
     }
+
+
+def _normalized_candidates(entries: list) -> list[dict]:
+    """把候选里的类型与硬度归一到英文键再交给前端。
+
+    模型看到的是契约块里的**中文值**（那是唯一能合法写进契约的东西），
+    所以它返回的是「规则体系」而不是 rule。落库时服务层会归一化，但界面
+    拿标签去匹配英文键的下拉会落空：类型显示成第一个选项，规则类的硬度
+    控件也不出现。在边界上归一一次，前端就不必再抄一遍映射 —— 而且这里
+    的映射是纯逻辑，能被 pytest 覆盖。
+    """
+    out: list[dict] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        normalized = dict(item)
+        try:
+            normalized["type"] = normalize_type(str(item.get("type", "")))
+        except ValueError:
+            # 归一不了就原样留着：作者在表单里看得见、改得掉，采纳时才报
+            # 可读错误 —— 不因为一条怪类型让整批候选拿不到。
+            pass
+        normalized["hardness"] = normalize_hardness(item.get("hardness"))
+        out.append(normalized)
+    return out
 
 
 def _reason(result) -> str | None:
@@ -68,7 +98,7 @@ def suggest_entries(project_id: str, session: Session = Depends(get_session)) ->
     parsed = result.parsed or {}
     return {
         "run": _run_out(run),
-        "entries": parsed.get("entries", []) if result.structured else [],
+        "entries": _normalized_candidates(parsed.get("entries", [])) if result.structured else [],
         "open_questions": parsed.get("open_questions", []) if result.structured else [],
         "structured": result.structured,
         "parse_error": _reason(result),
