@@ -64,7 +64,7 @@ export default function Models() {
       const updated = await api.updateProvider(editing.id, {
         name: editing.name.trim(),
         base_url: editing.base_url.trim(),
-        ...(editing.api_key ? { api_key: editing.api_key } : {}),
+        ...(editing.api_key.trim() ? { api_key: editing.api_key.trim() } : {}),
         enabled: editing.enabled,
       })
       setProviders((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
@@ -76,9 +76,11 @@ export default function Models() {
   }
 
   async function removeProvider(id: string) {
+    if (!window.confirm('删除这家服务商？本机保存的密钥会一并删除，且无法恢复。')) return
     try {
       await api.deleteProvider(id)
       setProviders((prev) => prev.filter((p) => p.id !== id))
+      if (editing?.id === id) setEditing(null)
       setNotice('已删除')
     } catch (error) {
       setNotice((error as Error).message)
@@ -87,6 +89,11 @@ export default function Models() {
 
   async function saveTimeout(value: number) {
     if (!settings) return
+    // 清空输入框会让 Number('') 变成 0，而 0 会把之后每一次模型调用都立刻掐断。
+    if (!Number.isFinite(value) || value <= 0) {
+      setNotice('请求超时必须填大于 0 的秒数')
+      return
+    }
     try {
       setSettings(await api.updateSettings({ request_timeout_seconds: value }))
     } catch (error) {
@@ -240,9 +247,12 @@ export default function Models() {
         <div className="flex items-center gap-3">
           <input
             type="number"
+            // key 让服务端值变化时重挂载：作者输入过程中不会被回写打断，
+            // 保存挪到 onBlur 后也不会每敲一个数字就发一次 PUT。
+            key={settings?.request_timeout_seconds ?? 300}
+            defaultValue={settings?.request_timeout_seconds ?? 300}
             className="w-32 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            value={settings?.request_timeout_seconds ?? 300}
-            onChange={(e) => saveTimeout(Number(e.target.value))}
+            onBlur={(e) => saveTimeout(Number(e.target.value))}
           />
           <span className="text-slate-500">
             秒。重推理模型在长任务上可能跑两分钟以上，调大可避免半途被掐断。
