@@ -3,9 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.api._serializers import _run_out
 from app.api.schemas import EntryCreate, EntryUpdate, RelationCreate
 from app.db.session import get_session
-from app.services import world_service
+from app.services import agent_service, world_service
+from app.services.runtime_service import RuntimeService
 from app.world_types import ENTRY_TYPES, HARDNESS_LEVELS
 
 router = APIRouter(prefix="/api", tags=["world"])
@@ -18,6 +20,55 @@ def list_entry_types() -> dict:
     return {
         "types": [{"key": k, "label": v} for k, v in ENTRY_TYPES.items()],
         "hardness": [{"key": k, "label": v} for k, v in HARDNESS_LEVELS.items()],
+    }
+
+
+def _reason(result) -> str | None:
+    """未结构化时给作者一句**能照做**的话。
+
+    契约失败有现成原因，直接用。但另外两种失败只有运行记录里的技术错误：
+    - `template` 是上游还没做（提示词要的槽位取不到值），作者该去补前置；
+    - 其余（网络、超时、鉴权）是调用本身出了问题。
+    两者都不该被界面显示成「模型没按契约返回」—— 那可能是句假话，
+    而且作者照它排查会找到错的方向。
+    """
+    if result.structured:
+        return None
+    if result.parse_error:
+        return result.parse_error
+    error = result.error or {}
+    if error.get("kind") == "template":
+        return (
+            "这个智能体要吃灵感解析卡与故事圣经：先去「灵感与解析」跑一次解析，"
+            "再到「架构推荐」采纳一套结构，然后回来生成设定。"
+        )
+    return error.get("message") or "这次运行没有得到可用的返回"
+
+
+@router.post("/projects/{project_id}/entries/suggest")
+def suggest_entries(project_id: str, session: Session = Depends(get_session)) -> dict:
+    """跑一次世界观构建师，返回候选供作者逐条审。
+
+    候选只落在运行记录里，不写 setting_entry —— 只有作者采纳才写（D-04）。
+    """
+    builder = agent_service.find_by_task_type(session, "worldbuilding")
+    if builder is None:
+        raise HTTPException(status_code=500, detail="找不到世界观构建师，请重新预置阵容")
+
+    service = RuntimeService(session)
+    try:
+        run, result = service.execute(project_id, builder.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    parsed = result.parsed or {}
+    return {
+        "run": _run_out(run),
+        "entries": parsed.get("entries", []) if result.structured else [],
+        "open_questions": parsed.get("open_questions", []) if result.structured else [],
+        "structured": result.structured,
+        "parse_error": _reason(result),
+        "raw_text": result.raw_output,
     }
 
 

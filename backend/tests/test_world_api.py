@@ -79,3 +79,149 @@ def test_deleting_an_entry_removes_it_from_relations_list(client):
     client.delete(f"/api/entries/{a['id']}")
 
     assert client.get(f"/api/projects/{project['id']}/relations").json() == []
+
+
+CANDIDATES = (
+    '{"entries": ['
+    '{"type": "faction", "name": "记忆交易局", "aliases": ["交易局"],'
+    ' "summary": "管记忆买卖的机构", "description": "", "hardness": ""},'
+    '{"type": "规则体系", "name": "记忆不可复活", "aliases": [],'
+    ' "summary": "硬规则", "description": "", "hardness": "硬规则"},'
+    '{"type": "place", "name": "雾港旧城", "aliases": ["旧城"],'
+    ' "summary": "故事发生的南方小城", "description": "", "hardness": ""}],'
+    ' "open_questions": ["记忆交易合法吗？"]}'
+)
+# 注意是 **3** 条：契约里 entries 有 minItems: 3，只给 2 条连校验都过不去。
+
+
+def _seed_slots(project_id: str) -> None:
+    """替测试补上世界观构建师要吃的前置条件：已解析的灵感与已采纳的架构。
+
+    它的提示词引用了 parsed_idea 与 story_bible 两个槽位。槽位取不到值时
+    build_context 会把它丢掉、render 随即抛 MissingVariableError，整个 run
+    变成 template 错误 —— 这是产品行为（上游没做就别跑下游），不是测试
+    特例，所以在这里补前置。与 client 夹具里补服务商、补模型绑定同一条路子。
+    """
+    from app.db.models import Architecture, Idea
+    from app.db.session import SessionLocal
+
+    with SessionLocal() as session:
+        idea = Idea(project_id=project_id, raw_text="能听见死者遗言的验尸官")
+        idea.parsed_json = {
+            "genre": "悬疑",
+            "premise": "记忆可以被买卖的南方小城",
+            "protagonist_desire": "查清那段声音的来处",
+            "conflict_source": "个人真相与记忆交易秩序对撞",
+            "open_questions": [],
+        }
+        session.add(idea)
+        session.add(
+            Architecture(
+                project_id=project_id,
+                logline="记忆清洁工在待销毁档案里听见自己的声音",
+                theme="不被删除的记忆才证明一个人活过",
+            )
+        )
+        session.commit()
+
+
+def _patch_runtime(monkeypatch, content: str) -> None:
+    """把运行时用的 HTTP 客户端换成固定响应的假实现。
+
+    替换的是 RuntimeService._resolve_client 而不是 HttpxChatClient：
+    后者在模块 import 时已被绑定，patch 模块属性不会影响已绑定的名字。
+    """
+    import httpx
+
+    from app.runtime.llm import HttpxChatClient
+    from app.services.runtime_service import RuntimeService
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": content}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 30, "completion_tokens": 15},
+            },
+        )
+
+    fake = HttpxChatClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(RuntimeService, "_resolve_client", lambda self, timeout: fake)
+
+
+def test_suggest_returns_structured_candidates(client, monkeypatch):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _seed_slots(project["id"])
+    _patch_runtime(monkeypatch, CANDIDATES)
+
+    body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
+
+    assert body["structured"] is True
+    assert body["parse_error"] is None
+    assert [e["name"] for e in body["entries"]] == ["记忆交易局", "记忆不可复活", "雾港旧城"]
+    assert body["open_questions"] == ["记忆交易合法吗？"]
+    assert body["run"]["rendered_prompt"]  # 调试台要能看完整链路
+
+
+def test_suggest_degrades_without_losing_the_raw_text(client, monkeypatch):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _seed_slots(project["id"])
+    _patch_runtime(monkeypatch, "模型没按格式返回")
+
+    body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
+
+    assert body["structured"] is False
+    assert body["entries"] == []
+    assert body["parse_error"]
+    assert body["raw_text"] == "模型没按格式返回"
+
+
+def test_suggest_on_a_bare_project_tells_the_author_what_to_do_first(client, monkeypatch):
+    """没解析过灵感、没采纳过架构时，世界观构建师的两个槽位是空的。
+
+    这时不该给作者一句「模型没按契约返回」—— 模型根本没被调用，
+    那是句假话，而且作者照它排查会找到错的方向。要给一句能照做的。
+    """
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _patch_runtime(monkeypatch, CANDIDATES)
+
+    body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
+
+    assert body["structured"] is False
+    assert body["entries"] == []
+    assert "灵感" in body["parse_error"]
+    assert "架构" in body["parse_error"]
+
+
+def test_suggest_writes_no_entries_until_adopted(client, monkeypatch):
+    """候选只落在运行记录里（D-04）—— 跑一次不该往表里写任何东西。"""
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _seed_slots(project["id"])
+    _patch_runtime(monkeypatch, CANDIDATES)
+
+    client.post(f"/api/projects/{project['id']}/entries/suggest")
+
+    assert client.get(f"/api/projects/{project['id']}/entries").json() == []
+
+
+def test_adopting_a_candidate_records_its_source_run(client, monkeypatch):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _seed_slots(project["id"])
+    _patch_runtime(monkeypatch, CANDIDATES)
+    body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
+    run_id = body["run"]["id"]
+    candidate = body["entries"][0]
+
+    created = client.post(
+        f"/api/projects/{project['id']}/entries",
+        json={
+            "type": candidate["type"],
+            "name": candidate["name"],
+            "aliases": candidate["aliases"],
+            "summary": candidate["summary"],
+            "source_run_id": run_id,
+        },
+    ).json()
+
+    assert created["source_run_id"] == run_id
+    assert created["type"] == "faction"
