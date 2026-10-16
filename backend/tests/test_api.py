@@ -3,7 +3,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.db.models import Provider
+from app.db.models import AgentVersion, Provider
 from app.db.session import SessionLocal, init_db
 from app.main import app
 from app.runtime.llm import HttpxChatClient
@@ -28,6 +28,14 @@ def client():
                 )
             )
             session.commit()
+        # 跑智能体同样需要智能体自身绑定了模型：运行时不再把服务商显示名
+        # 当模型 ID 回落，没绑就会在解析阶段报错。预置阵容出厂不带模型名，
+        # 由作者在工作室里指定 —— 这里替测试补上这个前置条件。
+        for version in session.scalars(select(AgentVersion)):
+            binding = dict(version.model_binding_json or {})
+            if not binding.get("model"):
+                version.model_binding_json = {**binding, "model": "test-model"}
+                session.commit()
     with TestClient(app) as c:
         yield c
 
@@ -174,4 +182,69 @@ def _patch_client(monkeypatch, content: str) -> None:
         )
 
     fake = HttpxChatClient(transport=httpx.MockTransport(handler))
-    monkeypatch.setattr(RuntimeService, "_resolve_client", lambda self: fake)
+    monkeypatch.setattr(RuntimeService, "_resolve_client", lambda self, timeout: fake)
+
+
+def test_patch_agent_updates_agent_level_fields(client):
+    agent = client.get("/api/agents").json()[0]
+
+    response = client.patch(
+        f"/api/agents/{agent['id']}",
+        json={"role_label": "解析官", "color": "#ff0000", "enabled": False},
+    )
+
+    assert response.status_code == 200
+    updated = response.json()
+    assert updated["role_label"] == "解析官"
+    assert updated["color"] == "#ff0000"
+    assert updated["enabled"] is False
+    assert updated["name"] == agent["name"]  # 没传的字段不动
+    assert updated["task_type"] == agent["task_type"]
+    # 改 agent 级字段不该产生新版本
+    assert updated["current_version"]["version_no"] == agent["current_version"]["version_no"]
+
+
+def test_patch_unknown_agent_is_404(client):
+    assert client.patch("/api/agents/nope", json={"name": "x"}).status_code == 404
+
+
+def test_slots_endpoint_reflects_the_registry(client):
+    from app.runtime.context import SLOT_REGISTRY
+
+    payload = client.get("/api/slots").json()
+
+    assert {s["key"] for s in payload} == set(SLOT_REGISTRY)
+    assert payload == sorted(payload, key=lambda s: -s["priority"])
+    by_key = {s["key"]: s for s in payload}
+    assert by_key["raw_idea"]["label"] == SLOT_REGISTRY["raw_idea"].label
+    assert by_key["raw_idea"]["over_budget"] == "drop"
+
+
+def test_explicit_null_output_schema_clears_it(client):
+    """显式传 null 表示「不要契约」，不能被当成「未提供」而继承上一版。
+
+    工作室页留空输出契约文本框时发的就是 null；若后端把它丢掉，作者
+    清空契约后新版本仍带着旧契约，而界面写着「留空表示不做结构化校验」。
+    """
+    agent = client.get("/api/agents").json()[0]
+    assert agent["current_version"]["output_schema_json"] is not None
+
+    created = client.post(
+        f"/api/agents/{agent['id']}/versions",
+        json={"output_schema_json": None, "note": "清空契约"},
+    ).json()
+
+    assert created["output_schema_json"] is None
+
+
+def test_omitted_version_field_still_inherits(client):
+    """没传的字段仍要继承 —— 别把「未提供」也一起清空了。"""
+    agent = client.get("/api/agents").json()[0]
+
+    created = client.post(
+        f"/api/agents/{agent['id']}/versions",
+        json={"note": "只改备注"},
+    ).json()
+
+    assert created["output_schema_json"] == agent["current_version"]["output_schema_json"]
+    assert created["context_slots_json"] == agent["current_version"]["context_slots_json"]

@@ -106,3 +106,27 @@ async def test_stream_failure_preserves_content_already_received():
             chunks.append(chunk)
     assert chunks == ["你", "好"]
     assert exc.value.partial_text == "你好"
+
+
+import httpx
+import pytest
+
+from app.runtime.llm import ChatConfig, ChatFailure, HttpxChatClient
+
+
+async def test_timeout_message_carries_the_limit():
+    """httpx 超时异常的 str() 常为空串，文案必须自己带上限值，
+    否则界面上显示的是「请求超时：」后面什么都没有。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("", request=request)
+
+    client = HttpxChatClient(transport=httpx.MockTransport(handler), timeout=275.0)
+    with pytest.raises(ChatFailure) as excinfo:
+        await client.complete(
+            ChatConfig(base_url="http://x/v1", api_key="k", model="m"), [], {}
+        )
+
+    assert excinfo.value.error.kind == "timeout"
+    assert "275" in excinfo.value.error.message
+    assert not excinfo.value.error.message.endswith("：")

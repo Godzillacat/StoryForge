@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.schemas import VersionCreate
+from app.api.schemas import AgentUpdate, VersionCreate
 from app.db.session import get_session
 from app.services import agent_service
 
@@ -50,6 +50,24 @@ def list_agents(session: Session = Depends(get_session)) -> list[dict]:
     return out
 
 
+@router.patch("/{agent_id}")
+def update_agent(
+    agent_id: str, payload: AgentUpdate, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        agent = agent_service.update_agent(
+            session, agent_id, **payload.model_dump(exclude_none=True)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    version = (
+        agent_service.get_version(session, agent.current_version_id)
+        if agent.current_version_id
+        else None
+    )
+    return _agent_out(agent, version)
+
+
 @router.get("/{agent_id}/versions")
 def list_versions(agent_id: str, session: Session = Depends(get_session)) -> list[dict]:
     return [_version_out(v) for v in agent_service.list_versions(session, agent_id)]
@@ -59,7 +77,7 @@ def list_versions(agent_id: str, session: Session = Depends(get_session)) -> lis
 def create_version(agent_id: str, payload: VersionCreate, session: Session = Depends(get_session)) -> dict:
     try:
         version = agent_service.create_version(
-            session, agent_id, **payload.model_dump(exclude_none=True)
+            session, agent_id, **payload.model_dump(exclude_unset=True)
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -18,11 +18,22 @@ class RuntimeService:
         self._session = session
         self._client = client
 
-    def _resolve_client(self) -> ChatClient:
-        """单独成一个方法，测试可以替换它以注入假传输层。"""
-        if self._client is None:
-            self._client = HttpxChatClient()
-        return self._client
+    def _resolve_client(self, timeout: float) -> ChatClient:
+        """单独成一个方法，测试可以替换它以注入假传输层。
+
+        不缓存默认客户端：超时是逐次运行解析出来的，缓存会让第一次的值
+        粘住后续所有调用。
+        """
+        if self._client is not None:
+            return self._client
+        return HttpxChatClient(timeout=timeout)
+
+    def _resolve_timeout(self, binding: dict) -> float:
+        """超时三层解析：角色卡 → 全局设置 → 默认。让慢模型可被单独放宽。"""
+        agent_level = binding.get("timeout_seconds")
+        if agent_level:
+            return float(agent_level)
+        return float(config.load_settings().get("request_timeout_seconds", 300))
 
     def resolve_provider(
         self, version: AgentVersion
@@ -64,13 +75,21 @@ class RuntimeService:
         binding = version.model_binding_json or {}
         settings = config.load_settings()
 
+        # 不要回落到 provider.name —— 那是服务商的显示名，不是模型 ID，
+        # 发出去必然被拒，而错误信息会把作者引到错误的方向。
+        model = binding.get("model") or settings.get("default_model")
+        if not model:
+            raise ValueError(
+                f"智能体「{agent.name}」还没有绑定模型，请先在「智能体工作室」为它指定一个"
+            )
+
         source = DbSlotSource(self._session, project_id, extra_slots=extra)
         inp = ExecuteInput(
             project_id=project_id,
             agent_id=agent.id,
             version_id=version.id,
             provider_id=provider.id,
-            model=binding.get("model") or settings.get("default_model") or provider.name,
+            model=model,
             base_url=base_url,
             api_key=api_key,
             params={**settings.get("default_params", {}), **(binding.get("params") or {})},
@@ -81,7 +100,7 @@ class RuntimeService:
             prices=prices,
         )
 
-        result = _run_sync(execute_run, inp, source, self._resolve_client())
+        result = _run_sync(execute_run, inp, source, self._resolve_client(self._resolve_timeout(binding)))
 
         run = GenerationRun(
             project_id=project_id,

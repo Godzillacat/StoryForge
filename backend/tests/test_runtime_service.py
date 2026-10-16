@@ -40,6 +40,9 @@ def _seed(session, client_handler=None):
         system_prompt="解析这段灵感：{{ raw_idea }}",
         context_slots_json=["raw_idea"],
         output_schema_json=ANALYSIS_SCHEMA,
+        # 运行的前置条件：没有绑定模型的智能体在解析阶段就会被拦下，
+        # 不再回落到服务商的显示名。
+        model_binding_json={"model": "test-model"},
     )
     session.add(version)
     session.commit()
@@ -57,7 +60,8 @@ def test_execute_writes_generation_run(session):
 
     assert result.status == "ok"
     stored = session.get(GenerationRun, run.id)
-    assert stored.rendered_prompt == "解析这段灵感：能听见死者遗言的验尸官"
+    assert stored.rendered_prompt.startswith("解析这段灵感：能听见死者遗言的验尸官")
+    assert "【输出契约】" in stored.rendered_prompt
     assert stored.raw_output == '{"genre": "悬疑"}'
     assert stored.parsed_json == {"genre": "悬疑"}
     assert stored.structured is True
@@ -122,3 +126,36 @@ def test_execute_persists_parse_error_reason(session):
     assert stored.structured is False
     assert stored.parse_error == result.parse_error
     assert "genre" in stored.parse_error
+
+
+def test_timeout_falls_back_to_global_setting(session, monkeypatch):
+    from app import config
+    from app.services.runtime_service import RuntimeService
+
+    config.save_settings({"request_timeout_seconds": 456})
+    service = RuntimeService(session)
+    assert service._resolve_timeout({}) == 456.0
+
+
+def test_agent_level_timeout_wins(session):
+    from app.services.runtime_service import RuntimeService
+
+    service = RuntimeService(session)
+    assert service._resolve_timeout({"timeout_seconds": 90}) == 90.0
+
+
+def test_unbound_model_fails_with_a_readable_reason(session):
+    """没绑模型时必须报错，不能把服务商显示名当模型 ID 发出去。
+
+    这条路径不联网：模型解析在调用客户端之前完成。
+    """
+    project, _provider, agent, version = _seed(session)
+    version.model_binding_json = {}
+    session.commit()
+
+    service = RuntimeService(session)
+
+    with pytest.raises(ValueError) as excinfo:
+        service.execute(project.id, agent.id)
+
+    assert "绑定模型" in str(excinfo.value)

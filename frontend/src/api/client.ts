@@ -41,6 +41,13 @@ export const api = {
     }),
 
   listAgents: () => request<Agent[]>('/api/agents'),
+  updateAgent: (agentId: string, body: Record<string, unknown>) =>
+    request<Agent>(`/api/agents/${agentId}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  listSlots: () => request<SlotSpec[]>('/api/slots'),
   listVersions: (agentId: string) => request<AgentVersion[]>(`/api/agents/${agentId}/versions`),
   createVersion: (agentId: string, body: Record<string, unknown>) =>
     request<AgentVersion>(`/api/agents/${agentId}/versions`, {
@@ -69,8 +76,19 @@ export const api = {
       headers: JSON_HEADERS,
       body: JSON.stringify(body),
     }),
-  testProvider: (id: string) =>
-    request<{ ok: boolean; message: string }>(`/api/providers/${id}/test`, { method: 'POST' }),
+  testProvider: (id: string, model?: string) =>
+    request<{ ok: boolean; message: string }>(`/api/providers/${id}/test`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ model: model ?? null }),
+    }),
+  updateProvider: (id: string, body: Record<string, unknown>) =>
+    request<ProviderView>(`/api/providers/${id}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  deleteProvider: (id: string) => request<void>(`/api/providers/${id}`, { method: 'DELETE' }),
 
   getSettings: () => request<Settings>('/api/settings'),
   updateSettings: (values: Record<string, unknown>) =>
@@ -222,6 +240,7 @@ export interface Settings {
   default_params: { temperature: number; max_tokens: number }
   model_routing: Record<string, string>
   budget_alert: number | null
+  request_timeout_seconds: number
 }
 
 export interface CostSummary {
@@ -229,4 +248,11 @@ export interface CostSummary {
   prompt_tokens: number
   completion_tokens: number
   cost_estimate: number
+}
+
+export interface SlotSpec {
+  key: string
+  label: string
+  priority: number
+  over_budget: 'never' | 'summarize' | 'drop'
 }

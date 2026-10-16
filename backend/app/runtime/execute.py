@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.runtime.context import SlotSource, build_context
+from app.runtime.contract import describe_contract
 from app.runtime.llm import ChatClient, ChatConfig, ChatFailure
 from app.runtime.pricing import compute_cost, estimate_tokens
 from app.runtime.render import MissingVariableError, render
@@ -86,6 +87,12 @@ async def execute_run(inp: ExecuteInput, source: SlotSource, client: ChatClient)
         rendered_prompt = render(inp.system_prompt, bundle.contents)
     except MissingVariableError as exc:
         return _failure(inp, started, str(exc), kind="template", trimmed=bundle.trimmed)
+
+    # 契约说明块在渲染之后追加：块里没有模板变量，而落库的 rendered_prompt
+    # 必须是真正发出去的那一份，调试台才对得上（D-03）。
+    contract_block = describe_contract(inp.output_schema)
+    if contract_block:
+        rendered_prompt = f"{rendered_prompt}\n\n{contract_block}"
 
     messages = [{"role": "user", "content": rendered_prompt}]
     config = ChatConfig(base_url=inp.base_url, api_key=inp.api_key, model=inp.model)

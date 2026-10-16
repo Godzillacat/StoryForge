@@ -14,6 +14,8 @@ DEFAULT_SETTINGS: dict = {
     "default_params": {"temperature": 0.7, "max_tokens": 4096},
     "model_routing": {},
     "budget_alert": None,
+    # 重推理模型在长任务上实测需要 139.5 秒，写死 120 秒会让架构推荐必然失败。
+    "request_timeout_seconds": 300,
 }
 
 

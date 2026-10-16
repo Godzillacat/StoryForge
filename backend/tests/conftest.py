@@ -30,3 +30,7 @@ def session():
     Base.metadata.create_all(db_session.engine)
     with db_session.SessionLocal() as s:
         yield s
+    # 用例结束同样清表：否则最后一个用例写下的行会留到「不用本 fixture 的
+    # 用例」（如 test_api 的 client，它只在既有库里补种子）—— 那类用例会
+    # 读到上一文件遗留的同任务类型智能体，测出来的就不是它们自己的行为。
+    Base.metadata.drop_all(db_session.engine)

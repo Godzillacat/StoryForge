@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -92,7 +94,7 @@ async def test_successful_run_is_fully_recorded():
 async def test_rendered_prompt_reflects_context_and_template():
     source = FakeSource(raw_idea="能听见死者遗言的验尸官")
     result = await execute_run(_input(), source, _client(_ok_handler('{"genre":"悬疑"}')))
-    assert result.rendered_prompt == "解析这段灵感：能听见死者遗言的验尸官"
+    assert result.rendered_prompt.startswith("解析这段灵感：能听见死者遗言的验尸官")
 
 
 async def test_unstructured_output_degrades_without_error_status():
@@ -136,3 +138,40 @@ async def test_missing_template_variable_is_reported_as_error():
     result = await execute_run(_input(), source, _client(_ok_handler("{}")))
     assert result.status == "error"
     assert "raw_idea" in (result.error or {}).get("message", "")
+
+
+async def test_contract_block_is_appended_to_the_sent_prompt():
+    """契约说明块必须真的发出去，且落库的 rendered_prompt 就是发出那份（D-03）。"""
+    sent: dict = {}
+
+    def handler(request):
+        sent["body"] = json.loads(request.read().decode())
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            },
+        )
+
+    schema = {
+        "type": "object",
+        "required": ["genre"],
+        "properties": {"genre": {"type": "string", "title": "题材"}},
+    }
+    source = FakeSource(raw_idea="灵感")
+    result = await execute_run(_input(output_schema=schema), source, _client(handler))
+
+    assert result.rendered_prompt.startswith("解析这段灵感：灵感")
+    assert "- genre（题材）：字符串，必填" in result.rendered_prompt
+    # 落库的必须与发出去的一字不差 —— 用解析后的 JSON 比，不能拿原始 body 做子串匹配
+    # （body 里的换行是转义过的 \n，跟真字符串对不上）。
+    assert sent["body"]["messages"][0]["content"] == result.rendered_prompt
+
+
+async def test_no_contract_block_when_schema_is_absent():
+    source = FakeSource(raw_idea="灵感")
+    result = await execute_run(_input(output_schema=None), source, _client(_ok_handler("{}")))
+
+    assert result.rendered_prompt == "解析这段灵感：灵感"
+    assert "【输出契约】" not in result.rendered_prompt

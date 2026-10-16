@@ -23,16 +23,16 @@ IDEA_PARSE_SCHEMA = {
     "type": "object",
     "required": ["genre", "premise", "protagonist_desire", "conflict_source", "open_questions"],
     "properties": {
-        "genre": {"type": "string"},
-        "sub_genre": {"type": "string"},
-        "premise": {"type": "string"},
-        "protagonist_desire": {"type": "string"},
-        "conflict_source": {"type": "string"},
-        "emotional_core": {"type": "string"},
-        "tone": {"type": "string"},
-        "length_expectation": {"type": "string"},
-        "comparable_works": {"type": "array", "items": {"type": "string"}},
-        "open_questions": {"type": "array", "items": {"type": "string"}},
+        "genre": {"type": "string", "title": "题材"},
+        "sub_genre": {"type": "string", "title": "子类型"},
+        "premise": {"type": "string", "title": "一句话前提"},
+        "protagonist_desire": {"type": "string", "title": "主角欲望"},
+        "conflict_source": {"type": "string", "title": "核心冲突源"},
+        "emotional_core": {"type": "string", "title": "情感内核"},
+        "tone": {"type": "string", "title": "调性"},
+        "length_expectation": {"type": "string", "title": "篇幅预期"},
+        "comparable_works": {"type": "array", "items": {"type": "string"}, "title": "可能参考坐标"},
+        "open_questions": {"type": "array", "items": {"type": "string"}, "title": "它没把握的问题"},
     },
 }
 
@@ -43,49 +43,53 @@ ARCHITECTURE_SCHEMA = {
         "options": {
             "type": "array",
             "minItems": 2,
+            "title": "候选方案",
             "items": {
                 "type": "object",
                 "required": ["tool", "reason", "fit_score", "risks"],
                 "properties": {
-                    "tool": {"type": "string"},
-                    "reason": {"type": "string"},
-                    "fit_score": {"type": "number"},
-                    "risks": {"type": "array", "items": {"type": "string"}},
-                    "length_plan": {"type": "string"},
-                    "rhythm_shape": {"type": "string"},
+                    "tool": {"type": "string", "title": "结构名"},
+                    "reason": {"type": "string", "title": "适配理由"},
+                    "fit_score": {"type": "number", "title": "适配度"},
+                    "risks": {"type": "array", "items": {"type": "string"}, "title": "风险"},
+                    "length_plan": {"type": "string", "title": "篇幅分配"},
+                    "rhythm_shape": {"type": "string", "title": "节奏形态"},
                 },
             },
         },
         "story_bible_v0": {
             "type": "object",
+            "title": "故事圣经 v0",
             "properties": {
-                "logline": {"type": "string"},
-                "theme": {"type": "string"},
-                "premise": {"type": "string"},
+                "logline": {"type": "string", "title": "一句话故事"},
+                "theme": {"type": "string", "title": "主题句"},
+                "premise": {"type": "string", "title": "前提"},
                 "acts": {
                     "type": "array",
+                    "title": "幕骨架",
                     "items": {
                         "type": "object",
                         "required": ["name"],
                         "properties": {
-                            "name": {"type": "string"},
-                            "purpose": {"type": "string"},
-                            "target_word_ratio": {"type": "number"},
+                            "name": {"type": "string", "title": "幕名"},
+                            "purpose": {"type": "string", "title": "这一幕要做什么"},
+                            "target_word_ratio": {"type": "number", "title": "篇幅占比"},
                         },
                     },
                 },
                 "main_characters": {
                     "type": "array",
+                    "title": "主要人物",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "name": {"type": "string"},
-                            "role": {"type": "string"},
-                            "desire": {"type": "string"},
+                            "name": {"type": "string", "title": "人物名"},
+                            "role": {"type": "string", "title": "定位"},
+                            "desire": {"type": "string", "title": "他/她想要什么"},
                         },
                     },
                 },
-                "ending_direction": {"type": "string"},
+                "ending_direction": {"type": "string", "title": "结局方向"},
             },
         },
     },
@@ -97,14 +101,12 @@ IDEA_PARSER_PROMPT = """你是长篇小说灵感解析师，服务对象是作�
 {{ raw_idea }}
 
 要求：
-1. 逐项填写解析卡：题材、子类型、一句话前提、主角欲望、核心冲突源、情感内核、调性、篇幅预期、可能参考坐标；
+1. 逐项填写解析卡，字段的键名与含义见下方【输出契约】；
 2. 主角欲望要写成「他/她想要什么」，不是「他/她是什么人」；
 3. 核心冲突源要指出对撞的两股力量，而不是罗列敌人；
 4. 可能参考坐标只写气质相近的作品，不写抄袭对象；
-5. 你没把握的地方一律写进 open_questions 向作者提问，不许编造设定填空；
-6. 不要改写作者的原话，也不要在返回里复述它。
-
-输出：符合解析卡 schema 的 JSON。"""
+5. 你没把握的地方一律写进「它没把握的问题」这一项，向作者提问，不许编造设定填空；
+6. 不要改写作者的原话，也不要在返回里复述它。"""
 
 ARCHITECT_PROMPT = """你是长篇小说结构顾问，服务对象是作者。你的产出是候选方案加理由，不是最终决定。
 
@@ -118,15 +120,13 @@ ARCHITECT_PROMPT = """你是长篇小说结构顾问，服务对象是作者。�
 {{ tool_library }}
 
 要求：
-1. 给出 2–3 套适配结构，每套必须引用解析卡中的具体要素说明适配理由，不许泛泛而谈「符合三幕剧」；
-2. 每套写明适配度（0–1 的小数）、风险、篇幅分配与节奏形态；
-3. 明确写出每套结构的不适用情形；
-4. 允许并鼓励杂交方案（如三幕骨架、第二幕内部走七点结构），杂交时要说清是哪两层杂交；
+1. 给出 2–3 套适配结构，每套的适配理由必须引用解析卡中的具体要素，不许泛泛而谈「符合三幕剧」；
+2. 每套写明适配度（0–1 的小数，不是百分数）、风险、篇幅分配与节奏形态；
+3. 每套的适配理由末尾要写明这套结构的不适用情形；
+4. 允许并鼓励杂交方案（如三幕骨架、第二幕内部走七点结构），杂交时在适配理由里说清是哪两层杂交；
 5. 结局方向只作建议，不替作者决定；
-6. 同时给出故事圣经 v0：logline、主题句、前提、幕骨架、主要人物、结局方向；
-7. 信息不足时在 reason 里说明缺什么，不要编造设定。
-
-输出：符合架构推荐 schema 的 JSON。"""
+6. 同时给出故事圣经 v0；
+7. 信息不足时在适配理由里说明缺什么，不要编造设定。"""
 
 DEFAULT_ROSTER: list[dict] = [
     {
