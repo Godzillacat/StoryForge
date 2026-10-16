@@ -2080,6 +2080,7 @@ export default function World() {
 
   useEffect(() => {
     if (!projectId) return
+    runToken.current++ // 换项目即作废在途的候选请求，别让它回来写错项目
     // 换项目即整体重置：选中项、草稿、提示都跟着换，避免上一条目的内容
     // 留在编辑器里被误当成新项目的。
     setSelectedId(null)
@@ -2526,7 +2527,12 @@ import CandidateList, { type CandidateRow } from '../components/CandidateList'
   const [openQuestions, setOpenQuestions] = useState<string[]>([])
   const [suggesting, setSuggesting] = useState(false)
   const [lastRun, setLastRun] = useState<RunView | null>(null)
+  // 作废在途候选请求用的令牌。真模型下单次要 100 秒以上，作者在等待期间
+  // 切项目是常态；没有它，响应回来会把上一个项目的候选写进当前项目。
+  const runToken = useRef(0)
 ```
+
+（`useRef` 要加进 `react` 的导入。）
 
 （`SuggestedEntry` 与 `RunView` 加进上面 `../api/client` 的类型导入。）
 
@@ -2536,8 +2542,11 @@ import CandidateList, { type CandidateRow } from '../components/CandidateList'
   async function suggest() {
     setSuggesting(true)
     setNotice('')
+    const token = runToken.current
     try {
       const result = await api.suggestEntries(projectId)
+      // 期间换过项目 —— 这批候选属于上一个项目，丢掉。
+      if (token !== runToken.current) return
       setLastRun(result.run)
       // key 带上 run id：每批候选的 key 都不同，展开态不会跨批串味。
       setCandidates(
@@ -2550,9 +2559,10 @@ import CandidateList, { type CandidateRow } from '../components/CandidateList'
         setNotice(result.parse_error ?? '模型没有按契约返回')
       }
     } catch (error) {
-      setNotice((error as Error).message)
+      if (token === runToken.current) setNotice((error as Error).message)
     } finally {
-      setSuggesting(false)
+      // 令牌已作废时 busy 由换项目的 effect 自己收尾，这里不要越俎代庖。
+      if (token === runToken.current) setSuggesting(false)
     }
   }
 
