@@ -103,9 +103,13 @@ export default function Models() {
 
   async function saveBudget(value: number) {
     if (!settings) return
+    // 清空输入框会让 Number('') 变成 0，而 0 会把下一次运行的上下文裁光。
+    if (!Number.isFinite(value) || value <= 0) {
+      setNotice('上下文预算必须填大于 0 的 token 数')
+      return
+    }
     try {
-      const updated = await api.updateSettings({ context_token_budget: value })
-      setSettings(updated)
+      setSettings(await api.updateSettings({ context_token_budget: value }))
     } catch (error) {
       setNotice((error as Error).message)
     }
@@ -234,9 +238,12 @@ export default function Models() {
         <div className="flex items-center gap-3">
           <input
             type="number"
+            // key 让服务端值变化时重挂载：作者输入过程中不会被回写打断，
+            // 保存挪到 onBlur 后也不会每敲一个数字就发一次 PUT。
+            key={settings?.context_token_budget ?? 8000}
+            defaultValue={settings?.context_token_budget ?? 8000}
             className="w-32 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            value={settings?.context_token_budget ?? 8000}
-            onChange={(e) => saveBudget(Number(e.target.value))}
+            onBlur={(e) => saveBudget(Number(e.target.value))}
           />
           <span className="text-slate-500">tokens。超预算时按优先级裁剪，并明示砍掉了什么。</span>
         </div>

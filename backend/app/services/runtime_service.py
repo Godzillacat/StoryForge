@@ -75,13 +75,21 @@ class RuntimeService:
         binding = version.model_binding_json or {}
         settings = config.load_settings()
 
+        # 不要回落到 provider.name —— 那是服务商的显示名，不是模型 ID，
+        # 发出去必然被拒，而错误信息会把作者引到错误的方向。
+        model = binding.get("model") or settings.get("default_model")
+        if not model:
+            raise ValueError(
+                f"智能体「{agent.name}」还没有绑定模型，请先在「智能体工作室」为它指定一个"
+            )
+
         source = DbSlotSource(self._session, project_id, extra_slots=extra)
         inp = ExecuteInput(
             project_id=project_id,
             agent_id=agent.id,
             version_id=version.id,
             provider_id=provider.id,
-            model=binding.get("model") or settings.get("default_model") or provider.name,
+            model=model,
             base_url=base_url,
             api_key=api_key,
             params={**settings.get("default_params", {}), **(binding.get("params") or {})},

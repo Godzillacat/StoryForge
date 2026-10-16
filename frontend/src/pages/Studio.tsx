@@ -128,9 +128,15 @@ export default function Studio() {
     }
     setSchemaError('')
 
-    const binding: Record<string, unknown> = {}
+    // 在既有绑定上改，不要重造：model_binding_json 里还有 timeout_seconds、
+    // prices、params 等界面管不到的键，重造会把它们静默抹掉。
+    const binding: Record<string, unknown> = {
+      ...((selected.current_version?.model_binding_json ?? {}) as Record<string, unknown>),
+    }
     if (draft.model.trim()) binding.model = draft.model.trim()
+    else delete binding.model
     if (draft.providerId) binding.provider_id = draft.providerId
+    else delete binding.provider_id
 
     try {
       await api.createVersion(selected.id, {
