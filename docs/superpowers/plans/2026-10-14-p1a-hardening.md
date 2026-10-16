@@ -443,11 +443,22 @@ def test_every_schema_property_carries_a_chinese_title():
         walk(entry["output_schema"], entry["key"])
 
 
+_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+# 提示词里正当出现的非字段英文词（故事圣经 v0 的版本号）
+_ALLOWED_LATIN = {"v0"}
+
+
 def test_preset_prompts_do_not_hand_list_field_keys():
-    """提示词里不许再出现字段键 —— 那份清单已经由契约说明块自动生成。"""
+    """提示词里不许再出现字段键 —— 那份清单已由契约说明块自动生成。
+
+    不能只查 snake_case：schema 的键多为单字（genre/premise/reason/tool…），
+    而「在 reason 里说明缺什么」这种漂移正是最可能的复发形态。
+    """
     for entry in DEFAULT_ROSTER:
-        found = set(re.findall(r"\b[a-z]+(?:_[a-z]+)+\b", entry["system_prompt"]))
-        hand_listed = found - set(entry["context_slots"])
+        allowed = set(entry["context_slots"]) | _ALLOWED_LATIN
+        found = set(_WORD_RE.findall(entry["system_prompt"]))
+        hand_listed = found - allowed
         assert not hand_listed, f"{entry['key']} 的提示词手写了字段键：{sorted(hand_listed)}"
 
 
