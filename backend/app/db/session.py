@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Iterator
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import config
+from app.db import migrations
 from app.db.base import Base
 
 engine = create_engine(
@@ -25,6 +27,71 @@ def _sqlite_pragmas(dbapi_connection, _record) -> None:
 
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+
+_MIGRATION_DDL = """
+CREATE TABLE IF NOT EXISTS schema_migration (
+    version    INTEGER PRIMARY KEY,
+    note       TEXT NOT NULL DEFAULT '',
+    applied_at TEXT NOT NULL
+)
+"""
+
+
+def _ensure_migration_table(conn) -> None:
+    conn.exec_driver_sql(_MIGRATION_DDL)
+
+
+def _applied_version(conn) -> int | None:
+    row = conn.exec_driver_sql("SELECT MAX(version) FROM schema_migration").fetchone()
+    return row[0] if row and row[0] is not None else None
+
+
+def _stamp(conn, version: int, note: str) -> None:
+    conn.exec_driver_sql(
+        "INSERT INTO schema_migration (version, note, applied_at) VALUES (?, ?, ?)",
+        (version, note, dt.datetime.now(dt.timezone.utc).isoformat()),
+    )
+
+
+def is_fresh_database(engine) -> bool:
+    """库里**一张业务表都没有**即为全新库。
+
+    排除 sqlite_ 内部表与 schema_migration —— 后者是基础设施，只跑过 runner
+    的空库仍算全新，否则它会被误判成存量库、去跑一堆改不存在的表的迁移。
+    """
+    with engine.connect() as conn:
+        row = conn.exec_driver_sql(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%' AND name <> 'schema_migration'"
+        ).fetchone()
+    return not (row and row[0])
+
+
+def run_migrations(engine) -> None:
+    """存量库的迁移路径：建表 → 盖章 → （有步骤时）备份 → 按序执行。
+
+    失败一律向上抛，不吞 —— 半迁移的库比起不来的应用危险得多。每步一个事务，
+    所以失败的那步不会被记成已执行，下次启动会重试它。
+    """
+    with engine.begin() as conn:
+        _ensure_migration_table(conn)
+        applied = _applied_version(conn)
+        if applied is None:
+            # 有业务表才走得到这里（全新库由 init_db 直接建表并盖最新版本），
+            # 所以这一条就是「迁移框架引入之前建的库」。
+            _stamp(conn, migrations.BASELINE_VERSION, "基线（迁移框架引入时的库结构）")
+            applied = migrations.BASELINE_VERSION
+
+    todo = migrations.pending(applied)
+    if not todo:
+        return
+
+    for step in todo:
+        with engine.begin() as conn:
+            for sql in step.statements:
+                conn.exec_driver_sql(sql)
+            _stamp(conn, step.version, step.note)
 
 
 def init_db() -> None:
