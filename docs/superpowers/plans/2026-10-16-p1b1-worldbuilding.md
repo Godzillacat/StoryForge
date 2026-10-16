@@ -473,11 +473,32 @@ def test_update_unknown_entry_raises(session):
 
 
 def test_type_change_re_normalizes(session):
+    """改成规则类时，类型与硬度两个字段都要走归一化。
+
+    注意必须改成 **rule**：硬度只在规则类条目上有意义（spec §2.1），
+    拿 faction 去断言 hardness 保留，与那条不变量冲突。
+    """
     project = _project(session)
     entry = world_service.create_entry(session, project.id, type="place", name="某地")
-    updated = world_service.update_entry(session, entry.id, type="势力", hardness="soft")
-    assert updated.type == "faction"
+
+    updated = world_service.update_entry(session, entry.id, type="规则体系", hardness="软规则")
+
+    assert updated.type == "rule"
     assert updated.hardness == "soft"
+
+
+def test_changing_away_from_rule_clears_hardness(session):
+    """不变量在 update 路径上同样成立：一条规则改成「势力」就不再带硬度。"""
+    project = _project(session)
+    entry = world_service.create_entry(
+        session, project.id, type="rule", name="死者不能复活", hardness="hard"
+    )
+    assert entry.hardness == "hard"
+
+    updated = world_service.update_entry(session, entry.id, type="势力")
+
+    assert updated.type == "faction"
+    assert updated.hardness is None
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -501,16 +522,17 @@ from sqlalchemy.orm import Session
 from app.db.models import EntryRelation, SettingEntry
 from app.world_types import normalize_hardness, normalize_type
 
-# 只有这些字段可被外部写入，避免调用方顺手改到 project_id 之类。
-# type 与 hardness 单独处理（它们要归一化），故不在此列。
-_ENTRY_FIELDS = (
-    "name",
-    "aliases_json",
-    "tags_json",
-    "summary",
-    "description",
-    "source_run_id",
-)
+# 服务层说领域名（aliases / tags），存储层的 *_json 后缀不往上传 ——
+# 与 idea_service.create_idea(..., tags) 的既有约定一致。
+# type 与 hardness 不在此列：它们要归一化，单独处理。
+_FIELD_TO_COLUMN = {
+    "name": "name",
+    "aliases": "aliases_json",
+    "tags": "tags_json",
+    "summary": "summary",
+    "description": "description",
+    "source_run_id": "source_run_id",
+}
 
 
 def _apply_entry_fields(entry: SettingEntry, fields: dict) -> None:
@@ -519,11 +541,12 @@ def _apply_entry_fields(entry: SettingEntry, fields: dict) -> None:
         entry.type = normalize_type(fields["type"])
     if "hardness" in fields:
         entry.hardness = normalize_hardness(fields.get("hardness"))
-    for key in _ENTRY_FIELDS:
-        value = fields.get(key)
+    for name, column in _FIELD_TO_COLUMN.items():
+        value = fields.get(name)
         if value is not None:
-            setattr(entry, key, value)
-    # 类型不是规则类时，硬度没有意义 —— 留着会让界面显示一个不存在的概念
+            setattr(entry, column, value)
+    # 类型不是规则类时，硬度没有意义 —— 留着会让界面显示一个不存在的概念。
+    # 这条在 update 路径上同样生效：把一条规则改成「势力」会清掉它的硬度。
     if entry.type != "rule":
         entry.hardness = None
 
@@ -634,12 +657,8 @@ def _entry_out(entry) -> dict:
 
 
 def _entry_fields(payload: EntryCreate | EntryUpdate) -> dict:
-    """出入参用 aliases / tags，模型列叫 aliases_json / tags_json。"""
-    fields = payload.model_dump(exclude_unset=True)
-    for api_key, column in (("aliases", "aliases_json"), ("tags", "tags_json")):
-        if api_key in fields:
-            fields[column] = fields.pop(api_key)
-    return fields
+    """只做「未传的字段别覆盖」这一件事；领域名到列名的映射在服务层内部。"""
+    return payload.model_dump(exclude_unset=True)
 
 
 @router.get("/projects/{project_id}/entries")
