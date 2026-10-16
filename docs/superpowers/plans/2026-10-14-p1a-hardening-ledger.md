@@ -11,7 +11,7 @@
 ---
 
 Spec: docs/superpowers/specs/2026-10-14-p1a-hardening-design.md（存在且可读，裁定有权威依据）
-Branch: worktree-p1a-hardening ｜ 基线提交: f9d3857 ｜ 12 个任务
+Branch: worktree-p1a-hardening ｜ 基线提交: 2f773f2 ｜ 12 个任务
 
 ---
 
@@ -71,12 +71,12 @@ Ruling: F2（`test_runtime_service.py:60` 与 `test_execute.py:95` 是同一条�
 
 ## 进度
 
-Task 1: complete (commits a8013df..821202c, review clean)
+Task 1: complete (commits cb500b2..d7bb41d, review clean)
 Task 1: minor (deferred): 顶层字段被缩进两格（`contract.py:26` 传 depth=1），与 brief 示例的 col-0 不符；brief 的断言全用 `in`，`"- genre…"` 是 `"  - genre…"` 的子串，故测试结构上抓不到。仅提示词装饰，无功能影响
 Task 1: minor (deferred): 直接嵌套的对象属性（非数组）无专门测试 —— Task 3 的 ARCHITECTURE_SCHEMA 含 `story_bible_v0`，其跨产物测试会覆盖该分支
 Task 1: minor (deferred): `_type_label` 对无 type 的节点回落「值」、`minItems: 0` 被丢弃，均无害且未测
 
-Task 2: complete (commits 821202c..e376aa7, review clean)
+Task 2: complete (commits d7bb41d..c2c5a3b, review clean)
 Task 2: minor (deferred): 契约块未计入 `build_context` 的预算核算，`trimmed` 与超预算报告不反映发送提示里的这段文本（行为本身正确——该块不该被裁剪），仅调试台的预算显示会低估
 Task 2: minor (deferred): `ChatFailure` 路径携带契约块这一行为无测试锁定，仅靠检视成立
 
@@ -86,38 +86,38 @@ Task 3: minor (deferred): `test_every_schema_property_carries_a_chinese_title` �
 Task 3: minor (deferred): 「单一真相」未完全达成 —— 提示词散文里仍手写「它没把握的问题」「适配理由」等中文名副本，改 title 时不会同步，且无测试守卫（讲解性用语，影响有限）
 
 Task 3: fix round 1/5 (1 addressed, 0 open — 护栏正则漏单字键；新正则 `[A-Za-z_][A-Za-z0-9_]*` 减槽位减白名单 {v0}，并以「把适配理由改回裸 reason 必须变红」证明了新护栏真能失败；仅 test_roster.py +13/-3)
-Task 3: complete (commits 62f8ea9..1094c91, review clean)
+Task 3: complete (commits 98aaf1d..fe7c61e, review clean)
 Task 3: minor (deferred): 断言消息「手写了字段键」在语义放宽后不精确 —— 任意非槽位 ASCII token（未来正当出现的 JSON/schema/模型名）都会报红，却被称为「字段键」，会误导定位
 Task 3: minor (deferred): `_ALLOWED_LATIN` 对 idea_parser 也生效，而 `v0` 只出现在架构师提示词里（白名单作用域略宽）
 
-Task 4: complete (commits 1c854bc..6f88c9c, review clean)
+Task 4: complete (commits c5bd2e2..129dc25, review clean)
 Task 4: minor (deferred): 超时解析缺 `timeout_seconds: 0`（假值落回全局）与「全局键缺失」两条路径的用例
 Task 4: minor (deferred): 默认值 300 在 `config.py:18` 与 `runtime_service.py:36` 重复；因 `load_settings()` 合并 DEFAULT_SETTINGS，后者的兜底分支实际不可达
 Task 4: minor (deferred): 新测试写入 **session 级共享的** `settings.json` 且未隔离（`conftest.py` 的临时目录整个 session 共享，`session` 夹具只重建库）；且声明了 `monkeypatch` 参数却未使用。当前套件下无串扰（唯一消费者在注入假传输层时不受超时值影响，且该文件按字母序最后跑），但「142 项通过」只证明默认收集顺序下无碍，不是隔离性证据 —— 套件既有惯例是逐用例 `monkeypatch.setenv("STORYFORGE_DATA_DIR", tmp_path)`
 Task 4: minor (deferred): `execute` 每轮读两次设置文件（`runtime_service.py:76` 与 `_resolve_timeout` 内各一次）
 Task 4: minor (deferred): `test_llm.py` 文件中部重复导入 `httpx` / `pytest` / `app.runtime.llm`
 
-Task 5: complete (commits 6f88c9c..7a971b8, review clean)
+Task 5: complete (commits 129dc25..e82e2dc, review clean)
 Task 5: minor (deferred): `conftest.py:33-36` 的 teardown 非异常安全 —— `drop_all` 写在 `with` 块之后而非 `try/finally`，用例抛异常时 pytest 会把异常 throw 进生成器，teardown **静默不执行**，而红跑恰是它最该生效的场景（后果被两点限制：下个用例开头仍会 drop；字母序在该文件前的写库文件只有 test_agents_service.py）
 Task 5: minor (deferred): 继承源未校验归属 —— `agent_service.py:43-47` 直接信任 `current_version_id`，而同文件 `rollback_to` 对同类指针做了 `agent_id` 校验（brief 未要求）
 Task 5: minor (deferred): `or highest` 的真实回退分支无覆盖（「有历史版本但 current_version_id 为空/指向不存在行」）；且报告的自审把它说成已覆盖，属过度声明
 Task 5: minor (deferred): `test_agents_service.py:1` 的 `import pytest` 未使用（brief 逐字带入）
 Task 5: minor (deferred): `client` 夹具（`test_api.py:13-32`）自身仍零隔离，本次只堵了 `session` 一侧
 
-Ruling: T5 的实施者在 brief 文件清单之外改了 `backend/tests/conftest.py`（补 `session` 夹具的用例后清表）。**判定为正当偏离，予以保留** —— 诊断经代码核实成立（`client` 夹具只 init_db + seed、不 drop/create；`find_by_task_type` 无 ORDER BY，会选中遗留的同 task_type 智能体），修法落在该夹具 docstring 自己承诺的「不留跨用例的状态」上，是对既有承诺的补全而非新增约束，且无任何用例同时使用 `session` 与 `client`，不波及其它测试。实施者另起独立提交（`7a971b8`）便于审查与回滚，做法正确。（审查者独立复核后给出同一判断。）— 依据：新测试文件按字母序排在 `test_api.py` 之前暴露了既有夹具缺陷，属本任务的波及面 — 代价：若判断有误，conftest 是多文件共享夹具，回滚该单笔提交即可。
+Ruling: T5 的实施者在 brief 文件清单之外改了 `backend/tests/conftest.py`（补 `session` 夹具的用例后清表）。**判定为正当偏离，予以保留** —— 诊断经代码核实成立（`client` 夹具只 init_db + seed、不 drop/create；`find_by_task_type` 无 ORDER BY，会选中遗留的同 task_type 智能体），修法落在该夹具 docstring 自己承诺的「不留跨用例的状态」上，是对既有承诺的补全而非新增约束，且无任何用例同时使用 `session` 与 `client`，不波及其它测试。实施者另起独立提交（`e82e2dc`）便于审查与回滚，做法正确。（审查者独立复核后给出同一判断。）— 依据：新测试文件按字母序排在 `test_api.py` 之前暴露了既有夹具缺陷，属本任务的波及面 — 代价：若判断有误，conftest 是多文件共享夹具，回滚该单笔提交即可。
 
-Task 6: complete (commits 7a971b8..08e779b, review clean)
+Task 6: complete (commits e82e2dc..0754ee8, review clean)
 Task 6: minor (deferred): `role_label` / `color` 允许空串而 `name` 不允许（`schemas.py:91-93`），`PATCH {"role_label": ""}` 会静默清空 —— plan-mandated，与既有 `ProviderUpdate` 风格一致，判定无害
 Task 6: minor (deferred): `update_agent` 静默忽略白名单外的键（拼错字段名会 200），当前路由转发路径下不可达
 Task 6: minor (deferred): `slots.py` 由 api 层直接 import runtime 的 `SLOT_REGISTRY`，未走 service —— 与其它路由不必构，但未违反任一条分层硬约束，且是 brief 指定形状
 Task 6: minor (deferred): 测试把 `raw_idea.over_budget` 写死为 `"drop"`，是唯一一处重述常量（plan-mandated；但它同时守住了字段名拼写）
 
-Task 7: complete (commits 08e779b..99860d8, review clean)
+Task 7: complete (commits 0754ee8..b551168, review clean)
 Task 7: minor (deferred): `_first_bound_model` 的两条兜底支路（唯一启用服务商 + 无主绑定应被采用；多启用时兜底须失效）无测试覆盖
 Task 7: minor (deferred): 网络失败断言偏松（两选一），未锁死 ConnectError → network 分类；状态码表未覆盖 5xx 与无 status 的 kind 兜底分支
 Task 7: minor (deferred): `_first_bound_model` 扫描全部 `AgentVersion` 而非当前版本（brief 规定），最坏是用已弃用版本的模型去探测，产生「模型名不存在」假阴性——不会产生本任务要消灭的假阳性
 
-Task 8: complete (commits 99860d8..3213aa1, review clean)
+Task 8: complete (commits b551168..adbd062, review clean)
 Task 8: minor (deferred): `updateProvider` / `updateAgent` 的 body 用 `Record<string, unknown>`，编译器不校验字段名与后端 schema 的对应（拼错不报错）—— 该文件既有约定，非本任务偏离
 
 Ruling: 审查者（只读）留下的 ⚠️「`pnpm build` 无法独立验证」由我亲自解决 —— 在 worktree 的 `frontend/` 跑 `pnpm build`，`tsc -b && vite build` 输出 49 modules、`✓ built in 2.41s`、无类型错误。该 ⚠️ 消解，T8 以「构建干净」结案。— 依据：本任务唯一 gate 不能只凭报告采信 — 代价：无。
@@ -127,8 +127,8 @@ Ruling: T9 的两条 Important —— 均判定为**真缺陷、进修复循环�
   (2) 清空输出契约实际不会清空：页面正确发 `null`，但后端 `agents.py` 的 `model_dump(exclude_none=True)` 把显式 null 当「未提供」丢掉，`create_version` 于是继承上一版契约；而界面占位文案明写「留空表示不做结构化校验」，是可被反复触发的假承诺。修法：改 `exclude_unset=True`，使「显式传 null」= 清空、「未传」= 继承，并补两条回归测试。
   — 依据：前者是 T9 自身引入的可达数据丢失路径，后者是 T9 界面文案与其后端契约不一致；两者都不修则 T9 的交付不能被信任 — 代价：(2) 的修法改动了版本创建的入参语义，若判断有误，影响面是「显式传 null 的字段不再继承」——只在作者主动清空时发生，且这正是期望行为；两条回归测试分别钉住两种语义。
 
-Task 9: fix round 1/5 (2 addressed, 0 open — ①重置时机改复合键 `id:current_version.id`，保存 agent 级字段不再还原版本级草稿，成功提示也不再被抹掉（并顺带新增 `setRun(null)` 修掉切智能体后调试台残留）；②后端 `exclude_none` → `exclude_unset`，显式 null 真正清空契约，补两条回归测试。commits d7b3d0e..ed1cab7)
-Task 9: complete (commits 3213aa1..ed1cab7, review clean)
+Task 9: fix round 1/5 (2 addressed, 0 open — ①重置时机改复合键 `id:current_version.id`，保存 agent 级字段不再还原版本级草稿，成功提示也不再被抹掉（并顺带新增 `setRun(null)` 修掉切智能体后调试台残留）；②后端 `exclude_none` → `exclude_unset`，显式 null 真正清空契约，补两条回归测试。commits 3dfe58e..8ed7c52)
+Task 9: complete (commits adbd062..8ed7c52, review clean)
 Task 9: minor (deferred): `skills_json` 仍未在页面暴露，是「角色卡全字段」下版本级唯一缺席字段（brief 未要求）
 Task 9: minor (deferred): 挂载期读取路径（listProviders/listSlots/listAgents/listProjects/listVersions）无 `.catch`，后端不可用时表现为空面板、无可读原因（保存路径有提示）
 Task 9: minor (deferred): 非对象 JSON（`[]`/`123`/`"x"`）能穿过页面校验，随后被后端 422，且 client.ts 对数组型 detail 会字符串化成 `[object Object]`
@@ -145,13 +145,13 @@ Ruling: T10 审查为 spec ❌ + Needs fixes，四条 Important —— 全部判
   (4) 两个 GET 无 `.catch`；且 `savedActs` 只在成功分支替换，失败时 B 项目标题下显示 A 项目的幕。修法：补 `.catch`，并在 effect 开头同步清空 `savedActs`。
   — 依据：四条都属「接线而非模型」类缺陷，正是本切片要消灭的那一类；(1) 是 spec 明确要求的一半未达成 — 代价：(1) 放开了「已存结构可再次采纳」，若后端 `adopt` 是追加语义就会把幕翻倍 —— **已先读 `architecture_service.adopt` 核实为替换语义**（先 `session.delete(existing_acts)` 再重建，docstring 明写「重复采纳则原地更新」），该风险不成立。
 
-Task 10: fix round 1/5 (4 addressed, 0 open，但修复引入 1 条新 Important —— `busy` 卡死；commits 2c6ca01..e6c0fbd)
+Task 10: fix round 1/5 (4 addressed, 0 open，但修复引入 1 条新 Important —— `busy` 卡死；commits b73ff2f..fb9d4ea)
 Task 10: fix round 2/5 — 待验（换项目递增 token 后未清 `busy`，而 `recommend` 的 finally 被 token 守卫拦下，导致「推荐在途→切项目」后按钮永久停在「生成中…」）
 
 Ruling: T10 修复引入的 `busy` 卡死 —— **这是我的修法漏洞**（我给 `startManual` 加了 `setBusy(false)`，却漏了换项目这条路径），非实施者失误。按 skill「修复 diff 里的新 Critical/Important 并入待办清单」进第 2 轮，修法为在 `[projectId]` effect 的 `runToken.current++` 之后补 `setBusy(false)`。— 代价：无（一行）。
 
-Task 10: fix round 2/5 (1 addressed, 0 open —— `[projectId]` effect 内 `runToken.current++` 之后补 `setBusy(false)`；commits e6c0fbd..b83e9f3)
-Task 10: complete (commits 2d2c1ed..b83e9f3, review clean)
+Task 10: fix round 2/5 (1 addressed, 0 open —— `[projectId]` effect 内 `runToken.current++` 之后补 `setBusy(false)`；commits fb9d4ea..f0b8b99)
+Task 10: complete (commits c75dbb3..f0b8b99, review clean)
 Task 10: minor (deferred): 占比输入非数值时静默丢弃（`Number('25%')` → `NaN` → 序列化为 `null`），无报错无提示，且「已写入的结构」不显示该字段
 Task 10: minor (deferred): `DraftAct.seq` 是死字段（三处维护它，`adopt` 却按数组下标重新编号），两个来源并存
 Task 10: minor (deferred): 幕行用 `key={index}`，删除中间行按位复用 DOM 节点（当前受控值无可见错误，加拖拽排序会串值）
@@ -167,22 +167,22 @@ Ruling: T11 的两条 Important —— 均判定为真缺陷，**进修复循环
 
 Ruling: 我额外把一条 Minor 与发现 1 同批修掉：`saveProvider` 未 trim `api_key`，纯空白密钥会被当成真值覆盖已存密钥（同为不可恢复）。超出审查发现范围，但要改的 `saveProvider`/`removeProvider` 本就在本次派发内、且同属「不可恢复丢失」一类，一并处理比留到最终审查更省事 — 代价：扩大了一点审查面；该行改动已在派发里显式标注为「控制方加派」。
 
-Task 11: fix round 1/5 (3 addressed, 0 open —— 删除加 `window.confirm` 并清编辑态；超时加 `Number.isFinite && > 0` 守卫并把保存挪到 `onBlur`（输入框改 `key`+`defaultValue`）；`api_key` 补 trim。commits e3db234..7aa2ab4)
-Task 11: complete (commits b83e9f3..7aa2ab4, review clean)
+Task 11: fix round 1/5 (3 addressed, 0 open —— 删除加 `window.confirm` 并清编辑态；超时加 `Number.isFinite && > 0` 守卫并把保存挪到 `onBlur`（输入框改 `key`+`defaultValue`）；`api_key` 补 trim。commits d67909b..a62fbbf)
+Task 11: complete (commits f0b8b99..a62fbbf, review clean)
 Task 11: minor (deferred): 改 `key`+`defaultValue` 后，**非法失焦或保存失败**时输入框会停在陈旧值（清空后停在空白，服务端仍是原值），受控写法本会弹回；有 notice 兜底，刷新即恢复
 Task 11: minor (deferred): 「上下文预算」输入仍是受控 + `onChange` 即时保存的旧写法，同样存在「清空写 0 / 每击键 PUT」的形态（不在本次 fix diff 内）
 Task 11: minor (deferred): `editing` 在删除被编辑行后不清空（本次已修其中一半）；编辑路径不校验 `name`/`base_url` 非空，与 `addProvider` 不一致
 
 ## 最终整支复查
 
-整支复查（opus，9060d14..7aa2ab4，22 提交）：**Ready to merge: With fixes**，无 Critical，三条 Important。
+整支复查（opus，922432a..a62fbbf，22 提交）：**Ready to merge: With fixes**，无 Critical，三条 Important。
   (1) `model` 仍回落到 `provider.name` —— 发现 §3.2 的根因没拔，只加了 UI 逃生口；运行路径仍会把服务商显示名当模型 ID 发出去。
   (2) Studio 保存版本重造 `model_binding_json`，静默抹掉 `timeout_seconds`/`prices`/`params`（本切片引入的回退）。
   (3) 上下文预算输入清空即写 0（T11 刚给超时字段修掉的同一类，唯独漏了预算）。
   延后事项分诊：仅 (3) 判为合入前必修；其余 Minor 分四组（装饰/覆盖缺口/测试隔离/防御性小项/UX 文案）判为可留待后续。
   建议：明确补做 T12（真实模型复验）；考虑把 agent 级超时暴露到工作室（否则 spec §3.2 第一层是死代码）。
 
-最终修复波（一个 commit，a1d55f1）：三条 Important 全部 ADDRESSED。实施者标出一处需裁决的偏离 —— 发现 1 改抛错后 9 条既有测试失败（两个夹具原本靠静默回落才跑得通），它按 `client` 夹具既有做法补「智能体需绑定模型」前置条件，未改预置阵容。
+最终修复波（一个 commit，8d4b530）：三条 Important 全部 ADDRESSED。实施者标出一处需裁决的偏离 —— 发现 1 改抛错后 9 条既有测试失败（两个夹具原本靠静默回落才跑得通），它按 `client` 夹具既有做法补「智能体需绑定模型」前置条件，未改预置阵容。
 最终修复波 re-review：**All findings addressed，无新 Critical/Important**；偏离经证据裁决**接受**（既有注释先例；5 条 API 用例断言的是 raw_text/rendered_prompt/落库字段，无一条断言模型名，补前置恢复的正是原路径；改预置阵容会更差，与「模型由作者绑定」的既定决定冲突）。
 
 Ruling: 最终整支复查的三条 Important —— 全部判定为真缺陷，按 skill「ONE fix dispatch」合成**一次**修复波派出（未按条分派，避免各自重建上下文与重跑套件）。— 依据：三条都在本切片的接线层，且 (2)(3) 是本切片自己引入/漏改的 — 代价：三条混在一个 commit，若要单独回滚需手工拆。

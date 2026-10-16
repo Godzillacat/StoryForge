@@ -11,9 +11,9 @@
 ---
 
 Spec: docs/superpowers/specs/2026-10-16-p1b1-worldbuilding-design.md（存在且可读，裁定有权威依据）
-Branch: worktree-p1b1-worldbuilding ｜ 14 个任务 ｜ 起点 52cfe6b
+Branch: worktree-p1b1-worldbuilding ｜ 14 个任务 ｜ 起点 0b17a29
 
-（工作区内的 plan 文件比 52cfe6b 多两处派发前的修正，见下方 G1/G2。）
+（工作区内的 plan 文件比 0b17a29 多两处派发前的修正，见下方 G1/G2。）
 
 ---
 
@@ -77,7 +77,7 @@ Ruling: **G2** —— T13 Step 3 与 T14 Step 1 都要改 `CLAUDE.md` §7 的路
 
 ## 进度
 
-Task 1: complete (commits b0e4e23..e6b7bef, review clean)
+Task 1: complete (commits f64a746..8c8b356, review clean)
 Task 1: minor (deferred): `test_setting_entry_defaults_and_roundtrip` 名为 roundtrip 实读身份映射对象（`session.py` 配了 `expire_on_commit=False`），补一行 `session.expire_all()` 才名副其实；当前不产生假过
 Task 1: minor (deferred): `description` 与 `note` 的 `default=""` 无断言（`summary` 有），覆盖略不齐
 Task 1: minor (deferred): JSON 列（`aliases_json` / `tags_json`）未用 `MutableList`，原地改列表不会被追踪 —— 本 diff 内无此路径，**T2/T3 的 CRUD 要留意**（计划的 T2 用整列赋值，本就不踩）
@@ -89,32 +89,32 @@ Ruling: T2 的实施者报了两处**测试与实现互相矛盾**（我没有�
   (2) **`hardness`** —— 改测试：spec §2.1 明写「仅 `rule` 有值」，那是不变量，实现（非规则类一律置 None）正确。是我那条 `test_type_change_re_normalizes` 写错了 —— 拿 faction 去断言 `hardness == "soft"`，与不变量冲突。改成用 rule 类型，并补一条 update 路径的断言（规则改成势力后硬度被清掉）。
   — 依据：spec 是约束权威；既有代码约定优先于我的新写法 — 代价：(1) 若既有约定其实不是这样，服务层的公开词汇会与 `idea_service` 不一致 —— 但那条既有代码是可核对的既成事实，风险很低。
 
-Task 2: fix round 1/5 (2 addressed, 0 open —— ① `update_entry` 补空白名守卫；② 重名报错改用提交前取出的名字。commits ced7362..ad5c7ad)
-Task 2: complete (commits a0c8a46..ad5c7ad, review clean)
+Task 2: fix round 1/5 (2 addressed, 0 open —— ① `update_entry` 补空白名守卫；② 重名报错改用提交前取出的名字。commits 1250fcb..53f977f)
+Task 2: complete (commits e2fba5b..53f977f, review clean)
 Task 2: minor (deferred): 唯一约束的 `IntegrityError` 被无限定地当成「重名」—— 外键违规（不存在的 project_id）会被报成「已经有叫 X 的条目了」，诊断与事实相反（需前端传失效 id，故判 Minor）
 Task 2: minor (deferred): 没有测试钉住「update 不改未传字段」（代码对，无断言）
 Task 2: minor (deferred): `EntryRelation` 在 `world_service.py` 里导入未使用（T3 会用，判定可接受）
 Task 2: minor (deferred): 未知 id 在 PATCH 上是 400、在 DELETE 上是 404（同一条件两种状态码）；`PATCH/DELETE /api/entries/{id}` 不带 project 作用域（plan-mandated，单机单人可忽略）
 Task 2: minor (deferred): `list_entries` 的排序依赖 `created_at` 的微秒精度（表无自增列，当前模型下是可用选择）
 
-Task 3: complete (commits 05e1f16..cb514f5, review clean)
+Task 3: complete (commits edef371..0af9204, review clean)
 Task 3: minor (deferred): 「存储 trim 后的 kind」无测试覆盖（`kind=" 位于 "` 的路径无人验证）
 Task 3: minor (deferred): 跨项目用例的两个场景在同一函数里都只断言异常类型，失败时报不出是哪条分支断的
 Task 3: minor (deferred): `list_relations` 仅按 `created_at` 排序、无次级排序键
 Task 3: minor (deferred): 路由用 `**payload.model_dump()` 展开，schema 加字段会在运行期变成 TypeError（brief 指定写法）
 
-Task 4: complete (commits cb514f5..4424138, review clean)
+Task 4: complete (commits 0af9204..fad9b74, review clean)
 Task 4: minor (deferred): `test_api.py:2` 的 `import pytest` 已无引用（plan-mandated：我的计划说留着，理由「还有 monkeypatch 用例」不成立 —— monkeypatch 是夹具参数）
 Task 4: minor (deferred): conftest 的新增导入放在文件末尾，与既有约定不一致（但顶部先设 `STORYFORGE_DATA_DIR` 再导 `app.*` 是硬约束，位置有其道理）
 Task 4: minor (deferred): `client` 夹具不清理数据，新增 5 个用例会向共享库留行（当前安全：收集顺序 + 每用例自建项目）
 
-Task 5: complete (commits 4424138..fccfdd1, review clean)
+Task 5: complete (commits fad9b74..48df130, review clean)
 Task 5: minor (deferred): 条目内重复别名会产生完全相同的两行（`entry_id` 与 `form` 都同）—— 根在录入层未对别名 strip/去重；前端若按 `entry_id + form` 作 key 会撞键
 Task 5: minor (deferred): 别名两侧空白原样带进 `form`，故 `" 记忆交易局"` 不会被判为与名字相同、会多一行
 
 **★ 给 P2 的契约备注（由 T5 审查提出，勿丢）**：同一个 `form`（表面形式）**可以来自两个不同条目** —— 例如 A 的别名等于 B 的名字，或两条目用了同一个别名。投影两行都保留（信息完整，`entry_id` 不同故前端不撞键），**但没有任何「此形式歧义」的信号**。P2 的连续性检查若按表面形式建白名单查找表（`{t["form"]: t}` 那种写法），会静默丢掉一行。届时须规定：**同一 `form` 可多行，取值须优先 `is_primary`**。
 
-Task 6: complete (commits fccfdd1..3fec84d, review clean)
+Task 6: complete (commits 48df130..1df8cba, review clean)
 Task 6: minor (deferred): 同一文件里出现了第二份八类清单（提示词 `roster.py:157` 硬写中文八类，而标题是从词表派生的）；护栏只查英文键，改 `ENTRY_TYPES` 时提示词会静默过期
 Task 6: minor (deferred): 三个硬度名与 `minItems == 3` 无测试兜住（审查者手工渲染确认行为正确，仅覆盖缺口）
 Task 6: minor (deferred): `test_roster.py` 的「六项必备字段」测试不断言 `trigger_mode`，将来某张卡漏写会静默落 `manual`
@@ -124,25 +124,25 @@ Task 6: minor (deferred): 一处测试 docstring 说法不准确（称模型只�
 
 Task 7: fix round 1/5 — 待验（① `_reason` 的 template 分支补上缺失变量名；② 「跑一次不写库」先断言真的产出了候选）
 
-Task 7: fix round 1/5 (2 addressed, 0 open —— ① template 分支附缺失变量名；② 不写库测试先断言成功。commits ad9cc0c..29af9f7)
-Task 7: complete (commits 3fec84d..29af9f7, review clean)
+Task 7: fix round 1/5 (2 addressed, 0 open —— ① template 分支附缺失变量名；② 不写库测试先断言成功。commits 0a3660e..8753312)
+Task 7: complete (commits 1df8cba..8753312, review clean)
 Task 7: minor (deferred): `_seed_slots` 直插 `Architecture` 对「采纳才进故事圣经」这条产品规则的测试代表性（槽位源当前不校验采纳状态，故可观察状态不可区分）
 Task 7: minor (deferred): 追加的「（运行记录里说缺的是：…）」子句无断言覆盖（现有断言只查指引正文里的「灵感」「架构」子串）
 Task 7: minor (deferred): 文案里出现嵌套冒号「说缺的是：提示词引用了未提供的变量：…」，略拗口
 Task 7: minor (deferred): `_reason` 的 template 分支硬编码了本智能体的前置条件，多智能体复用时需提取（实施者自陈）
 
-Task 8: complete (commits 29af9f7..76bcb55, review clean)
+Task 8: complete (commits 8753312..bd5358b, review clean)
 Task 8: minor (deferred): `aliases`/`tags` 标非空 `string[]`，而 `_entry_out` 原样透传不做兜底（当前不可达：列有 `default=list`）—— 若库里有历史 NULL 行，界面会拿到 null 而类型不报警
 Task 8: minor (deferred): `SuggestedEntry` 的 `type`/`name`/`summary` 标为可选，而契约把它们列为必填；方向保守，但 T11 不该假定它们一定存在
 
-Task 9: complete (commits 76bcb55..21247bc, review clean)
+Task 9: complete (commits bd5358b..457107b, review clean)
 Task 9: minor (deferred): `EMPTY_DRAFT.type` 硬编码 `'place'`，与后端词表耦合（已核实 `place` 存在，风险理论性；若后端删掉它，下拉会显示空白而 `draft.type` 仍是 `'place'`）
 Task 9: minor (deferred): 类型从 `rule` 改走后草稿里的 `hardness` 残留（后端 `type != "rule"` 时一律置 None，不会污染落库；调用方无需清理）
 
 Task 10: fix round 1/5 — 待验（① `typeLabel` 的映射合并硬度词表；② 无项目时的空态改说要先建项目）
 
-Task 10: fix round 1/5 (2 addressed, 0 open —— ① 词表映射合并硬度；② 无项目空态改指仪表盘。commits d08d08c..10069e6)
-Task 10: complete (commits 21247bc..10069e6, review clean)
+Task 10: fix round 1/5 (2 addressed, 0 open —— ① 词表映射合并硬度；② 无项目空态改指仪表盘。commits 6579e8b..d4a2d9b)
+Task 10: complete (commits 457107b..d4a2d9b, review clean)
 Task 10: minor (deferred): 首屏 `listEntryTypes`/`listProjects` 无 `.catch`，后端不可达时静默停在空态
 Task 10: minor (deferred): 切项目的两个 `listEntries` 请求可乱序返回，且切换瞬间不清 `entries`/`relations`，旧树短暂残留
 Task 10: minor (deferred): 成功与失败共用同一条 `notice`，样式与语义不区分；`refresh()` 在 save 的 try 内，保存成功但重拉失败时提示指向另一件事
@@ -150,11 +150,11 @@ Task 10: minor (deferred): `selectEntry` 对已选中项也重新播种 draft，
 
 Task 11: fix round 1/5 — 待验（三条 Important 见下）
 
-Task 11: fix round 1/5 (3 addressed, 0 open —— ① 换项目清候选 ② 展开态按稳定 key ③ 采纳失败不丢编辑。commits 6bd58a6..ace735c)
+Task 11: fix round 1/5 (3 addressed, 0 open —— ① 换项目清候选 ② 展开态按稳定 key ③ 采纳失败不丢编辑。commits 1056531..3e15774)
 Task 11: fix round 2/5 — 待验（在途 suggestEntries 与换项目的竞态，见下）
 
-Task 11: fix round 2/5 (1 addressed, 0 open —— 令牌作废在途候选请求。commits ace735c..245168d)
-Task 11: complete (commits 10069e6..245168d, review clean)
+Task 11: fix round 2/5 (1 addressed, 0 open —— 令牌作废在途候选请求。commits 3e15774..768673c)
+Task 11: complete (commits d4a2d9b..768673c, review clean)
 Task 11: minor (deferred): `openQuestions.map` 用问题文本作 React key，重复文本会触发控制台警告
 Task 11: minor (deferred): 采纳期间无 in-flight 锁（唯一约束会挡住重复，真实代价只是一句误导性提示）
 Task 11: minor (deferred): `listEntries`/`listRelations` 无令牌守卫，同类竞态（症状是左树而非候选）；窗口为毫秒级（本地 SQLite），与 suggest 的 100 秒不可比
@@ -162,8 +162,8 @@ Task 11: minor (deferred): `adoptCandidate`/`refresh` 未纳入令牌，采纳�
 
 Task 12: fix round 1/5 — 待验（① 空态区分「无匹配」与「无术语」；② 术语行 key 加行号）
 
-Task 12: fix round 1/5 (2 addressed, 0 open —— ① 空态按关键字分支；② 行 key 带行号。commits 17722bf..17159d3)
-Task 12: complete (commits 245168d..17159d3, review clean)
+Task 12: fix round 1/5 (2 addressed, 0 open —— ① 空态按关键字分支；② 行 key 带行号。commits 9f68600..0a51339)
+Task 12: complete (commits 768673c..0a51339, review clean)
 Task 12: minor (deferred): 首屏无加载门，空态文案会在数据到达前先画出（一个项目都没有时该句持续为错误指示）
 Task 12: minor (deferred): 两个首屏请求（`listEntryTypes`/`listProjects`）无 `.catch`，失败静默，作者反而被告诉「去建几条设定」
 Task 12: minor (deferred): `notice` 不随项目切换清理，旧错误残留在页顶
@@ -178,9 +178,9 @@ Task 13: complete（真实模型复验，九步全过；1 次调用 `qwen3.8-fla
 Ruling: T13 发现的缺陷 —— 模型按契约块里教它的**中文值**返回 `type`（「规则体系」）与 `hardness`（「硬规则」），而前端 `CandidateList.draftOf` 把标签原样放进 `EntryDraft.type`，与英文键的下拉对不上：类型回落到显示第一个选项（一条规则显示成「地理」），且规则类的硬度控件（条件 `draft.type === 'rule'`）**根本不出现**。**数据层是对的**（已核实 `type=rule`、`hardness=hard`），缺陷纯在边界。
   **判定为 Important、追加为 Task 15 修**。修法取「在后端响应里归一一次」而非「前端再抄一份映射」—— 因为前者的映射是纯逻辑、能被 pytest 覆盖，而后者落在「UI 不写自动化测试」的盲区里。— 依据：它让作者看到错的类型、且够不到本切片最强调的那个字段 — 代价：改动落在 `api/world.py`（呈现层投影，不越「api 不写业务逻辑」的线，与同文件既有 `_reason` 同性质）。
 
-Task 15: complete（commits 17159d3..5dfaa19，review clean）
-Task 15: fix round 1/5 (1 addressed, 0 open —— 候选行类型标记映射回中文。commits 5dfaa19..fcc3575)
-Task 15: complete (commits 17159d3..fcc3575, review clean)
+Task 15: complete（commits 0a51339..a37eaeb，review clean）
+Task 15: fix round 1/5 (1 addressed, 0 open —— 候选行类型标记映射回中文。commits a37eaeb..d772bc7)
+Task 15: complete (commits 0a51339..d772bc7, review clean)
 Task 15: minor (deferred): `hardness` 的归一缺非字符串防护（`type` 有 `str(...)` 兜住），当前被契约校验挡在 `structured=False` 一侧，不可达
 Task 15: minor (deferred): 「运行记录原样」这一半靠浅拷贝保证，无测试钉住
 Task 15: minor (deferred): 非 dict 候选被静默丢弃（与「不因一条怪条目拖垮整批」略有张力；同被契约挡住）
@@ -188,15 +188,15 @@ Task 15: minor (deferred): `World.tsx` 的 `api.listEntryTypes()` 无 `.catch`�
 
 Ruling: T15 审查抓到的**回归** —— 归一化让候选行的类型标记从中文（模型原值「势力」）变成了英文键（`faction`），是这次改动自己引入的、可见的、违反「界面文案用中文」的问题。前端文件不属 Task 15 的契约范围，故审查者只判 Minor；**我持有跨任务上下文**（那个组件是 T11 的、`types` 早已作为 prop 传入，一行即可修），判为真回归、**进修复第 1 轮**。其余 Minor（`hardness` 缺非字符串防护且当前被契约校验挡住、「运行记录原样」无测试钉住、非 dict 候选被静默丢弃）判可延后。— 依据：自己引入的回归该自己收 — 代价：改动落在 T11 的文件上，跨了任务的边界，但一行且由我指派。
 
-Task 14: complete（`CLAUDE.md` 路线图拆 P1b-1/P1b-2、新阶段记录、8 条变更行；账本归档进仓。commits fcc3575..d4abaa5）
+Task 14: complete（`CLAUDE.md` 路线图拆 P1b-1/P1b-2、新阶段记录、8 条变更行；账本归档进仓。commits d772bc7..a218031）
 
 ## 整支复查
 
-整支复查（opus，52cfe6b..d4abaa5，35 提交）：**Ready to merge: Yes**，无 Critical，一条 Important + 三条 Minor。
+整支复查（opus，0b17a29..a218031，35 提交）：**Ready to merge: Yes**，无 Critical，一条 Important + 三条 Minor。
   Important：**spec §3.2 的「别名冲突只在界面提示、不阻断」压根没实现**，且未被记为延后 —— 是一处**未裁定的偏离**，不是已决定延后。审查者点破得准：它是我自己写进 spec 又在自己写的计划里静默丢掉的。
   延后事项分诊：账本里全部延后 Minor **均可留待后续**；两个 ★ 项各有明确裁定（★1 补进 `list_terms` 的 docstring；★2 记为 P1b-2 之前的跟进项）。
 
-最终修复波（一个 commit，8dbfa81）：四条一起，全部 ADDRESSED。
+最终修复波（一个 commit，e29447a）：四条一起，全部 ADDRESSED。
   (1) 别名冲突提示（Important，spec 偏离）(2) 采纳成功后按 key 退役候选行（改名采纳后原行仍可二次采纳 → 重复条目）(3) `create_relation` 改 `**fields` 签名（下一切片加列会当场崩）(4) 提示词的八类清单改由词表派生（不能用 f-string —— 会吃掉 `{{ parsed_idea }}`）。
 最终修复波 re-review：**All findings addressed，无新 Critical/Important**；复验者实跑核对模板变量未被吃掉、八类都进了最终提示词、既有调用者全部仍可用。
 新发现一条 Minor：候选别名自身重复时 React key 相撞（`aliasConflicts(...).map(key={hint})`）—— **判定可留**：纯开发态告警、无用户可见错误，且改法是把 key 从提示文案换成别名本身（一个 token）。

@@ -188,7 +188,7 @@ pnpm build                                # 产物给后端同源托管
 
 **2026-10-14 · P1a 故事内核（实施完成，待作者走查）**
 
-实现方式：13 个任务的实施计划（`docs/superpowers/plans/2026-10-13-storyforge-p1a.md`）→ 逐任务由一个独立 subagent 实施、另一个独立 subagent 审查 → 最后加一轮整支复查。全过程 32 个提交，`master` 上以合并提交 `6cf54df` 收口。
+实现方式：13 个任务的实施计划（`docs/superpowers/plans/2026-10-13-storyforge-p1a.md`）→ 逐任务由一个独立 subagent 实施、另一个独立 subagent 审查 → 最后加一轮整支复查。全过程 32 个提交，`master` 上以合并提交 `a91d615` 收口。
 
 产出（入库 126 个文件）：
 
@@ -416,9 +416,10 @@ pnpm build                                # 产物给后端同源托管
 | 2026-10-16 | **迁移永不建表**：新表归 `create_all`，迁移只改已有的表 | 两套机制职责不重叠、不会互相打架，框架因此只有一百多行 |
 | 2026-10-16 | **全新库盖 `latest_version()`，不跑历史迁移**；存量库盖基线后补跑 | 全新库由当前模型建出、天然就是最新结构；让它跑历史迁移必然炸（那些迁移改的表此刻还不存在）—— 这是引导问题，不是偷懒 |
 | 2026-10-16 | 契约校验器放过**可选**字段的显式 `null`，**必填**字段的 `null` 仍判失败 | 前者是省略的另一种写法，后者是真空缺；P1b-1 真实模型复验实测未发作，但换模型或换服务商即可能引爆 |
-| 2026-10-16 | 版本号接口由导入时算出的常量 `LATEST_VERSION` 改为**函数 `latest_version()`** | 常量不随 monkeypatch 的 `MIGRATIONS` 变化，会让「全新库盖章」这条最该被测到的路径永远测不到；spec 里 8 处引用随之同步（先例：`e7cc3df`） |
+| 2026-10-16 | 版本号接口由导入时算出的常量 `LATEST_VERSION` 改为**函数 `latest_version()`** | 常量不随 monkeypatch 的 `MIGRATIONS` 变化，会让「全新库盖章」这条最该被测到的路径永远测不到；spec 里 8 处引用随之同步（先例：`57f9e53`） |
 | 2026-10-16 | `schema_migration` 的盖章改**幂等**（`INSERT OR REPLACE`） | `is_fresh_database` 刻意不把 `schema_migration` 算作业务表，「业务表被删、迁移表残留」的库被判为全新、二次盖章撞主键会让应用启动失败（改前完整套件实测 2 条 `IntegrityError`） |
 | 2026-10-16 | 放宽校验后，显式 `null` 在 **API 边界**归一到空值（`api/architecture.py` 的 `story_bible_v0`、`api/world.py` 的 `open_questions`），**不在前端加第二份守卫** | 边界归一是纯逻辑、能被 pytest 覆盖，前端守卫落在「UI 不写自动化测试」的盲区里（沿用 P1b-1 `_normalized_candidates` 的先例） |
+| 2026-10-17 | 项目托管到 **GitHub 私有仓库** `Godzillacat/StoryForge`，并把提交作者邮箱换为 GitHub noreply（**历史已重写，全部提交哈希都变了**） | 作者要求「弄到 GitHub 上方便管理」，并选择私有 + 隐藏 `27602477187@qq.com`；重写后文档里原有的哈希引用已按 `filter-repo` 的新旧对照表逐条映射回新哈希，重写前的完整历史另存为 `.git/pre-rewrite-backup.bundle`（不进版本库） |
 
 ---
 

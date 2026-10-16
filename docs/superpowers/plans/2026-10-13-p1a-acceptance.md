@@ -1,6 +1,6 @@
 # StoryForge P1a「故事内核」验收记录
 
-> 2026-10-14 · 分支 `worktree-p1a-story-kernel`（基点 c3e1158）
+> 2026-10-14 · 分支 `worktree-p1a-story-kernel`（基点 f2d4146）
 >
 > 对应设计 `docs/superpowers/specs/2026-10-13-storyforge-p1a-design.md` §1.2 与实施计划 `docs/superpowers/plans/2026-10-13-storyforge-p1a.md` Task 13。
 

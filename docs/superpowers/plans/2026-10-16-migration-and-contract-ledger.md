@@ -24,10 +24,10 @@
 
 ## 进度
 
-- Task 1（迁移步骤表）：complete（commits e9370fe..648c4eb，追认；评审计录缺失 → 交最终整支复查覆盖）
-- Task 2（迁移 runner）：complete（commits 648c4eb..da5e6ef，追认；评审计录缺失。含两次计划修正 6090cea / 7f6a5dc 与一次实现修复 0b2ec1e / da5e6ef）
-- Task 3（执行迁移前自动备份）：complete（commits da5e6ef..07dcbc8，追认；评审计录缺失）
-- Task 4（`init_db` 按全新库/存量库分派）：**in flight** —— BASE `07dcbc8`，工作区留有上个会话的未提交半成品
+- Task 1（迁移步骤表）：complete（commits b19f6a3..3ac36be，追认；评审计录缺失 → 交最终整支复查覆盖）
+- Task 2（迁移 runner）：complete（commits 3ac36be..5eccb15，追认；评审计录缺失。含两次计划修正 2f7358f / a444ae3 与一次实现修复 7f8e17a / 5eccb15）
+- Task 3（执行迁移前自动备份）：complete（commits 5eccb15..87ae63f，追认；评审计录缺失）
+- Task 4（`init_db` 按全新库/存量库分派）：**in flight** —— BASE `87ae63f`，工作区留有上个会话的未提交半成品
 - Task 5（契约放过可选字段的 null）：未开始
 - Task 6（同步工作指引）：未开始
 
@@ -52,7 +52,7 @@
 
 ## Task 4 记录
 
-- Task 4: fix round 0 —— 接手时工作区有上个会话的未提交半成品；由新实施者通读、纠正、补测试后收口（commits 07dcbc8..3acd36c）
+- Task 4: fix round 0 —— 接手时工作区有上个会话的未提交半成品；由新实施者通读、纠正、补测试后收口（commits 87ae63f..bdae4ef）
 - Task 4: 实施者报告 224 passed（改前 `1 failed, 220 passed, 2 errors`）；两条裁定各有独立 RED 证据
 - Task 4: 控制方独立复核真实库（只读）—— `schema_migration` 恰好一行 `version=0`（note 为基线文案），project 2 / setting_entry 4 / provider 1 / agent 3 / idea 2 与改前相符；手工备份 `backup-pre-migration-framework/` 含 db + wal + shm；数据目录**没有**冒出 `backups/`（无步骤可跑，故不备份，符合设计）
 - Task 4: 实施者顾虑「分派与幂等修复必须在同一提交」—— 采纳。理由成立：幂等缺陷只在分派落地后才可达，拆开则第一个提交的全套件当场是红的。无需裁定。
@@ -60,11 +60,11 @@
 
 ## 追加裁定
 
-- Ruling: 设计文档（spec）里 8 处把 `LATEST_VERSION` 当符号用（含 `§3.2` 的常量定义代码块与「产物」表）需同步为 `latest_version()` 函数，并在该处补一句「为什么是函数不是常量」；**归入 Task 6 一并收口** — 理由：spec 是权威文档，裁定一改了 Task 1 的产物接口后它指向一个不存在的符号；与 CLAUDE.md 的同步同属一批文档收口，不必为此单开一轮派发（先例：e7cc3df 就是一次 `docs(spec):` 修正） — 若判断有误的代价：Task 6 的文档提交范围比 brief 稍宽，审查者若视之为 extra 可由控制方解释（已在本账本留痕）。
+- Ruling: 设计文档（spec）里 8 处把 `LATEST_VERSION` 当符号用（含 `§3.2` 的常量定义代码块与「产物」表）需同步为 `latest_version()` 函数，并在该处补一句「为什么是函数不是常量」；**归入 Task 6 一并收口** — 理由：spec 是权威文档，裁定一改了 Task 1 的产物接口后它指向一个不存在的符号；与 CLAUDE.md 的同步同属一批文档收口，不必为此单开一轮派发（先例：57f9e53 就是一次 `docs(spec):` 修正） — 若判断有误的代价：Task 6 的文档提交范围比 brief 稍宽，审查者若视之为 extra 可由控制方解释（已在本账本留痕）。
 
 ## Task 4 收口
 
-- Task 4: complete (commits 07dcbc8..3acd36c, review clean)
+- Task 4: complete (commits 87ae63f..bdae4ef, review clean)
 - Task 4: minor (deferred): `test_migration_runner.py:230-238` 的 `"_probe" not in ...` 是够不着的断言（迁移串本身就会抛错）—— brief 逐字指定，护栏性质，留着无害
 - Task 4: minor (deferred): `session.py:150-153` 的全新库路径里 `create_all` 与盖章分属两个事务，窄窗口内崩溃会留下「表是最新结构、无迁移记录」的库（下次启动盖基线 0，P1b-2 真加迁移时会撞已存在列）—— plan-mandated，SQLite 的 DDL 可事务，日后可收口
 - Task 4: minor (deferred): `uv run pytest` 那条 `StarletteDeprecationWarning` warning 改前就在，非本任务引入，最终复查可登记为无关
@@ -74,7 +74,7 @@
 
 ## Task 5 记录
 
-- Task 5: 实施者报告 DONE_WITH_CONCERNS，提交 `c759a27`（契约放过可选字段的 null），`uv run pytest -q` → **228 passed**（224 基线 + 4 新增），既有用例零变红
+- Task 5: 实施者报告 DONE_WITH_CONCERNS，提交 `4873703`（契约放过可选字段的 null），`uv run pytest -q` → **228 passed**（224 基线 + 4 新增），既有用例零变红
 - Task 5: 实施者发现 **brief 自身的事实性缺陷** —— `worldbuilder.entries` 带 `minItems: 3`，而 brief 第三条测试的 payload 只有 1 条，该测试在改动前后都不可能通过（与本题无关）。修法取最小：第 0 条逐字保留原 payload（三个可选键全置 null），补足 3 条以满足契约的条数下限。**采纳**，判别力保留。（控制方派发前扫描漏了 `minItems`，只核了必填/可选键名 —— 记一笔。）
 - Task 5: 实施者申报的第二条顾虑（「改动新开的前端窄路径」）经控制方核实**确认为真缺陷**，已扩展为本任务的一部分，见下。
 
@@ -85,38 +85,38 @@
 
 ## Task 5 收口
 
-- Task 5: fix round 1 —— 按裁定在 API 边界归一（`c759a27` + `9ce12f0`），`uv run pytest -q` → **231 passed**（228 + 3 新增），两个修复点各有 RED（`assert None == []` / `assert None == {}`）→ GREEN；另加一条反向护栏防「一律清空」的过度修正
+- Task 5: fix round 1 —— 按裁定在 API 边界归一（`4873703` + `58184c8`），`uv run pytest -q` → **231 passed**（228 + 3 新增），两个修复点各有 RED（`assert None == []` / `assert None == {}`）→ GREEN；另加一条反向护栏防「一律清空」的过度修正
 - Task 5: 实施者新建 `tests/test_architecture_api.py` —— 该接口此前**没有任何测试**；它自带一份 `_patch_runtime` 助手，与既有测试文件里的同形助手构成第三份副本，实施者申报理由是「提进 `conftest.py` 会改动两个既有测试文件，超出裁定范围」。**控制方不预判**，交任务审查定夺。
-- Task 5: 任务审查进行中，覆盖 `3acd36c..9ce12f0` 两个提交
+- Task 5: 任务审查进行中，覆盖 `bdae4ef..58184c8` 两个提交
 
 ## Task 5 完成
 
-- Task 5: complete (commits 3acd36c..9ce12f0, review clean)
+- Task 5: complete (commits bdae4ef..58184c8, review clean)
 - Task 5: minor (deferred): `tests/test_architecture_api.py:47-64` 是 `_patch_runtime` 的第三份逐字副本（与 `test_world_api.py:130-151` 一致）—— 审查者自陈「按字面口径偏 Important，但判为 Minor：测试夹具、不影响产品行为、仓库本就有两份、且控制方裁定范围排除了改既有测试文件」。修法（若要收）是把 `_patch_runtime` 与播种助手提进 `backend/tests/conftest.py`，一次消掉三份
 - Task 5: minor (deferred): `test_architecture_api.py:23-45` 的 `_seed_parsed_idea` 与 `test_world_api.py:99-127` 的灵感部分实质重复，与上条同类，可一并收进 conftest
 - Task 5: minor (deferred): `api/architecture.py:33-37` 的三行条件表达式与同文件 `:38` 的单行写法不一致（纯风格）
 - Task 5: minor (deferred): `tests/test_world_api.py:266-271` 的 `_candidates_with` 定义位置与该文件其它助手不一致（纯风格）
 - Task 5: minor (deferred): `runtime/schema.py:112/:118` 的 `validate_json` / `apply_contract` 无 docstring，本次关键语义（可选 null 视同缺键、必填不受影响）只在行内注释里
 - Task 5: 审查者的跨切面专项核查**独立确认了控制方的枚举完整** —— 它逐份契约枚举了全部可选集合/对象字段并核对每条消费路径，结论是两个修复点即仅有的可达点；并确认校验器唯一调用点在 `runtime/execute.py:115`（只校验模型产出），放宽不会让作者输入混进坏数据
-- Task 5: 审查者的 ⚠️（工作树是否干净、231 passed 是否复现）—— 控制方已从 git 侧确认：`9ce12f0` 已提交且工作树干净；测试数由实施者报告，最终整支复查会重跑
+- Task 5: 审查者的 ⚠️（工作树是否干净、231 passed 是否复现）—— 控制方已从 git 侧确认：`58184c8` 已提交且工作树干净；测试数由实施者报告，最终整支复查会重跑
 
 ## Task 6 记录
 
-- Task 6: 实施者报告 DONE —— `016ba92`（spec 8 处符号同步）+ `ff98e17`（CLAUDE.md 路线图一行、新增阶段记录、P1a 遗留划为已解决、§8 补 7 行）
-- Task 6: 控制方通读 `ff98e17` 的 CLAUDE.md diff —— 阶段记录如实写下了「上一会话上下文超限中断、Task 1–3 无评审计录」，未伪造成「逐任务审查通过」；两条裁定、边界归一、验证数据、真实库核对结果均在
-- Task 6: **追加裁定（顾虑 1）**：spec 第 147 行「每步一个事务（`engine.begin()`）」描述的是**已被证明回滚不了**的写法（`0b2ec1e` 的修正），而 P1b-2 写第一条真实迁移的人会照它做 —— **要改**为手写 `BEGIN`/`COMMIT` 并写上理由（第 62 / 153 行的「一个事务执行一条迁移」仍成立，不动） — 理由：spec 是权威，指向错误机制比指向不存在的符号更危险 — 若判断有误的代价：spec 多一段术语更密的实现说明。
+- Task 6: 实施者报告 DONE —— `53c8a8c`（spec 8 处符号同步）+ `7e74ce8`（CLAUDE.md 路线图一行、新增阶段记录、P1a 遗留划为已解决、§8 补 7 行）
+- Task 6: 控制方通读 `7e74ce8` 的 CLAUDE.md diff —— 阶段记录如实写下了「上一会话上下文超限中断、Task 1–3 无评审计录」，未伪造成「逐任务审查通过」；两条裁定、边界归一、验证数据、真实库核对结果均在
+- Task 6: **追加裁定（顾虑 1）**：spec 第 147 行「每步一个事务（`engine.begin()`）」描述的是**已被证明回滚不了**的写法（`7f8e17a` 的修正），而 P1b-2 写第一条真实迁移的人会照它做 —— **要改**为手写 `BEGIN`/`COMMIT` 并写上理由（第 62 / 153 行的「一个事务执行一条迁移」仍成立，不动） — 理由：spec 是权威，指向错误机制比指向不存在的符号更危险 — 若判断有误的代价：spec 多一段术语更密的实现说明。
 - Task 6: **追加裁定（顾虑 2）**：CLAUDE.md 里 P1b-1 阶段的「无迁移框架」遗留要补一句「已于 2026-10-16 解决」的指向，与 P1a 那条的写法一致；**历史事实不改写** — 理由：两处不一致会让读者以为只有一条被解决了 — 若判断有误的代价：一行文档冗余。
 - Task 6: 收口进行中（resume 实施者）
 
 ## 控制方的独立验证（不是转述实施者）
 
-- 控制方在 HEAD `67af690` 上自己跑了一遍 `uv run pytest -q` → **231 passed, 1 warning**（那条 warning 是既有的 `StarletteDeprecationWarning`，非本切片引入）
-- 控制方自查分支全貌：`git diff --stat a17decd..67af690` → 13 个文件、871 插入；**frontend/ 零改动**（本切片落在后端与文档）
+- 控制方在 HEAD `5783171` 上自己跑了一遍 `uv run pytest -q` → **231 passed, 1 warning**（那条 warning 是既有的 `StarletteDeprecationWarning`，非本切片引入）
+- 控制方自查分支全貌：`git diff --stat 6f647ee..5783171` → 13 个文件、871 插入；**frontend/ 零改动**（本切片落在后端与文档）
 
 ## 待办（收尾清单，防止上下文丢失）
 
-- [ ] Task 6 任务审查（覆盖 `9ce12f0..67af690`）
-- [ ] **最终整支复查**：`review-package PLAN a17decd HEAD`，派 **opus**（最强模型），并明确告知审查者：**Task 1–3 没有评审计录**（上个会话中断），需一并覆盖；同时把下面的延后 Minor 与裁定清单交给它分诊
+- [ ] Task 6 任务审查（覆盖 `58184c8..5783171`）
+- [ ] **最终整支复查**：`review-package PLAN 6f647ee HEAD`，派 **opus**（最强模型），并明确告知审查者：**Task 1–3 没有评审计录**（上个会话中断），需一并覆盖；同时把下面的延后 Minor 与裁定清单交给它分诊
 - [ ] 最终复查若有发现 → **一次**修复波（一个 fixer 携带全部发现）+ **一次**定向复评；残余按判停规则处理，不再开第二波
 - [ ] **把本账本归档进 `docs/superpowers/plans/2026-10-16-migration-and-contract-ledger.md`**（本仓库既有的 `*-ledger.md` 惯例，见 p1a-hardening / p1b1-worldbuilding 两份）—— 注意 `CLAUDE.md` 新阶段记录的「遗留」里现在写的是「列在本切片 worktree 的账本 `.superpowers/sdd/…`（该目录被忽略，不入库）」，**这句话在归档后需要改指归档路径**，否则指向一份会随 worktree 消失的产物
 - [ ] 用 `superpowers:finishing-a-development-branch` 收口；**合并 master 属于需要作者点头的动作，不要自行合并**
@@ -132,20 +132,20 @@
 - Task 6: **追加裁定**：Important 1 的措辞源自 brief Step 2 的原话，但 **brief 与 spec §1.1 冲突，spec 是权威** —— 只有迁移那条真的发作过两次，契约那条是潜在风险，按 spec 口径改写 — 若判断有误的代价：一句话的措辞偏向保守。
 - Task 6: **追加裁定**：不加「事务写法」的 §8 行 —— 它不是有权衡的取舍（`engine.begin()` 是坏的，不是另一种做法），且 §7 与 spec §3.3 已完整记述，§8 再列一行是重复 — 若判断有误的代价：§8 少一条实现沿革。
 
-- Task 6: fix round 1/5 —— 四处全部落地（`f16ac13`）：`:341` 按 spec 口径改写、`:302` 补指向、`:376` 改为实际表名、`:355/:411` 改「一百多行」。实施者另申报一处超出字面的改动：`:302` 末句「仍为打包硬前置」→「曾」，控制方**已认可**（它纠正的是一句此刻已不成立的断言，未改写历史事实）
-- Task 6: 定向复评进行中，覆盖 `67af690..f16ac13`
+- Task 6: fix round 1/5 —— 四处全部落地（`d835287`）：`:341` 按 spec 口径改写、`:302` 补指向、`:376` 改为实际表名、`:355/:411` 改「一百多行」。实施者另申报一处超出字面的改动：`:302` 末句「仍为打包硬前置」→「曾」，控制方**已认可**（它纠正的是一句此刻已不成立的断言，未改写历史事实）
+- Task 6: 定向复评进行中，覆盖 `5783171..d835287`
 
-- Task 6: complete (commits 9ce12f0..f16ac13, review clean)。定向复评：四条 finding 全部 ADDRESSED、无新破损；复评者另判定 `:302` 的「仍→曾」**不构成历史事实改写**（底层依据 §8 那条未动，`:232` 早已用同款措辞）
+- Task 6: complete (commits 58184c8..d835287, review clean)。定向复评：四条 finding 全部 ADDRESSED、无新破损；复评者另判定 `:302` 的「仍→曾」**不构成历史事实改写**（底层依据 §8 那条未动，`:232` 早已用同款措辞）
 - Task 6: 复评者的 Out-of-Scope 观察：spec `:62` / `:153` 仍写「每步一个事务」—— 上一轮已裁定这两处仍成立、不动，非本轮引入
 
 ## 全部任务收口
 
-Task 1–3: complete (commits e9370fe..07dcbc8, **评审计录缺失** —— 上个会话中断，交最终整支复查覆盖)
-Task 4: complete (commits 07dcbc8..3acd36c, review clean, 3 minors deferred)
-Task 5: complete (commits 3acd36c..9ce12f0, review clean, 5 minors deferred)
-Task 6: complete (commits 9ce12f0..f16ac13, review clean)
+Task 1–3: complete (commits b19f6a3..87ae63f, **评审计录缺失** —— 上个会话中断，交最终整支复查覆盖)
+Task 4: complete (commits 87ae63f..bdae4ef, review clean, 3 minors deferred)
+Task 5: complete (commits bdae4ef..58184c8, review clean, 5 minors deferred)
+Task 6: complete (commits 58184c8..d835287, review clean)
 
-## 最终整支复查（opus，覆盖 a17decd..f16ac13，17 个提交）
+## 最终整支复查（opus，覆盖 6f647ee..d835287，17 个提交）
 
 - 结论：**Ready to merge? Yes**。无 Critical。Task 1–3 那些没被审过的代码**独立复核未见新缺陷**，已被 231 条测试与真实库启动验收覆盖
 - 裁定 1–7 **全部认同**，无异议；它另核对了 `roster.py` 的必填集合、`conftest.py` 的真实夹具序列、`normalize_hardness(None)` 的归一
@@ -162,7 +162,7 @@ Task 6: complete (commits 9ce12f0..f16ac13, review clean)
 
 ## 最终修复波
 
-- 修复波：`bca5464` fix(db)（`init_db()` 全新库分支盖章提到 `create_all` 之前 + `schema.py` 两个 docstring + 回归测试）、`52081ff` docs(spec)（§3.3 伪代码同步顺序）
+- 修复波：`1739f73` fix(db)（`init_db()` 全新库分支盖章提到 `create_all` 之前 + `schema.py` 两个 docstring + 回归测试）、`52081ff` docs(spec)（§3.3 伪代码同步顺序；该提交随后被 amend 进 `8677278`，所以这个哈希本身在任何时刻都查不到 —— 不是 2026-10-17 重写历史造成的）
 - 修复波：`uv run pytest -q` → **232 passed**（231 + 1）；新增测试**在旧顺序下确认为红**（`duplicate column name: name` → 第二次 `init_db()` 抛 RuntimeError），恢复新顺序后为绿 —— 判别力是跑出来的，不是推断的
 - 修复波：**追加裁定**：spec §3.1 的**流程箭头**（`无业务表（全新库） → create_all() → 盖章…`）陈述的是步骤先后，须一并改；上一轮「§3.1 不动」的指示划错了范围（§3.1 的**对照表**讲结果、不动，流程箭头讲顺序、要改） — 若判断有误的代价：一行流程图。
 - 修复波：实施者顾虑「回归测试用『重复给 `project` 加 `name` 列』制造必然失败，依赖该列存在」—— **接受，登记为维护注意**：project 表结构若变，这条测试的判别力会钝化。
@@ -177,17 +177,17 @@ Task 6: complete (commits 9ce12f0..f16ac13, review clean)
 
 ## 归档与收尾
 
-- 归档任务：`87232a4` —— 账本按 `*-ledger.md` 惯例归档到 `docs/superpowers/plans/2026-10-16-migration-and-contract-ledger.md`（172 行），`CLAUDE.md` 的指向改对，补三条遗留。**控制方逐字比对过**：副本与源文件只差开头 13 行说明 + 4 处 reviewer ID 清理，正文零改写
+- 归档任务：`e639636` —— 账本按 `*-ledger.md` 惯例归档到 `docs/superpowers/plans/2026-10-16-migration-and-contract-ledger.md`（172 行），`CLAUDE.md` 的指向改对，补三条遗留。**控制方逐字比对过**：副本与源文件只差开头 13 行说明 + 4 处 reviewer ID 清理，正文零改写
 - 归档任务审查：**Approved**，无 Critical/Important。审查者独立复核了三条例遗与 `session.py:155-158`、spec `:231-242`/`:255` 的一致性
 - 归档任务审查的 **Minor（要修）**：`CLAUDE.md` §7 阶段记录仍写「改后 231 passed」且未交代整支复查与修复波，而新补的三条遗留都以「整支复查后 park」收尾 → 悬空引用 + 数字滞后。**Ruling：补修**（这是交给作者读的那份文档，且是同一批文档收口的收尾），resume 原实施者
 - 归档任务审查的另一条 Minor（归档副本首行体例与 p1b1 先例不同）→ **park，不改**（纯体例）
 
-- 归档任务 fix round 1：`c903945` —— §7 阶段记录补一段「收口」，交代整支复查（覆盖分叉点起全部提交）结论为可合并、其 Important 以一次修复波 + 一次定向复评收口、最终 232 passed，并说明为什么多走这一步不亏；231 明确标注为修复波之前的数。三条遗留的「整支复查后 park」现已有出处
+- 归档任务 fix round 1：`4e48a7b` —— §7 阶段记录补一段「收口」，交代整支复查（覆盖分叉点起全部提交）结论为可合并、其 Important 以一次修复波 + 一次定向复评收口、最终 232 passed，并说明为什么多走这一步不亏；231 明确标注为修复波之前的数。三条遗留的「整支复查后 park」现已有出处
 - 归档任务 fix round 1 的定向复评进行中
 
 ## 分支终态（2026-10-16）
 
-- 分支 `worktree-migration-contract`，**距 master（a17decd）21 个提交**，工作树干净，master 未动
+- 分支 `worktree-migration-contract`，**距 master（6f647ee）21 个提交**，工作树干净，master 未动
 - 完整套件 **232 passed, 1 warning**（那条 warning 是既有的 `StarletteDeprecationWarning`，非本切片引入）
 - 全部任务：Task 1–3（追认，评审缺失，由整支复查覆盖）、Task 4、Task 5、Task 6、整支复查、修复波、归档 —— 均已完成且各有审查或复评
 - **未做**：合并 master（属需作者点头的动作，留给作者裁决）
@@ -195,17 +195,17 @@ Task 6: complete (commits 9ce12f0..f16ac13, review clean)
 - 归档任务 fix round 1 的定向复评：被审的那条 **ADDRESSED**（四项要求全达成、两个数字不再矛盾），但**本轮补记带出一处新 Important** —— `CLAUDE.md:360` 的流程箭头仍是旧顺序（`create_all() → 盖章`），与刚补的 `:376` 相距 16 行自相矛盾；代码与 spec §3.1 都是新顺序，**CLAUDE.md 里这份抄件是唯一漏改的拷贝**（上一轮修复波只改 spec —— 派发范围是我的漏，已在账本留痕）
 - 归档任务 fix round 2：resume 原实施者，改 `CLAUDE.md:360` 的流程箭头
 
-- 归档任务 fix round 2：`e117a5b` —— `CLAUDE.md:360` 的流程箭头同步为新顺序。定向复评：**All findings addressed, no new Critical/Important breakage**；复评者另用 grep 扫了 CLAUDE.md 与 spec，确认没有第二份该改而未改的流程箭头抄件
-- 归档任务 fix round 3（控制方自查发起的追加）：**计划文档 Task 4 的 Step 3 代码块仍是最先建表、后盖章的旧顺序** —— 复评者只扫了 CLAUDE.md 与 spec 两份，plan 不在其范围，是控制方自己查出来的。**改判上一轮「plan 不动」的裁定**：本仓库对 plan 的既有做法就是让它与实现同步（先例就在这份 plan 自己身上：`0b2ec1e docs(plan): M2 修复` 改的正是 Task 2 的代码块），留一份会被照抄的旧代码块比多一次文档提交的代价大
+- 归档任务 fix round 2：`797e954` —— `CLAUDE.md:360` 的流程箭头同步为新顺序。定向复评：**All findings addressed, no new Critical/Important breakage**；复评者另用 grep 扫了 CLAUDE.md 与 spec，确认没有第二份该改而未改的流程箭头抄件
+- 归档任务 fix round 3（控制方自查发起的追加）：**计划文档 Task 4 的 Step 3 代码块仍是最先建表、后盖章的旧顺序** —— 复评者只扫了 CLAUDE.md 与 spec 两份，plan 不在其范围，是控制方自己查出来的。**改判上一轮「plan 不动」的裁定**：本仓库对 plan 的既有做法就是让它与实现同步（先例就在这份 plan 自己身上：`7f8e17a docs(plan): M2 修复` 改的正是 Task 2 的代码块），留一份会被照抄的旧代码块比多一次文档提交的代价大
 
-- 归档任务 fix round 3：`900c02f docs(plan): Task 4 的 init_db 代码块同步为先盖章再建表`（选方案 a：改对代码块 + 加「注意」块讲清为什么不能对调）
+- 归档任务 fix round 3：`c3665a0 docs(plan): Task 4 的 init_db 代码块同步为先盖章再建表`（选方案 a：改对代码块 + 加「注意」块讲清为什么不能对调）
 - 归档任务 fix round 3 的定向复评：**All findings addressed, no new Critical/Important breakage**。复评者把 plan 的代码块与 `session.py` **逐语句对照**（9 行全一致），确认「照抄即得正确实现」这个唯一验收点成立；并逐步走了一遍注意块里的失败链，与代码事实吻合
 - 归档任务 fix round 3 复评的 **Out-of-Scope Observation（park）**：plan `:601` 的 `Produces:` 行「全新库：建表 + 盖 `migrations.latest_version()`」字面读序仍与代码块相反。复评者自陈「严重度低、不阻断」，且明令「不得动这份 plan 的其它部分」— Ruling: **park，按规则处理**（范围外观察不阻断、不延长循环，登记入账本） — 若判断有误的代价：将来有人再扫一遍这份 plan 时会把它当第四处旧顺序重报一次，届时两字对调即可。
-- 归档任务：**complete**（commits a9fcbba..900c02f，全部 fix round 的复评通过）
+- 归档任务：**complete**（commits 8677278..c3665a0，全部 fix round 的复评通过）
 
 ## 切片终态
 
-- 分支 `worktree-migration-contract`，距 master（a17decd）**24 个提交**，工作树干净，master 未动
+- 分支 `worktree-migration-contract`，距 master（6f647ee）**24 个提交**，工作树干净，master 未动
 - 完整套件 **232 passed, 1 warning**（既有 `StarletteDeprecationWarning`，非本切片引入）
 - 账本已归档：`docs/superpowers/plans/2026-10-16-migration-and-contract-ledger.md`
 - **未做**：合并 master —— 留给作者裁决
