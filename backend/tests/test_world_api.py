@@ -199,8 +199,12 @@ def test_suggest_writes_no_entries_until_adopted(client, monkeypatch):
     _seed_slots(project["id"])
     _patch_runtime(monkeypatch, CANDIDATES)
 
-    client.post(f"/api/projects/{project['id']}/entries/suggest")
+    body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
 
+    # 先确认这次真的产出了候选 —— 否则「没写库」可能只是因为跑失败了，
+    # 这条测试就变成在断言「失败也不写库」，失去它想锁住的东西。
+    assert body["structured"] is True
+    assert len(body["entries"]) == 3
     assert client.get(f"/api/projects/{project['id']}/entries").json() == []
 
 

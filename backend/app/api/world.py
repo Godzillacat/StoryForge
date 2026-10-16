@@ -38,9 +38,13 @@ def _reason(result) -> str | None:
         return result.parse_error
     error = result.error or {}
     if error.get("kind") == "template":
+        # 把运行时给出的缺失变量名附上：template 失败不只发生在「上游没做」，
+        # 也发生在作者自己在工作室把提示词改坏时 —— 那种情况下上面这句指引是错的，
+        # 而变量名能让作者分辨自己是哪一种。
         return (
             "这个智能体要吃灵感解析卡与故事圣经：先去「灵感与解析」跑一次解析，"
             "再到「架构推荐」采纳一套结构，然后回来生成设定。"
+            f"（运行记录里说缺的是：{error.get('message') or '未知变量'}）"
         )
     return error.get("message") or "这次运行没有得到可用的返回"
 
