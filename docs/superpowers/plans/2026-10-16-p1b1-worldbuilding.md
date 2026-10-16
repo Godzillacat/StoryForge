@@ -499,6 +499,33 @@ def test_changing_away_from_rule_clears_hardness(session):
 
     assert updated.type == "faction"
     assert updated.hardness is None
+
+
+def test_update_rejects_a_blank_name(session):
+    """与 create 对称：纯空白的名字是从 Pydantic 的 min_length=1 漏过来的。"""
+    project = _project(session)
+    entry = world_service.create_entry(session, project.id, type="place", name="雾港旧城")
+
+    with pytest.raises(ValueError):
+        world_service.update_entry(session, entry.id, name="   ")
+
+    assert world_service.get_entry(session, entry.id).name == "雾港旧城"
+
+
+def test_update_duplicate_name_reports_the_name_the_author_typed(session):
+    """报错里的名字必须是作者刚填的那个。
+
+    rollback 会让实例 expire，若在 rollback 之后才读 entry.name，拿到的是
+    改动前的旧名字 —— 于是消息会指着正在编辑的那条说「已经有叫它的条目了」。
+    """
+    project = _project(session)
+    world_service.create_entry(session, project.id, type="place", name="甲")
+    target = world_service.create_entry(session, project.id, type="place", name="乙")
+
+    with pytest.raises(ValueError) as excinfo:
+        world_service.update_entry(session, target.id, name="甲")
+
+    assert "甲" in str(excinfo.value)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -569,13 +596,14 @@ def create_entry(session: Session, project_id: str, **fields) -> SettingEntry:
     _apply_entry_fields(entry, fields)
     if not entry.name.strip():
         raise ValueError("设定条目必须有名称")
+    name = entry.name
     session.add(entry)
     try:
         session.commit()
     except IntegrityError as exc:
         session.rollback()
         # 唯一约束在数据库上，但作者要看到中文原因而不是堆栈
-        raise ValueError(f"这个项目里已经有叫「{entry.name}」的条目了") from exc
+        raise ValueError(f"这个项目里已经有叫「{name}」的条目了") from exc
     return entry
 
 
@@ -584,11 +612,17 @@ def update_entry(session: Session, entry_id: str, **fields) -> SettingEntry:
     if entry is None:
         raise ValueError(f"设定条目不存在：{entry_id}")
     _apply_entry_fields(entry, fields)
+    # 与 create 对称：Pydantic 的 min_length=1 只挡空串，挡不住纯空白
+    if not entry.name.strip():
+        raise ValueError("设定条目必须有名称")
+    # 先把名字取出来再提交：rollback 会让实例 expire，之后再读 entry.name
+    # 会重新查库拿回改动前的旧名字，报错就会指着正在编辑的那条说「已经有它了」。
+    name = entry.name
     try:
         session.commit()
     except IntegrityError as exc:
         session.rollback()
-        raise ValueError(f"这个项目里已经有叫「{entry.name}」的条目了") from exc
+        raise ValueError(f"这个项目里已经有叫「{name}」的条目了") from exc
     return entry
 
 
