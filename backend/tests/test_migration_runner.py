@@ -166,3 +166,44 @@ def test_a_multi_statement_step_that_fails_leaves_nothing_behind(clean_db, monke
     assert "_probe" not in inspect(clean_db).get_table_names()
     with clean_db.connect() as conn:
         assert conn.exec_driver_sql("SELECT MAX(version) FROM schema_migration").fetchone() == (0,)
+
+
+def test_a_pending_step_backs_up_the_database_first(clean_db, monkeypatch):
+    """单机单人，稿子就在这一个文件里；改表失败是不可接受的风险。"""
+    Base.metadata.create_all(clean_db)
+    monkeypatch.setattr(
+        migrations, "MIGRATIONS", (_step(1, "探针", "CREATE TABLE _probe (x INTEGER)"),)
+    )
+
+    db_session.run_migrations(clean_db)
+
+    backups = config.data_dir() / "backups"
+    made = list(backups.glob("pre-migration-v1-*"))
+    assert len(made) == 1
+    assert (made[0] / "storyforge.db").exists()
+
+
+def test_no_pending_step_means_no_backup(clean_db):
+    """空跑不该产生垃圾 —— 每次启动都备份会把数据目录塞满。"""
+    Base.metadata.create_all(clean_db)
+
+    db_session.run_migrations(clean_db)
+
+    assert not (config.data_dir() / "backups").exists()
+
+
+def test_backup_records_the_target_version(clean_db, monkeypatch):
+    """目录名带目标版本，出事时一眼看得出「这次升级到哪一步」。"""
+    Base.metadata.create_all(clean_db)
+    monkeypatch.setattr(
+        migrations,
+        "MIGRATIONS",
+        (
+            _step(1, "甲", "CREATE TABLE _a (x INTEGER)"),
+            _step(2, "乙", "CREATE TABLE _b (x INTEGER)"),
+        ),
+    )
+
+    db_session.run_migrations(clean_db)
+
+    assert list((config.data_dir() / "backups").glob("pre-migration-v2-*"))

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import datetime as dt
+import shutil
 from collections.abc import Iterator
+from pathlib import Path
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
@@ -68,6 +70,26 @@ def is_fresh_database(engine) -> bool:
     return not (row and row[0])
 
 
+def backup_database_before(target_version: int) -> Path | None:
+    """把整库复制到 backups/pre-migration-v<目标版本>-<时间戳>/。
+
+    只在真有步骤要执行时才调用 —— 每次启动都备份会把数据目录塞满。
+    连同 -wal / -shm 一起复制：只拷主文件会丢掉尚未落盘的那部分改动。
+    """
+    source = config.db_path()
+    if not source.exists():
+        return None  # 全新库没什么可备份的
+
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+    target = config.data_dir() / "backups" / f"pre-migration-v{target_version}-{stamp}"
+    target.mkdir(parents=True, exist_ok=True)
+    for suffix in ("", "-wal", "-shm"):
+        current = source.with_name(source.name + suffix)
+        if current.exists():
+            shutil.copy2(current, target / current.name)
+    return target
+
+
 def run_migrations(engine) -> None:
     """存量库的迁移路径：建表 → 盖章 → （有步骤时）备份 → 按序执行。
 
@@ -86,6 +108,8 @@ def run_migrations(engine) -> None:
     todo = migrations.pending(applied)
     if not todo:
         return
+
+    backup_database_before(todo[-1].version)
 
     for step in todo:
         # **不能用 engine.begin()**：SQLAlchemy 的 pysqlite 走 legacy 事务控制，
