@@ -56,13 +56,14 @@ def create_entry(session: Session, project_id: str, **fields) -> SettingEntry:
     _apply_entry_fields(entry, fields)
     if not entry.name.strip():
         raise ValueError("设定条目必须有名称")
+    name = entry.name
     session.add(entry)
     try:
         session.commit()
     except IntegrityError as exc:
         session.rollback()
         # 唯一约束在数据库上，但作者要看到中文原因而不是堆栈
-        raise ValueError(f"这个项目里已经有叫「{entry.name}」的条目了") from exc
+        raise ValueError(f"这个项目里已经有叫「{name}」的条目了") from exc
     return entry
 
 
@@ -71,11 +72,21 @@ def update_entry(session: Session, entry_id: str, **fields) -> SettingEntry:
     if entry is None:
         raise ValueError(f"设定条目不存在：{entry_id}")
     _apply_entry_fields(entry, fields)
+    # 与 create 对称：Pydantic 的 min_length=1 只挡空串，挡不住纯空白
+    if not entry.name.strip():
+        # 先回滚再抛：apply 已把空名写进内存里的这条，不回滚的话它会留在
+        # session 里（autoflush 关着，读回来就是那个空白名），调用方若接着
+        # 提交就会把空白名落库 —— 与下面 IntegrityError 分支同一处理。
+        session.rollback()
+        raise ValueError("设定条目必须有名称")
+    # 先把名字取出来再提交：rollback 会让实例 expire，之后再读 entry.name
+    # 会重新查库拿回改动前的旧名字，报错就会指着正在编辑的那条说「已经有它了」。
+    name = entry.name
     try:
         session.commit()
     except IntegrityError as exc:
         session.rollback()
-        raise ValueError(f"这个项目里已经有叫「{entry.name}」的条目了") from exc
+        raise ValueError(f"这个项目里已经有叫「{name}」的条目了") from exc
     return entry
 
 
