@@ -147,3 +147,45 @@ def test_adding_titles_does_not_change_validation():
     _, ok_missing, error_missing = apply_contract('{"genre": "悬疑"}', parser["output_schema"])
     assert ok_missing is False
     assert "premise" in (error_missing or "")
+
+
+def test_worldbuilder_is_in_the_default_roster():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "worldbuilder")
+    assert entry["task_type"] == "worldbuilding"
+    assert entry["trigger_mode"] == "assist"
+    assert entry["context_slots"] == ["parsed_idea", "story_bible", "project_core"]
+
+
+def test_worldbuilder_prompt_forbids_inventing_settings():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "worldbuilder")
+    prompt = entry["system_prompt"]
+    assert "编造" in prompt or "不许编" in prompt
+
+
+def test_worldbuilder_schema_has_entries_and_open_questions():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "worldbuilder")
+    props = entry["output_schema"]["properties"]
+    assert set(props) == {"entries", "open_questions"}
+    assert entry["output_schema"]["required"] == ["entries"]
+    item = props["entries"]["items"]
+    assert set(item["properties"]) == {
+        "type",
+        "name",
+        "aliases",
+        "summary",
+        "description",
+        "hardness",
+    }
+    assert item["required"] == ["type", "name", "summary"]
+
+
+def test_worldbuilder_type_descriptions_match_the_vocabulary():
+    """契约里的字段说明必须把八类都讲到 —— 提示词里不许写英文键（护栏会拦），
+    所以模型只可能从契约说明块里知道有哪些类型。"""
+    from app.world_types import ENTRY_TYPES
+
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "worldbuilder")
+    described = describe_contract(entry["output_schema"])
+
+    for label in ENTRY_TYPES.values():
+        assert label in described, f"契约说明块没有讲到类型「{label}」"

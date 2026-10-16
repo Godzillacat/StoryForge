@@ -473,11 +473,59 @@ def test_update_unknown_entry_raises(session):
 
 
 def test_type_change_re_normalizes(session):
+    """改成规则类时，类型与硬度两个字段都要走归一化。
+
+    注意必须改成 **rule**：硬度只在规则类条目上有意义（spec §2.1），
+    拿 faction 去断言 hardness 保留，与那条不变量冲突。
+    """
     project = _project(session)
     entry = world_service.create_entry(session, project.id, type="place", name="某地")
-    updated = world_service.update_entry(session, entry.id, type="势力", hardness="soft")
-    assert updated.type == "faction"
+
+    updated = world_service.update_entry(session, entry.id, type="规则体系", hardness="软规则")
+
+    assert updated.type == "rule"
     assert updated.hardness == "soft"
+
+
+def test_changing_away_from_rule_clears_hardness(session):
+    """不变量在 update 路径上同样成立：一条规则改成「势力」就不再带硬度。"""
+    project = _project(session)
+    entry = world_service.create_entry(
+        session, project.id, type="rule", name="死者不能复活", hardness="hard"
+    )
+    assert entry.hardness == "hard"
+
+    updated = world_service.update_entry(session, entry.id, type="势力")
+
+    assert updated.type == "faction"
+    assert updated.hardness is None
+
+
+def test_update_rejects_a_blank_name(session):
+    """与 create 对称：纯空白的名字是从 Pydantic 的 min_length=1 漏过来的。"""
+    project = _project(session)
+    entry = world_service.create_entry(session, project.id, type="place", name="雾港旧城")
+
+    with pytest.raises(ValueError):
+        world_service.update_entry(session, entry.id, name="   ")
+
+    assert world_service.get_entry(session, entry.id).name == "雾港旧城"
+
+
+def test_update_duplicate_name_reports_the_name_the_author_typed(session):
+    """报错里的名字必须是作者刚填的那个。
+
+    rollback 会让实例 expire，若在 rollback 之后才读 entry.name，拿到的是
+    改动前的旧名字 —— 于是消息会指着正在编辑的那条说「已经有叫它的条目了」。
+    """
+    project = _project(session)
+    world_service.create_entry(session, project.id, type="place", name="甲")
+    target = world_service.create_entry(session, project.id, type="place", name="乙")
+
+    with pytest.raises(ValueError) as excinfo:
+        world_service.update_entry(session, target.id, name="甲")
+
+    assert "甲" in str(excinfo.value)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -501,16 +549,17 @@ from sqlalchemy.orm import Session
 from app.db.models import EntryRelation, SettingEntry
 from app.world_types import normalize_hardness, normalize_type
 
-# 只有这些字段可被外部写入，避免调用方顺手改到 project_id 之类。
-# type 与 hardness 单独处理（它们要归一化），故不在此列。
-_ENTRY_FIELDS = (
-    "name",
-    "aliases_json",
-    "tags_json",
-    "summary",
-    "description",
-    "source_run_id",
-)
+# 服务层说领域名（aliases / tags），存储层的 *_json 后缀不往上传 ——
+# 与 idea_service.create_idea(..., tags) 的既有约定一致。
+# type 与 hardness 不在此列：它们要归一化，单独处理。
+_FIELD_TO_COLUMN = {
+    "name": "name",
+    "aliases": "aliases_json",
+    "tags": "tags_json",
+    "summary": "summary",
+    "description": "description",
+    "source_run_id": "source_run_id",
+}
 
 
 def _apply_entry_fields(entry: SettingEntry, fields: dict) -> None:
@@ -519,11 +568,12 @@ def _apply_entry_fields(entry: SettingEntry, fields: dict) -> None:
         entry.type = normalize_type(fields["type"])
     if "hardness" in fields:
         entry.hardness = normalize_hardness(fields.get("hardness"))
-    for key in _ENTRY_FIELDS:
-        value = fields.get(key)
+    for name, column in _FIELD_TO_COLUMN.items():
+        value = fields.get(name)
         if value is not None:
-            setattr(entry, key, value)
-    # 类型不是规则类时，硬度没有意义 —— 留着会让界面显示一个不存在的概念
+            setattr(entry, column, value)
+    # 类型不是规则类时，硬度没有意义 —— 留着会让界面显示一个不存在的概念。
+    # 这条在 update 路径上同样生效：把一条规则改成「势力」会清掉它的硬度。
     if entry.type != "rule":
         entry.hardness = None
 
@@ -546,13 +596,14 @@ def create_entry(session: Session, project_id: str, **fields) -> SettingEntry:
     _apply_entry_fields(entry, fields)
     if not entry.name.strip():
         raise ValueError("设定条目必须有名称")
+    name = entry.name
     session.add(entry)
     try:
         session.commit()
     except IntegrityError as exc:
         session.rollback()
         # 唯一约束在数据库上，但作者要看到中文原因而不是堆栈
-        raise ValueError(f"这个项目里已经有叫「{entry.name}」的条目了") from exc
+        raise ValueError(f"这个项目里已经有叫「{name}」的条目了") from exc
     return entry
 
 
@@ -561,11 +612,20 @@ def update_entry(session: Session, entry_id: str, **fields) -> SettingEntry:
     if entry is None:
         raise ValueError(f"设定条目不存在：{entry_id}")
     _apply_entry_fields(entry, fields)
+    # 与 create 对称：Pydantic 的 min_length=1 只挡空串，挡不住纯空白。
+    # 必须先 rollback 再抛 —— 上面那一步已经把持久对象改脏了，不回滚的话
+    # 这个 session 里留着的就是那个非法值，后续读到的也是它。
+    if not entry.name.strip():
+        session.rollback()
+        raise ValueError("设定条目必须有名称")
+    # 先把名字取出来再提交：rollback 会让实例 expire，之后再读 entry.name
+    # 会重新查库拿回改动前的旧名字，报错就会指着正在编辑的那条说「已经有它了」。
+    name = entry.name
     try:
         session.commit()
     except IntegrityError as exc:
         session.rollback()
-        raise ValueError(f"这个项目里已经有叫「{entry.name}」的条目了") from exc
+        raise ValueError(f"这个项目里已经有叫「{name}」的条目了") from exc
     return entry
 
 
@@ -634,12 +694,8 @@ def _entry_out(entry) -> dict:
 
 
 def _entry_fields(payload: EntryCreate | EntryUpdate) -> dict:
-    """出入参用 aliases / tags，模型列叫 aliases_json / tags_json。"""
-    fields = payload.model_dump(exclude_unset=True)
-    for api_key, column in (("aliases", "aliases_json"), ("tags", "tags_json")):
-        if api_key in fields:
-            fields[column] = fields.pop(api_key)
-    return fields
+    """只做「未传的字段别覆盖」这一件事；领域名到列名的映射在服务层内部。"""
+    return payload.model_dump(exclude_unset=True)
 
 
 @router.get("/projects/{project_id}/entries")
@@ -1002,7 +1058,75 @@ def test_deleting_an_entry_removes_it_from_relations_list(client):
     assert client.get(f"/api/projects/{project['id']}/relations").json() == []
 ```
 
-> 该文件只用 `client` 夹具（`test_api.py` 里那个已预置阵容与服务商、并建表的夹具），不要再请求 `session` 夹具 —— 两者各自重建表，混用会把数据冲掉。
+**先做一件事：把 `client` 夹具从 `test_api.py` 搬进 `conftest.py`。**
+
+它现在定义在 `backend/tests/test_api.py:13-32`，而 **pytest 的夹具不跨测试模块共享** —— 新建的 `test_world_api.py` 直接用它只会得到 `fixture 'client' not found`。搬进 `conftest.py` 是它本来就该在的地方。
+
+`backend/tests/conftest.py` 末尾追加（连同它需要的导入）：
+
+```python
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+
+from app.db.models import AgentVersion, Provider
+from app.db.session import SessionLocal, init_db
+from app.main import app
+from app.services.seed_service import seed_agents, seed_tools
+
+
+@pytest.fixture()
+def client():
+    init_db()
+    with SessionLocal() as session:
+        seed_agents(session)
+        seed_tools(session)
+        # 跑智能体需要一家启用的服务商，这是产品行为不是测试特例。
+        # 这里补上前置条件：真实 HTTP 调用被 _patch_client 替换，密钥留空即可。
+        if session.scalars(select(Provider).where(Provider.enabled.is_(True))).first() is None:
+            session.add(
+                Provider(
+                    name="测试服务商",
+                    kind="custom",
+                    base_url="https://api.example.com/v1",
+                    enabled=True,
+                )
+            )
+            session.commit()
+        # 跑智能体同样需要智能体自身绑定了模型：运行时不再把服务商显示名
+        # 当模型 ID 回落，没绑就会在解析阶段报错。预置阵容出厂不带模型名，
+        # 由作者在工作室里指定 —— 这里替测试补上这个前置条件。
+        for version in session.scalars(select(AgentVersion)):
+            binding = dict(version.model_binding_json or {})
+            if not binding.get("model"):
+                version.model_binding_json = {**binding, "model": "test-model"}
+                session.commit()
+    with TestClient(app) as c:
+        yield c
+```
+
+**这段必须与 `test_api.py` 里的原件逐字一致（包括上面那段绑定模型的循环）** —— 它是上一轮 P1a 收口时补的，因为运行时改成了「没绑模型就报错」。少抄它，`/parse` 与 `/runs` 的既有用例会当场变红。
+
+（`conftest.py` 顶部已有 `import pytest`；`from app.db.base import Base` 等既有导入不动。）
+
+**同时把 `backend/tests/test_api.py` 里那份删掉**（`@pytest.fixture()` + `def client()` 整段），并删掉因此不再使用的导入：`TestClient`、`SessionLocal`、`init_db`、`seed_agents`、`seed_tools`、`Provider`、`AgentVersion`、`select`、`from app.main import app`，以及 **`pytest`**（搬走之后该文件再无 `@pytest.fixture`，而 `monkeypatch` 是夹具参数、不需要 import pytest）。
+
+该文件搬完后**只应剩三个导入**：`httpx`、`RuntimeService`（在 `_patch_client` 里局部导入）、`HttpxChatClient`（同样在 `_patch_client` 里）。实际留下的：
+
+```python
+import httpx
+import pytest
+
+from app.runtime.llm import HttpxChatClient
+```
+
+`pytest` 这一行此时已无人使用 —— 一并删掉。
+
+搬完先跑一次全量，确认既有测试没被打破：
+
+Run: `uv run pytest -q`
+Expected: 全绿（此时代码未变，只是夹具换了位置）
+
+**然后**，该文件只用 `client` 夹具，不要再请求 `session` 夹具 —— 两者各自重建表，混用会把数据冲掉。
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1036,8 +1160,8 @@ Expected: 全部 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/api/world.py backend/tests/test_world_api.py
-git commit -m "feat(world): 类型清单接口与世界观的 HTTP 层测试"
+git add backend/app/api/world.py backend/tests/test_world_api.py backend/tests/conftest.py backend/tests/test_api.py
+git commit -m "feat(world): 类型清单接口与世界观的 HTTP 层测试；client 夹具移入 conftest"
 ```
 
 ---
@@ -1298,6 +1422,7 @@ WORLDBUILDER_PROMPT = """你是长篇小说世界观构建师，服务对象是�
 4. 别名与称呼把所有叫法都列上（简称、旧称、别称、敌对方的贬称），后面查一致性靠它；
 5. 你没把握的一律写进「你拿不准、需要作者确认的问题」，**不许编造设定填空**；
 6. 不要替作者决定故事的走向，也不要在候选里写正文。"""
+```
 
 DEFAULT_ROSTER 列表末尾追加：
 
@@ -1354,12 +1479,47 @@ git commit -m "feat(agents): 预置世界观构建师"
 
 ```python
 CANDIDATES = (
-    '{"entries": [{"type": "faction", "name": "记忆交易局", "aliases": ["交易局"],'
+    '{"entries": ['
+    '{"type": "faction", "name": "记忆交易局", "aliases": ["交易局"],'
     ' "summary": "管记忆买卖的机构", "description": "", "hardness": ""},'
-    ' {"type": "规则体系", "name": "记忆不可复活", "aliases": [],'
-    ' "summary": "硬规则", "description": "", "hardness": "硬规则"}],'
+    '{"type": "规则体系", "name": "记忆不可复活", "aliases": [],'
+    ' "summary": "硬规则", "description": "", "hardness": "硬规则"},'
+    '{"type": "place", "name": "雾港旧城", "aliases": ["旧城"],'
+    ' "summary": "故事发生的南方小城", "description": "", "hardness": ""}],'
     ' "open_questions": ["记忆交易合法吗？"]}'
 )
+# 注意是 **3** 条：契约里 entries 有 minItems: 3，只给 2 条连校验都过不去。
+
+
+def _seed_slots(project_id: str) -> None:
+    """替测试补上世界观构建师要吃的前置条件：已解析的灵感与已采纳的架构。
+
+    它的提示词引用了 parsed_idea 与 story_bible 两个槽位。槽位取不到值时
+    build_context 会把它丢掉、render 随即抛 MissingVariableError，整个 run
+    变成 template 错误 —— 这是产品行为（上游没做就别跑下游），不是测试
+    特例，所以在这里补前置。与 client 夹具里补服务商、补模型绑定同一条路子。
+    """
+    from app.db.models import Architecture, Idea
+    from app.db.session import SessionLocal
+
+    with SessionLocal() as session:
+        idea = Idea(project_id=project_id, raw_text="能听见死者遗言的验尸官")
+        idea.parsed_json = {
+            "genre": "悬疑",
+            "premise": "记忆可以被买卖的南方小城",
+            "protagonist_desire": "查清那段声音的来处",
+            "conflict_source": "个人真相与记忆交易秩序对撞",
+            "open_questions": [],
+        }
+        session.add(idea)
+        session.add(
+            Architecture(
+                project_id=project_id,
+                logline="记忆清洁工在待销毁档案里听见自己的声音",
+                theme="不被删除的记忆才证明一个人活过",
+            )
+        )
+        session.commit()
 
 
 def _patch_runtime(monkeypatch, content: str) -> None:
@@ -1388,19 +1548,21 @@ def _patch_runtime(monkeypatch, content: str) -> None:
 
 def test_suggest_returns_structured_candidates(client, monkeypatch):
     project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _seed_slots(project["id"])
     _patch_runtime(monkeypatch, CANDIDATES)
 
     body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
 
     assert body["structured"] is True
     assert body["parse_error"] is None
-    assert [e["name"] for e in body["entries"]] == ["记忆交易局", "记忆不可复活"]
+    assert [e["name"] for e in body["entries"]] == ["记忆交易局", "记忆不可复活", "雾港旧城"]
     assert body["open_questions"] == ["记忆交易合法吗？"]
     assert body["run"]["rendered_prompt"]  # 调试台要能看完整链路
 
 
 def test_suggest_degrades_without_losing_the_raw_text(client, monkeypatch):
     project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _seed_slots(project["id"])
     _patch_runtime(monkeypatch, "模型没按格式返回")
 
     body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
@@ -1411,18 +1573,41 @@ def test_suggest_degrades_without_losing_the_raw_text(client, monkeypatch):
     assert body["raw_text"] == "模型没按格式返回"
 
 
-def test_suggest_writes_no_entries_until_adopted(client, monkeypatch):
-    """候选只落在运行记录里（D-04）—— 跑一次不该往表里写任何东西。"""
+def test_suggest_on_a_bare_project_tells_the_author_what_to_do_first(client, monkeypatch):
+    """没解析过灵感、没采纳过架构时，世界观构建师的两个槽位是空的。
+
+    这时不该给作者一句「模型没按契约返回」—— 模型根本没被调用，
+    那是句假话，而且作者照它排查会找到错的方向。要给一句能照做的。
+    """
     project = client.post("/api/projects", json={"name": "雾港"}).json()
     _patch_runtime(monkeypatch, CANDIDATES)
 
-    client.post(f"/api/projects/{project['id']}/entries/suggest")
+    body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
 
+    assert body["structured"] is False
+    assert body["entries"] == []
+    assert "灵感" in body["parse_error"]
+    assert "架构" in body["parse_error"]
+
+
+def test_suggest_writes_no_entries_until_adopted(client, monkeypatch):
+    """候选只落在运行记录里（D-04）—— 跑一次不该往表里写任何东西。"""
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _seed_slots(project["id"])
+    _patch_runtime(monkeypatch, CANDIDATES)
+
+    body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
+
+    # 先确认这次真的产出了候选 —— 否则「没写库」可能只是因为跑失败了，
+    # 这条测试就变成在断言「失败也不写库」，失去它想锁住的东西。
+    assert body["structured"] is True
+    assert len(body["entries"]) == 3
     assert client.get(f"/api/projects/{project['id']}/entries").json() == []
 
 
 def test_adopting_a_candidate_records_its_source_run(client, monkeypatch):
     project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _seed_slots(project["id"])
     _patch_runtime(monkeypatch, CANDIDATES)
     body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
     run_id = body["run"]["id"]
@@ -1463,6 +1648,32 @@ from app.services.runtime_service import RuntimeService
 在类型清单路由之后追加：
 
 ```python
+def _reason(result) -> str | None:
+    """未结构化时给作者一句**能照做**的话。
+
+    契约失败有现成原因，直接用。但另外两种失败只有运行记录里的技术错误：
+    - `template` 是上游还没做（提示词要的槽位取不到值），作者该去补前置；
+    - 其余（网络、超时、鉴权）是调用本身出了问题。
+    两者都不该被界面显示成「模型没按契约返回」—— 那可能是句假话，
+    而且作者照它排查会找到错的方向。
+    """
+    if result.structured:
+        return None
+    if result.parse_error:
+        return result.parse_error
+    error = result.error or {}
+    if error.get("kind") == "template":
+        # 把运行时给出的缺失变量名附上：template 失败不只发生在「上游没做」，
+        # 也发生在作者自己在工作室把提示词改坏时 —— 那种情况下上面这句指引是错的，
+        # 而变量名能让作者分辨自己是哪一种。
+        return (
+            "这个智能体要吃灵感解析卡与故事圣经：先去「灵感与解析」跑一次解析，"
+            "再到「架构推荐」采纳一套结构，然后回来生成设定。"
+            f"（运行记录里说缺的是：{error.get('message') or '未知变量'}）"
+        )
+    return error.get("message") or "这次运行没有得到可用的返回"
+
+
 @router.post("/projects/{project_id}/entries/suggest")
 def suggest_entries(project_id: str, session: Session = Depends(get_session)) -> dict:
     """跑一次世界观构建师，返回候选供作者逐条审。
@@ -1485,7 +1696,7 @@ def suggest_entries(project_id: str, session: Session = Depends(get_session)) ->
         "entries": parsed.get("entries", []) if result.structured else [],
         "open_questions": parsed.get("open_questions", []) if result.structured else [],
         "structured": result.structured,
-        "parse_error": result.parse_error,
+        "parse_error": _reason(result),
         "raw_text": result.raw_output,
     }
 ```
@@ -1858,19 +2069,31 @@ export default function World() {
     })
   }, [])
 
+  // 类型与硬度是**两份**词表，都从接口来 —— 合到一张 map 里，
+  // 否则硬度的键（hard / soft / atmosphere）会在界面上原样露出来。
   const typeLabel = useMemo(() => {
-    const map = new Map((types?.types ?? []).map((t) => [t.key, t.label]))
+    const map = new Map(
+      [...(types?.types ?? []), ...(types?.hardness ?? [])].map((t) => [t.key, t.label]),
+    )
     return (key: string) => map.get(key) ?? key
   }, [types])
 
   useEffect(() => {
     if (!projectId) return
+    runToken.current++ // 换项目即作废在途的候选请求，别让它回来写错项目
     // 换项目即整体重置：选中项、草稿、提示都跟着换，避免上一条目的内容
     // 留在编辑器里被误当成新项目的。
     setSelectedId(null)
     setCreating(false)
     setDraft(EMPTY_DRAFT)
     setNotice('')
+    // 候选与它的运行记录同样是**项目作用域**的，必须一起换掉：留着会让 A 的
+    // 候选被采纳进 B，而 source_run_id 指向的是 A 的那次运行 —— 它是无外键的
+    // 裸字符串，后端不会拦，D-03 的「凭这条查回它怎么来的」就成了悬空引用。
+    setCandidates([])
+    setOpenQuestions([])
+    setLastRun(null)
+    setSuggesting(false)
     api.listEntries(projectId).then(setEntries).catch((e) => setNotice((e as Error).message))
     api.listRelations(projectId).then(setRelations).catch((e) => setNotice((e as Error).message))
   }, [projectId])
@@ -2037,7 +2260,9 @@ export default function World() {
           ))}
           {entries.length === 0 && (
             <p className="text-sm text-slate-500">
-              还没有设定。点「新建条目」自己写，或者到上面的候选区让 AI 先提一批。
+              {projectId
+                ? '还没有设定。点「新建条目」自己写，或者到上面的候选区让 AI 先提一批。'
+                : '先去「故事仪表盘」新建一个项目。'}
             </p>
           )}
         </nav>
@@ -2184,6 +2409,13 @@ function draftOf(candidate: SuggestedEntry): EntryDraft {
   }
 }
 
+/** 候选行的稳定标识。由 World 页在拿到候选时生成 —— 展开态靠它定位，
+ *  所以它必须在整份候选的生命周期里不变。 */
+export interface CandidateRow {
+  key: string
+  entry: SuggestedEntry
+}
+
 export default function CandidateList({
   candidates,
   types,
@@ -2192,25 +2424,31 @@ export default function CandidateList({
   onAdopt,
   onDiscard,
 }: {
-  candidates: SuggestedEntry[]
+  candidates: CandidateRow[]
   types: EntryTypesResponse | null
   existing: SettingEntry[]
   busy: boolean
-  onAdopt: (draft: EntryDraft) => Promise<void>
-  onDiscard: (index: number) => void
+  onAdopt: (draft: EntryDraft) => Promise<boolean>
+  onDiscard: (key: string) => void
 }) {
-  const [openIndex, setOpenIndex] = useState<number | null>(null)
+  // 展开态按候选的**稳定 key** 记，不按数组下标 —— 丢弃上方一行、或再点一次
+  // 「让 AI 提候选」，下标都会整体前移，草稿于是漂到别的候选上，点采纳提交的
+  // 是作者没在改的那条，source_run_id 还对不上。这直接打在「作者裁决」上。
+  const [openKey, setOpenKey] = useState<string | null>(null)
   const [draft, setDraft] = useState<EntryDraft | null>(null)
 
   const takenNames = new Set(existing.map((e) => e.name))
+  // 候选的 type 是**英文键**（后端在响应里归一过，否则表单的下拉对不上），
+  // 而这一格要显示的是中文 —— 不映射就会把 `faction` 这样的键露给作者。
+  const typeLabels = new Map((types?.types ?? []).map((t) => [t.key, t.label]))
 
-  function toggle(index: number, candidate: SuggestedEntry) {
-    if (openIndex === index) {
-      setOpenIndex(null)
+  function toggle(key: string, candidate: SuggestedEntry) {
+    if (openKey === key) {
+      setOpenKey(null)
       setDraft(null)
       return
     }
-    setOpenIndex(index)
+    setOpenKey(key)
     setDraft(draftOf(candidate))
   }
 
@@ -2221,18 +2459,20 @@ export default function CandidateList({
       </h3>
 
       <ul className="space-y-2 text-sm">
-        {candidates.map((candidate, index) => {
+        {candidates.map(({ key, entry: candidate }) => {
           const duplicated = takenNames.has(candidate.name ?? '')
           return (
-            <li key={`${candidate.name}-${index}`} className="space-y-2 border-b border-slate-800 pb-2 last:border-0">
+            <li key={key} className="space-y-2 border-b border-slate-800 pb-2 last:border-0">
               <div className="flex flex-wrap items-center gap-3">
-                <span className="text-xs text-slate-500">{candidate.type ?? '?'}</span>
+                <span className="text-xs text-slate-500">
+                  {typeLabels.get(candidate.type ?? '') ?? candidate.type ?? '?'}
+                </span>
                 <span className="font-medium">{candidate.name}</span>
                 {duplicated && <span className="text-xs text-amber-400">已存在，默认跳过</span>}
-                <button className="text-xs text-indigo-400" onClick={() => toggle(index, candidate)}>
-                  {openIndex === index ? '收起' : '改后采纳'}
+                <button className="text-xs text-indigo-400" onClick={() => toggle(key, candidate)}>
+                  {openKey === key ? '收起' : '改后采纳'}
                 </button>
-                <button className="text-xs text-slate-500" onClick={() => onDiscard(index)}>
+                <button className="text-xs text-slate-500" onClick={() => onDiscard(key)}>
                   丢弃
                 </button>
                 {!duplicated && (
@@ -2247,16 +2487,19 @@ export default function CandidateList({
               </div>
               <p className="text-xs text-slate-400">{candidate.summary}</p>
 
-              {openIndex === index && draft && (
+              {openKey === key && draft && (
                 <div className="space-y-3 rounded bg-slate-900/60 p-3">
                   <EntryEditor draft={draft} types={types} onChange={setDraft} />
                   <button
                     className="rounded bg-emerald-700 px-4 py-2 text-sm disabled:opacity-50"
                     disabled={busy}
                     onClick={async () => {
-                      await onAdopt(draft)
-                      setOpenIndex(null)
-                      setDraft(null)
+                      // 采纳**失败时不收**展开区：失败恰恰常发生在作者刚把撞名的
+                      // 候选改了名、而新名字仍然撞名时，把编辑内容收掉等于让他重敲。
+                      if (await onAdopt(draft)) {
+                        setOpenKey(null)
+                        setDraft(null)
+                      }
                     }}
                   >
                     按改后的内容采纳
@@ -2279,17 +2522,22 @@ export default function CandidateList({
 `frontend/src/pages/World.tsx`：加导入：
 
 ```tsx
-import CandidateList from '../components/CandidateList'
+import CandidateList, { type CandidateRow } from '../components/CandidateList'
 ```
 
 加状态：
 
 ```tsx
-  const [candidates, setCandidates] = useState<SuggestedEntry[]>([])
+  const [candidates, setCandidates] = useState<CandidateRow[]>([])
   const [openQuestions, setOpenQuestions] = useState<string[]>([])
   const [suggesting, setSuggesting] = useState(false)
   const [lastRun, setLastRun] = useState<RunView | null>(null)
+  // 作废在途候选请求用的令牌。真模型下单次要 100 秒以上，作者在等待期间
+  // 切项目是常态；没有它，响应回来会把上一个项目的候选写进当前项目。
+  const runToken = useRef(0)
 ```
+
+（`useRef` 要加进 `react` 的导入。）
 
 （`SuggestedEntry` 与 `RunView` 加进上面 `../api/client` 的类型导入。）
 
@@ -2299,22 +2547,31 @@ import CandidateList from '../components/CandidateList'
   async function suggest() {
     setSuggesting(true)
     setNotice('')
+    const token = runToken.current
     try {
       const result = await api.suggestEntries(projectId)
+      // 期间换过项目 —— 这批候选属于上一个项目，丢掉。
+      if (token !== runToken.current) return
       setLastRun(result.run)
-      setCandidates(result.entries)
+      // key 带上 run id：每批候选的 key 都不同，展开态不会跨批串味。
+      setCandidates(
+        result.entries.map((entry, index) => ({ key: `${result.run.id}:${index}`, entry })),
+      )
       setOpenQuestions(result.open_questions)
       if (!result.structured) {
-        setNotice(`未结构化：${result.parse_error ?? '模型没有按契约返回'}`)
+        // 后端保证未结构化时一定给出一句可读原因（含「上游还没做」与调用失败两种），
+        // 所以这里直接显示它，不再套「未结构化：」这个前缀 —— 模板缺失并不是格式问题。
+        setNotice(result.parse_error ?? '模型没有按契约返回')
       }
     } catch (error) {
-      setNotice((error as Error).message)
+      if (token === runToken.current) setNotice((error as Error).message)
     } finally {
-      setSuggesting(false)
+      // 令牌已作废时 busy 由换项目的 effect 自己收尾，这里不要越俎代庖。
+      if (token === runToken.current) setSuggesting(false)
     }
   }
 
-  async function adoptCandidate(next: EntryDraft) {
+  async function adoptCandidate(next: EntryDraft): Promise<boolean> {
     try {
       await api.createEntry(projectId, {
         type: next.type,
@@ -2328,13 +2585,15 @@ import CandidateList from '../components/CandidateList'
       })
       await refresh()
       setNotice('已采纳')
+      return true
     } catch (error) {
       setNotice((error as Error).message)
+      return false
     }
   }
 
-  function discardCandidate(index: number) {
-    setCandidates((prev) => prev.filter((_, i) => i !== index))
+  function discardCandidate(key: string) {
+    setCandidates((prev) => prev.filter((row) => row.key !== key))
   }
 ```
 
@@ -2494,8 +2753,10 @@ export default function Terms() {
           </tr>
         </thead>
         <tbody>
-          {visible.map((term) => (
-            <tr key={`${term.entry_id}-${term.form}`} className="border-t border-slate-800">
+          {visible.map((term, index) => (
+            // key 里带行号：同一条目里写重复别名（录入层不去重）会让
+            // `entry_id + form` 撞键 —— 本页无逐行状态，加行号即可。
+            <tr key={`${term.entry_id}-${term.form}-${index}`} className="border-t border-slate-800">
               <td className="py-2">
                 {term.form}
                 {!term.is_primary && <span className="ml-2 text-xs text-slate-500">别名</span>}
@@ -2507,7 +2768,9 @@ export default function Terms() {
           {visible.length === 0 && (
             <tr>
               <td colSpan={3} className="py-4 text-slate-500">
-                还没有术语。到「世界观」页建几条设定，它们的名字与别名会自动出现在这里。
+                {keyword.trim()
+                  ? `没有匹配「${keyword.trim()}」的写法。`
+                  : '还没有术语。到「世界观」页建几条设定，它们的名字与别名会自动出现在这里。'}
               </td>
             </tr>
           )}
@@ -2573,7 +2836,9 @@ cd frontend && pnpm dev
 
 - [ ] **Step 3: 记录结论**
 
-把复验结果（每次真实调用的耗时与 token、是否出现「未结构化」、候选质量、发现的新问题）写进 `CLAUDE.md` §7 的新阶段记录。若八步全过，把路线图的 P1b-1 标为完成。
+把复验结果（每次真实调用的耗时与 token、是否出现「未结构化」、候选质量、发现的新问题）写进 `CLAUDE.md` §7，**新增一条阶段记录**。
+
+**只写这条记录**：路线图表与 §8 变更记录由 Task 14 负责，不要在这里一并改 —— 否则两个任务会改同一张表。
 
 - [ ] **Step 4: Commit**
 
@@ -2615,6 +2880,125 @@ git commit -m "docs: P1b-1 真实模型复验结论"
 ```bash
 git add CLAUDE.md
 git commit -m "docs: 同步 P1b-1 的路线图与变更记录"
+```
+
+---
+
+### Task 15: 候选的类型与硬度在边界上归一化（T13 真实复验发现）
+
+**Files:**
+- Modify: `backend/app/api/world.py`
+- Test: `backend/tests/test_world_api.py`
+
+**Interfaces:**
+- Consumes: `world_types.normalize_type` / `normalize_hardness`（Task 1）
+- Produces: `POST /api/projects/{id}/entries/suggest` 返回的 `entries` 里，`type` 一律是英文键、`hardness` 一律是 `hard`/`soft`/`atmosphere`/`None`
+
+**为什么**：真实模型返回的是**中文值**（`"type": "规则体系"`、`"hardness": "硬规则"`）—— 因为契约块的 `title` 里能合法写出的只有中文（写英文键会被「禁英文字段键」的护栏拦下）。落库时服务层会归一化，**但界面拿标签去匹配英文键的下拉会落空**：类型显示成第一个选项（一条规则在表单里显示成「地理」），而规则类的硬度控件（条件是 `draft.type === 'rule'`）根本不出现 —— 硬度恰恰是提示词要求模型为规则类填的那一项。
+
+- [ ] **Step 1: 写失败测试**
+
+**先把 `CANDIDATES` 改成用中文值**（与真实模型一致）：第一条 `"type": "势力"`、第二条 `"type": "规则体系"` 且 `"hardness": "硬规则"`、第三条 `"type": "地理"`。再追加两条测试：
+
+```python
+def test_candidates_come_back_normalized(client, monkeypatch):
+    """模型按契约块里教它的中文值返回类型与硬度，归一化要在边界做一次。
+
+    否则界面拿「规则体系」去匹配英文键的下拉会落空：类型显示成第一个
+    选项，规则类的硬度控件也不出现 —— 而硬度正是提示词要求模型为规则
+    类填的那一项。
+    """
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _seed_slots(project["id"])
+    _patch_runtime(monkeypatch, CANDIDATES)
+
+    body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
+
+    assert [e["type"] for e in body["entries"]] == ["faction", "rule", "place"]
+    assert [e["hardness"] for e in body["entries"]] == [None, "hard", None]
+
+
+def test_an_unknown_type_is_left_as_is(client, monkeypatch):
+    """归一不了就原样留着：作者会在表单里看到它并改掉，采纳时才报可读错误 ——
+    整批候选不该因为一条怪类型而拿不到。"""
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _seed_slots(project["id"])
+    _patch_runtime(monkeypatch, CANDIDATES.replace("规则体系", "魔法体系"))
+
+    body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
+
+    assert body["structured"] is True
+    assert body["entries"][1]["type"] == "魔法体系"
+```
+
+- [ ] **Step 2: 跑测试确认失败**
+
+Run: `uv run pytest tests/test_world_api.py -v -k "normalized or unknown_type"`
+Expected: FAIL —— `assert '规则体系' == 'rule'`
+
+- [ ] **Step 3: 实现**
+
+`backend/app/api/world.py`：顶部补导入（该文件已导入 `ENTRY_TYPES` 与 `HARDNESS_LEVELS`，加上两个归一化函数）：
+
+```python
+from app.world_types import (
+    ENTRY_TYPES,
+    HARDNESS_LEVELS,
+    normalize_hardness,
+    normalize_type,
+)
+```
+
+在 `_reason` 之前加：
+
+```python
+def _normalized_candidates(entries: list) -> list[dict]:
+    """把候选里的类型与硬度归一到英文键再交给前端。
+
+    模型看到的是契约块里的**中文值**（那是唯一能合法写进契约的东西），
+    所以它返回的是「规则体系」而不是 rule。落库时服务层会归一化，但界面
+    拿标签去匹配英文键的下拉会落空：类型显示成第一个选项，规则类的硬度
+    控件也不出现。在边界上归一一次，前端就不必再抄一遍映射 —— 而且这里
+    的映射是纯逻辑，能被 pytest 覆盖。
+    """
+    out: list[dict] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        normalized = dict(item)
+        try:
+            normalized["type"] = normalize_type(str(item.get("type", "")))
+        except ValueError:
+            # 归一不了就原样留着：作者在表单里看得见、改得掉，采纳时才报
+            # 可读错误 —— 不因为一条怪类型让整批候选拿不到。
+            pass
+        normalized["hardness"] = normalize_hardness(item.get("hardness"))
+        out.append(normalized)
+    return out
+```
+
+并把路由里这一行
+
+```python
+        "entries": parsed.get("entries", []) if result.structured else [],
+```
+
+改成
+
+```python
+        "entries": _normalized_candidates(parsed.get("entries", [])) if result.structured else [],
+```
+
+- [ ] **Step 4: 跑测试确认通过**
+
+Run: `uv run pytest tests/test_world_api.py -v`，再跑完整 `uv run pytest`
+Expected: 全绿
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add backend/app/api/world.py backend/tests/test_world_api.py
+git commit -m "fix(world): 候选的类型与硬度在边界归一化，界面才显示得出中文与硬度控件"
 ```
 
 ---

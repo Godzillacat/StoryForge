@@ -34,3 +34,42 @@ def session():
     # 用例」（如 test_api 的 client，它只在既有库里补种子）—— 那类用例会
     # 读到上一文件遗留的同任务类型智能体，测出来的就不是它们自己的行为。
     Base.metadata.drop_all(db_session.engine)
+
+
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+
+from app.db.models import AgentVersion, Provider
+from app.db.session import SessionLocal, init_db
+from app.main import app
+from app.services.seed_service import seed_agents, seed_tools
+
+
+@pytest.fixture()
+def client():
+    init_db()
+    with SessionLocal() as session:
+        seed_agents(session)
+        seed_tools(session)
+        # 跑智能体需要一家启用的服务商，这是产品行为不是测试特例。
+        # 这里补上前置条件：真实 HTTP 调用被 _patch_client 替换，密钥留空即可。
+        if session.scalars(select(Provider).where(Provider.enabled.is_(True))).first() is None:
+            session.add(
+                Provider(
+                    name="测试服务商",
+                    kind="custom",
+                    base_url="https://api.example.com/v1",
+                    enabled=True,
+                )
+            )
+            session.commit()
+        # 跑智能体同样需要智能体自身绑定了模型：运行时不再把服务商显示名
+        # 当模型 ID 回落，没绑就会在解析阶段报错。预置阵容出厂不带模型名，
+        # 由作者在工作室里指定 —— 这里替测试补上这个前置条件。
+        for version in session.scalars(select(AgentVersion)):
+            binding = dict(version.model_binding_json or {})
+            if not binding.get("model"):
+                version.model_binding_json = {**binding, "model": "test-model"}
+                session.commit()
+    with TestClient(app) as c:
+        yield c

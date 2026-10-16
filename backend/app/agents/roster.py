@@ -6,6 +6,8 @@ P1b/P1c 落地时往 DEFAULT_ROSTER 里追加即可，不改任何运行时代�
 
 from __future__ import annotations
 
+from app.world_types import ENTRY_TYPES, HARDNESS_LEVELS
+
 TASK_TYPES = [
     "idea_parse",
     "architecture",
@@ -95,6 +97,76 @@ ARCHITECTURE_SCHEMA = {
     },
 }
 
+_TYPE_TITLE = "、".join(ENTRY_TYPES.values())
+_HARDNESS_TITLE = "、".join(HARDNESS_LEVELS.values())
+
+WORLDBUILDER_SCHEMA = {
+    "type": "object",
+    "required": ["entries"],
+    "properties": {
+        "entries": {
+            "type": "array",
+            "minItems": 3,
+            "title": "设定候选",
+            "items": {
+                "type": "object",
+                "required": ["type", "name", "summary"],
+                "properties": {
+                    # 刻意不用 enum：契约说明块不渲染 enum 值的中文名，
+                    # 而提示词里又不许写英文键（有护栏拦），模型将无从知道
+                    # 哪个键对应哪一类。改由服务层归一化两种写法（见 world_types.py）。
+                    "type": {
+                        "type": "string",
+                        "title": f"类型（只能是：{_TYPE_TITLE}）",
+                    },
+                    "name": {"type": "string", "title": "标准写法"},
+                    "aliases": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "title": "别名与称呼",
+                    },
+                    "summary": {"type": "string", "title": "一句话概述"},
+                    "description": {"type": "string", "title": "详细说明"},
+                    "hardness": {
+                        "type": "string",
+                        "title": f"规则硬度（只有规则体系才填，可为：{_HARDNESS_TITLE}）",
+                    },
+                },
+            },
+        },
+        "open_questions": {
+            "type": "array",
+            "items": {"type": "string"},
+            "title": "你拿不准、需要作者确认的问题",
+        },
+    },
+}
+
+WORLDBUILDER_PROMPT = """你是长篇小说世界观构建师，服务对象是作者。你的产出是待作者审阅的设定候选，不是既定事实。
+
+【灵感解析卡】
+{{ parsed_idea }}
+
+【故事圣经】
+{{ story_bible }}
+
+【项目信息】
+{{ project_core }}
+
+要求：
+1. 提出 3 到 8 条这个故事的设定候选，覆盖故事真正需要的类别：__TYPE_LIST__；
+2. 每条候选的概述要说明它**为什么是这个故事需要的** —— 引用解析卡或故事圣经里的具体要素，不许泛泛而谈「丰富世界观」；
+3. 规则体系类的候选必须标注硬度：硬规则是体系根基、不可违反，软规则需大体一致，氛围只为质感。其余类别的硬度留空；
+4. 别名与称呼把所有叫法都列上（简称、旧称、别称、敌对方的贬称），后面查一致性靠它；
+5. 你没把握的一律写进「你拿不准、需要作者确认的问题」，**不许编造设定填空**；
+6. 不要替作者决定故事的走向，也不要在候选里写正文。"""
+
+# 八类清单由词表派生，不在提示词里手抄第二份 —— 手抄的那份会在改词表时
+# 静默过期，而护栏只查英文键、查不出中文值的漂移。
+# 用 replace 而不是 f-string：提示词里有 {{ parsed_idea }} 这类模板变量，
+# f-string 会把双花括号吃掉。
+WORLDBUILDER_PROMPT = WORLDBUILDER_PROMPT.replace("__TYPE_LIST__", _TYPE_TITLE)
+
 IDEA_PARSER_PROMPT = """你是长篇小说灵感解析师，服务对象是作者。你的产出是结构化的解析卡，不是改写。
 
 【作者原话】
@@ -152,5 +224,18 @@ DEFAULT_ROSTER: list[dict] = [
         "output_schema": ARCHITECTURE_SCHEMA,
         "param_profile": "strict",
         "note": "推荐结构并并排比较，生成故事圣经 v0。",
+    },
+    {
+        "key": "worldbuilder",
+        "name": "世界观构建师",
+        "role_label": "设定",
+        "color": "#14b8a6",
+        "task_type": "worldbuilding",
+        "system_prompt": WORLDBUILDER_PROMPT,
+        "context_slots": ["parsed_idea", "story_bible", "project_core"],
+        "output_schema": WORLDBUILDER_SCHEMA,
+        "param_profile": "balanced",
+        "trigger_mode": "assist",
+        "note": "提设定候选，标注规则硬度，没把握就问，不编。",
     },
 ]
