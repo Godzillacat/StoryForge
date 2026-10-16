@@ -36,6 +36,7 @@ def seed_agents(session: Session) -> int:
             context_slots_json=entry["context_slots"],
             output_schema_json=entry["output_schema"],
             param_profile=entry["param_profile"],
+            trigger_mode=entry.get("trigger_mode", "manual"),
             note=entry.get("note", ""),
         )
         session.add(version)
