@@ -57,6 +57,7 @@ export default function Architecture() {
   useEffect(() => {
     if (!projectId) return
     runToken.current++ // 换项目即作废在途推荐，别让它回来填错项目
+    setBusy(false) // 作废的同时必须自己收尾：recommend 的 finally 被 token 守卫拦下，不会替我们清
     setRecommendation(null)
     setChosen(null)
     setManual(false)
