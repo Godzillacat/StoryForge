@@ -2069,8 +2069,12 @@ export default function World() {
     })
   }, [])
 
+  // 类型与硬度是**两份**词表，都从接口来 —— 合到一张 map 里，
+  // 否则硬度的键（hard / soft / atmosphere）会在界面上原样露出来。
   const typeLabel = useMemo(() => {
-    const map = new Map((types?.types ?? []).map((t) => [t.key, t.label]))
+    const map = new Map(
+      [...(types?.types ?? []), ...(types?.hardness ?? [])].map((t) => [t.key, t.label]),
+    )
     return (key: string) => map.get(key) ?? key
   }, [types])
 
@@ -2248,7 +2252,9 @@ export default function World() {
           ))}
           {entries.length === 0 && (
             <p className="text-sm text-slate-500">
-              还没有设定。点「新建条目」自己写，或者到上面的候选区让 AI 先提一批。
+              {projectId
+                ? '还没有设定。点「新建条目」自己写，或者到上面的候选区让 AI 先提一批。'
+                : '先去「故事仪表盘」新建一个项目。'}
             </p>
           )}
         </nav>
