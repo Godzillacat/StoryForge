@@ -374,7 +374,7 @@ Expected: 新增两条 PASS，原有全部 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/runtime/execute.py backend/tests/test_execute.py
+git add backend/app/runtime/execute.py backend/tests/test_execute.py backend/tests/test_runtime_service.py
 git commit -m "feat(runtime): 提示词渲染后追加契约说明块"
 ```
 
@@ -757,7 +757,7 @@ Expected: 全部 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/app/config.py backend/app/runtime/llm.py backend/app/services/runtime_service.py backend/tests/test_llm.py backend/tests/test_runtime_service.py
+git add backend/app/config.py backend/app/runtime/llm.py backend/app/services/runtime_service.py backend/tests/test_llm.py backend/tests/test_runtime_service.py backend/tests/test_api.py
 git commit -m "feat(runtime): 请求超时可配置，默认 300 秒"
 ```
 
