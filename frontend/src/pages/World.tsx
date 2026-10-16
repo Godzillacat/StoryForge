@@ -4,8 +4,12 @@ import {
   type EntryRelation,
   type EntryTypesResponse,
   type Project,
+  type RunView,
   type SettingEntry,
+  type SuggestedEntry,
 } from '../api/client'
+import CandidateList from '../components/CandidateList'
+import RunTrace from '../components/RunTrace'
 import EntryEditor, {
   EMPTY_DRAFT,
   joinList,
@@ -36,6 +40,10 @@ export default function World() {
   const [creating, setCreating] = useState(false)
   const [notice, setNotice] = useState('')
   const [relationDraft, setRelationDraft] = useState({ to_id: '', kind: '' })
+  const [candidates, setCandidates] = useState<SuggestedEntry[]>([])
+  const [openQuestions, setOpenQuestions] = useState<string[]>([])
+  const [suggesting, setSuggesting] = useState(false)
+  const [lastRun, setLastRun] = useState<RunView | null>(null)
 
   useEffect(() => {
     api.listEntryTypes().then(setTypes)
@@ -96,6 +104,47 @@ export default function World() {
   async function refresh() {
     setEntries(await api.listEntries(projectId))
     setRelations(await api.listRelations(projectId))
+  }
+
+  async function suggest() {
+    setSuggesting(true)
+    setNotice('')
+    try {
+      const result = await api.suggestEntries(projectId)
+      setLastRun(result.run)
+      setCandidates(result.entries)
+      setOpenQuestions(result.open_questions)
+      if (!result.structured) {
+        setNotice(`未结构化：${result.parse_error ?? '模型没有按契约返回'}`)
+      }
+    } catch (error) {
+      setNotice((error as Error).message)
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  async function adoptCandidate(next: EntryDraft) {
+    try {
+      await api.createEntry(projectId, {
+        type: next.type,
+        name: next.name.trim(),
+        aliases: splitList(next.aliases),
+        tags: splitList(next.tags),
+        summary: next.summary,
+        description: next.description,
+        hardness: next.hardness || null,
+        source_run_id: lastRun?.id ?? null,
+      })
+      await refresh()
+      setNotice('已采纳')
+    } catch (error) {
+      setNotice((error as Error).message)
+    }
+  }
+
+  function discardCandidate(index: number) {
+    setCandidates((prev) => prev.filter((_, i) => i !== index))
   }
 
   async function save() {
@@ -196,9 +245,45 @@ export default function World() {
         >
           新建条目
         </button>
+        <button
+          className="rounded bg-indigo-600 px-4 py-2 text-sm disabled:opacity-50"
+          onClick={suggest}
+          disabled={!projectId || suggesting}
+        >
+          {suggesting ? '生成中…' : '让 AI 提候选'}
+        </button>
       </div>
 
       {notice && <p className="rounded bg-slate-900 p-3 text-sm text-slate-300">{notice}</p>}
+
+      {candidates.length > 0 && (
+        <CandidateList
+          candidates={candidates}
+          types={types}
+          existing={entries}
+          busy={suggesting}
+          onAdopt={adoptCandidate}
+          onDiscard={discardCandidate}
+        />
+      )}
+
+      {openQuestions.length > 0 && (
+        <section className="rounded border border-slate-800 p-4 text-sm">
+          <h3 className="mb-2 text-sm font-medium text-slate-300">它没把握的问题，等你补</h3>
+          <ul className="list-disc space-y-1 pl-5 text-slate-300">
+            {openQuestions.map((question) => (
+              <li key={question}>{question}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {lastRun && (
+        <section className="space-y-2">
+          <h3 className="text-sm font-medium text-slate-300">最近一次生成</h3>
+          <RunTrace run={lastRun} />
+        </section>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
         <nav className="space-y-3">
