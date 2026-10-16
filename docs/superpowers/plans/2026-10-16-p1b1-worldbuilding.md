@@ -612,8 +612,11 @@ def update_entry(session: Session, entry_id: str, **fields) -> SettingEntry:
     if entry is None:
         raise ValueError(f"设定条目不存在：{entry_id}")
     _apply_entry_fields(entry, fields)
-    # 与 create 对称：Pydantic 的 min_length=1 只挡空串，挡不住纯空白
+    # 与 create 对称：Pydantic 的 min_length=1 只挡空串，挡不住纯空白。
+    # 必须先 rollback 再抛 —— 上面那一步已经把持久对象改脏了，不回滚的话
+    # 这个 session 里留着的就是那个非法值，后续读到的也是它。
     if not entry.name.strip():
+        session.rollback()
         raise ValueError("设定条目必须有名称")
     # 先把名字取出来再提交：rollback 会让实例 expire，之后再读 entry.name
     # 会重新查库拿回改动前的旧名字，报错就会指着正在编辑的那条说「已经有它了」。
