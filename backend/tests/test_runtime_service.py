@@ -123,3 +123,19 @@ def test_execute_persists_parse_error_reason(session):
     assert stored.structured is False
     assert stored.parse_error == result.parse_error
     assert "genre" in stored.parse_error
+
+
+def test_timeout_falls_back_to_global_setting(session, monkeypatch):
+    from app import config
+    from app.services.runtime_service import RuntimeService
+
+    config.save_settings({"request_timeout_seconds": 456})
+    service = RuntimeService(session)
+    assert service._resolve_timeout({}) == 456.0
+
+
+def test_agent_level_timeout_wins(session):
+    from app.services.runtime_service import RuntimeService
+
+    service = RuntimeService(session)
+    assert service._resolve_timeout({"timeout_seconds": 90}) == 90.0

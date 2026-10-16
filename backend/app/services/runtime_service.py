@@ -18,11 +18,22 @@ class RuntimeService:
         self._session = session
         self._client = client
 
-    def _resolve_client(self) -> ChatClient:
-        """单独成一个方法，测试可以替换它以注入假传输层。"""
-        if self._client is None:
-            self._client = HttpxChatClient()
-        return self._client
+    def _resolve_client(self, timeout: float) -> ChatClient:
+        """单独成一个方法，测试可以替换它以注入假传输层。
+
+        不缓存默认客户端：超时是逐次运行解析出来的，缓存会让第一次的值
+        粘住后续所有调用。
+        """
+        if self._client is not None:
+            return self._client
+        return HttpxChatClient(timeout=timeout)
+
+    def _resolve_timeout(self, binding: dict) -> float:
+        """超时三层解析：角色卡 → 全局设置 → 默认。让慢模型可被单独放宽。"""
+        agent_level = binding.get("timeout_seconds")
+        if agent_level:
+            return float(agent_level)
+        return float(config.load_settings().get("request_timeout_seconds", 300))
 
     def resolve_provider(
         self, version: AgentVersion
@@ -81,7 +92,7 @@ class RuntimeService:
             prices=prices,
         )
 
-        result = _run_sync(execute_run, inp, source, self._resolve_client())
+        result = _run_sync(execute_run, inp, source, self._resolve_client(self._resolve_timeout(binding)))
 
         run = GenerationRun(
             project_id=project_id,

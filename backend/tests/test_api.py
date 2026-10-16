@@ -174,4 +174,4 @@ def _patch_client(monkeypatch, content: str) -> None:
         )
 
     fake = HttpxChatClient(transport=httpx.MockTransport(handler))
-    monkeypatch.setattr(RuntimeService, "_resolve_client", lambda self: fake)
+    monkeypatch.setattr(RuntimeService, "_resolve_client", lambda self, timeout: fake)

@@ -105,7 +105,11 @@ class HttpxChatClient(ChatClient):
 
     def _wrap_transport_error(self, exc: Exception) -> ChatFailure:
         if isinstance(exc, httpx.TimeoutException):
-            return ChatFailure(ChatError("timeout", f"请求超时：{exc}"))
+            # httpx 的 str() 常是空串，所以自己把上限与类型写进文案，
+            # 否则界面显示成「请求超时：」后面什么都没有。
+            detail = str(exc).strip()
+            label = f"请求超时（上限 {self._timeout:g} 秒，{type(exc).__name__}）"
+            return ChatFailure(ChatError("timeout", f"{label}：{detail}" if detail else label))
         if isinstance(exc, httpx.TransportError):
             return ChatFailure(ChatError("network", f"网络错误：{exc}"))
         return ChatFailure(ChatError("network", f"调用失败：{exc}"))
