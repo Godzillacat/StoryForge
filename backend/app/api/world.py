@@ -118,3 +118,8 @@ def delete_relation(relation_id: str, session: Session = Depends(get_session)) -
         world_service.delete_relation(session, relation_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/projects/{project_id}/terms")
+def list_terms(project_id: str, session: Session = Depends(get_session)) -> list[dict]:
+    return world_service.list_terms(session, project_id)

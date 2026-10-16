@@ -193,3 +193,40 @@ def test_delete_relation(session):
     assert world_service.list_relations(session, project.id) == []
     with pytest.raises(ValueError):
         world_service.delete_relation(session, relation.id)
+
+
+def test_terms_project_every_name_and_alias(session):
+    project = _project(session)
+    entry = world_service.create_entry(
+        session,
+        project.id,
+        type="faction",
+        name="记忆交易局",
+        aliases=["交易局", "管理局"],
+    )
+    world_service.create_entry(session, project.id, type="term", name="一息")
+
+    terms = world_service.list_terms(session, project.id)
+
+    by_form = {t["form"]: t for t in terms}
+    assert set(by_form) == {"记忆交易局", "交易局", "管理局", "一息"}
+    assert by_form["记忆交易局"]["is_primary"] is True
+    assert by_form["交易局"]["is_primary"] is False
+    # 每一行都指回它的来源条目，作者才知道该去哪改
+    assert by_form["交易局"]["entry_id"] == entry.id
+    assert by_form["交易局"]["entry_name"] == "记忆交易局"
+
+
+def test_terms_are_empty_for_an_empty_project(session):
+    project = _project(session)
+    assert world_service.list_terms(session, project.id) == []
+
+
+def test_terms_do_not_leak_across_projects(session):
+    a = _project(session)
+    other = Project(name="另一本")
+    session.add(other)
+    session.commit()
+    world_service.create_entry(session, other.id, type="place", name="别处")
+
+    assert world_service.list_terms(session, a.id) == []

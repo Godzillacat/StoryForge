@@ -139,3 +139,37 @@ def delete_relation(session: Session, relation_id: str) -> None:
         raise ValueError(f"关联不存在：{relation_id}")
     session.delete(relation)
     session.commit()
+
+
+def list_terms(session: Session, project_id: str) -> list[dict]:
+    """术语表是一个投影，不是第二张表。
+
+    每个条目的名字与别名本来就是「专有名词的标准写法」；只有名字的裸术语
+    （type == "term"）也是其中的一行。P2 的「正文出现表外新词时提醒」要查
+    的就是这份白名单。
+    """
+    terms: list[dict] = []
+    for entry in list_entries(session, project_id):
+        terms.append(
+            {
+                "entry_id": entry.id,
+                "entry_name": entry.name,
+                "type": entry.type,
+                "form": entry.name,
+                "is_primary": True,
+            }
+        )
+        for alias in entry.aliases_json or []:
+            if not alias.strip() or alias == entry.name:
+                continue
+            terms.append(
+                {
+                    "entry_id": entry.id,
+                    "entry_name": entry.name,
+                    "type": entry.type,
+                    "form": alias,
+                    "is_primary": False,
+                }
+            )
+    terms.sort(key=lambda t: t["form"])
+    return terms
