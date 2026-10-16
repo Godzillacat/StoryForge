@@ -36,7 +36,11 @@ def recommend(project_id: str, session: Session = Depends(get_session)) -> dict:
     return {
         "run": _run_out(run),
         "options": (result.parsed or {}).get("options", []) if result.structured else [],
-        "story_bible_v0": (result.parsed or {}).get("story_bible_v0", {}) if result.structured else {},
+        # `.get(key, {})` 的默认值只在**缺键**时生效；模型把可选的 story_bible_v0
+        # 写成显式 null 会原样返回 None，前端对结果取 .logline 会抛错。故在边界再兜一次。
+        "story_bible_v0": ((result.parsed or {}).get("story_bible_v0") or {})
+        if result.structured
+        else {},
         "structured": result.structured,
         "parse_error": result.parse_error,
         "raw_text": result.raw_output,
