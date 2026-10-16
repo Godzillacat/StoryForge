@@ -10,6 +10,10 @@
 > **为什么 Task 1–3 标着「追认」：** 完成它们的上一会话**上下文超限中断**，既没留下账本、
 > 也没留下评审计录；Task 1–3 的完成记录只能由 `git log` 事后追认。接管会话重建本账本后完成
 > Task 4–6。那三个任务未经逐任务审查的代码，由最终整支复查独立覆盖。
+>
+> **补记（同一会话，稍后同步）：** 归档之后控制方又往工作区账本追加了「归档与收尾」与「切片
+> 终态」两节 —— 记的是归档这件事自己的审查与三轮修复。为免这段随工作区消失，已从工作区账本
+> 原样续写在本文件正文之后。归档那一刻的原文与后续续写之间没有内容删改。
 
 # SDD ledger — plan: docs/superpowers/plans/2026-10-16-migration-and-contract.md
 
@@ -170,3 +174,38 @@ Task 6: complete (commits 9ce12f0..f16ac13, review clean)
 - 控制方在修复波后独立复跑：`uv run pytest -q` → **232 passed, 1 warning**；`session.py` 的顺序与理由注释已就位
 - 修复波复评的残余 **Minor（park）**：`session.py` 与 spec 里「能自愈」的表述缺一个前提 —— **两次启动之间迁移列表未变**。若崩在 `create_all` 中途、下次成功启动前作者升级了应用（`MIGRATIONS` 长出新的改表步骤），新迁移若恰好针对那张尚未建出的表 → `no such table` → 同类永久失败。触发需三重条件同时成立，且**旧顺序在同一场景下必然更早失败**，故非回归、够不上 Important — Ruling: **park，不开第二波修复**（判停规则：一次修复波 + 一次定向复评之后不再开波）；改以「LEGACY 登记」处理 —— 写进归档账本与 `CLAUDE.md` 的阶段记录遗留 — 若判断有误的代价：一句注释少了限定语，读者可能高估自愈的适用范围。
 - 修复波复评的范围外观察（同样 park，登记入遗留）：(a) spec §5 测试策略表未收录新的顺序判别用例、§6 任务 4 的措辞「把『迁移之后才 create_all』的顺序钉住」只覆盖存量库路径；(b) 新测试的判别力依赖 `project.name` 列存在，未来改该表结构会静默钝化
+
+## 归档与收尾
+
+- 归档任务：`87232a4` —— 账本按 `*-ledger.md` 惯例归档到 `docs/superpowers/plans/2026-10-16-migration-and-contract-ledger.md`（172 行），`CLAUDE.md` 的指向改对，补三条遗留。**控制方逐字比对过**：副本与源文件只差开头 13 行说明 + 4 处 reviewer ID 清理，正文零改写
+- 归档任务审查：**Approved**，无 Critical/Important。审查者独立复核了三条例遗与 `session.py:155-158`、spec `:231-242`/`:255` 的一致性
+- 归档任务审查的 **Minor（要修）**：`CLAUDE.md` §7 阶段记录仍写「改后 231 passed」且未交代整支复查与修复波，而新补的三条遗留都以「整支复查后 park」收尾 → 悬空引用 + 数字滞后。**Ruling：补修**（这是交给作者读的那份文档，且是同一批文档收口的收尾），resume 原实施者
+- 归档任务审查的另一条 Minor（归档副本首行体例与 p1b1 先例不同）→ **park，不改**（纯体例）
+
+- 归档任务 fix round 1：`c903945` —— §7 阶段记录补一段「收口」，交代整支复查（覆盖分叉点起全部提交）结论为可合并、其 Important 以一次修复波 + 一次定向复评收口、最终 232 passed，并说明为什么多走这一步不亏；231 明确标注为修复波之前的数。三条遗留的「整支复查后 park」现已有出处
+- 归档任务 fix round 1 的定向复评进行中
+
+## 分支终态（2026-10-16）
+
+- 分支 `worktree-migration-contract`，**距 master（a17decd）21 个提交**，工作树干净，master 未动
+- 完整套件 **232 passed, 1 warning**（那条 warning 是既有的 `StarletteDeprecationWarning`，非本切片引入）
+- 全部任务：Task 1–3（追认，评审缺失，由整支复查覆盖）、Task 4、Task 5、Task 6、整支复查、修复波、归档 —— 均已完成且各有审查或复评
+- **未做**：合并 master（属需作者点头的动作，留给作者裁决）
+
+- 归档任务 fix round 1 的定向复评：被审的那条 **ADDRESSED**（四项要求全达成、两个数字不再矛盾），但**本轮补记带出一处新 Important** —— `CLAUDE.md:360` 的流程箭头仍是旧顺序（`create_all() → 盖章`），与刚补的 `:376` 相距 16 行自相矛盾；代码与 spec §3.1 都是新顺序，**CLAUDE.md 里这份抄件是唯一漏改的拷贝**（上一轮修复波只改 spec —— 派发范围是我的漏，已在账本留痕）
+- 归档任务 fix round 2：resume 原实施者，改 `CLAUDE.md:360` 的流程箭头
+
+- 归档任务 fix round 2：`e117a5b` —— `CLAUDE.md:360` 的流程箭头同步为新顺序。定向复评：**All findings addressed, no new Critical/Important breakage**；复评者另用 grep 扫了 CLAUDE.md 与 spec，确认没有第二份该改而未改的流程箭头抄件
+- 归档任务 fix round 3（控制方自查发起的追加）：**计划文档 Task 4 的 Step 3 代码块仍是最先建表、后盖章的旧顺序** —— 复评者只扫了 CLAUDE.md 与 spec 两份，plan 不在其范围，是控制方自己查出来的。**改判上一轮「plan 不动」的裁定**：本仓库对 plan 的既有做法就是让它与实现同步（先例就在这份 plan 自己身上：`0b2ec1e docs(plan): M2 修复` 改的正是 Task 2 的代码块），留一份会被照抄的旧代码块比多一次文档提交的代价大
+
+- 归档任务 fix round 3：`900c02f docs(plan): Task 4 的 init_db 代码块同步为先盖章再建表`（选方案 a：改对代码块 + 加「注意」块讲清为什么不能对调）
+- 归档任务 fix round 3 的定向复评：**All findings addressed, no new Critical/Important breakage**。复评者把 plan 的代码块与 `session.py` **逐语句对照**（9 行全一致），确认「照抄即得正确实现」这个唯一验收点成立；并逐步走了一遍注意块里的失败链，与代码事实吻合
+- 归档任务 fix round 3 复评的 **Out-of-Scope Observation（park）**：plan `:601` 的 `Produces:` 行「全新库：建表 + 盖 `migrations.latest_version()`」字面读序仍与代码块相反。复评者自陈「严重度低、不阻断」，且明令「不得动这份 plan 的其它部分」— Ruling: **park，按规则处理**（范围外观察不阻断、不延长循环，登记入账本） — 若判断有误的代价：将来有人再扫一遍这份 plan 时会把它当第四处旧顺序重报一次，届时两字对调即可。
+- 归档任务：**complete**（commits a9fcbba..900c02f，全部 fix round 的复评通过）
+
+## 切片终态
+
+- 分支 `worktree-migration-contract`，距 master（a17decd）**24 个提交**，工作树干净，master 未动
+- 完整套件 **232 passed, 1 warning**（既有 `StarletteDeprecationWarning`，非本切片引入）
+- 账本已归档：`docs/superpowers/plans/2026-10-16-migration-and-contract-ledger.md`
+- **未做**：合并 master —— 留给作者裁决
