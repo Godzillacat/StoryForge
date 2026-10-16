@@ -2748,8 +2748,10 @@ export default function Terms() {
           </tr>
         </thead>
         <tbody>
-          {visible.map((term) => (
-            <tr key={`${term.entry_id}-${term.form}`} className="border-t border-slate-800">
+          {visible.map((term, index) => (
+            // key 里带行号：同一条目里写重复别名（录入层不去重）会让
+            // `entry_id + form` 撞键 —— 本页无逐行状态，加行号即可。
+            <tr key={`${term.entry_id}-${term.form}-${index}`} className="border-t border-slate-800">
               <td className="py-2">
                 {term.form}
                 {!term.is_primary && <span className="ml-2 text-xs text-slate-500">别名</span>}
@@ -2761,7 +2763,9 @@ export default function Terms() {
           {visible.length === 0 && (
             <tr>
               <td colSpan={3} className="py-4 text-slate-500">
-                还没有术语。到「世界观」页建几条设定，它们的名字与别名会自动出现在这里。
+                {keyword.trim()
+                  ? `没有匹配「${keyword.trim()}」的写法。`
+                  : '还没有术语。到「世界观」页建几条设定，它们的名字与别名会自动出现在这里。'}
               </td>
             </tr>
           )}
