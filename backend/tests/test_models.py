@@ -1,3 +1,5 @@
+import pytest
+
 from app.db.base import new_id
 from app.db.models import Agent, AgentVersion, GenerationRun, Idea, Project
 
@@ -62,3 +64,85 @@ def test_generation_run_stores_full_audit_trail(session):
     session.commit()
     assert run.rendered_prompt == "渲染后的提示词"
     assert run.structured is False
+
+
+def test_setting_entry_defaults_and_roundtrip(session):
+    from app.db.models import SettingEntry
+
+    project = Project(name="雾港")
+    session.add(project)
+    session.commit()
+
+    entry = SettingEntry(project_id=project.id, type="faction", name="记忆交易局")
+    session.add(entry)
+    session.commit()
+
+    stored = session.get(SettingEntry, entry.id)
+    assert stored.aliases_json == []
+    assert stored.tags_json == []
+    assert stored.summary == ""
+    assert stored.hardness is None
+    assert stored.source_run_id is None
+
+
+def test_entry_name_is_unique_within_a_project(session):
+    from sqlalchemy.exc import IntegrityError
+
+    from app.db.models import SettingEntry
+
+    project = Project(name="雾港")
+    other = Project(name="另一本")
+    session.add_all([project, other])
+    session.commit()
+
+    session.add(SettingEntry(project_id=project.id, type="place", name="雾港旧城"))
+    session.add(SettingEntry(project_id=other.id, type="place", name="雾港旧城"))
+    session.commit()  # 跨项目同名是合法的
+
+    session.add(SettingEntry(project_id=project.id, type="faction", name="雾港旧城"))
+    with pytest.raises(IntegrityError):
+        session.commit()
+    session.rollback()
+
+
+def test_deleting_an_entry_removes_its_relations(session):
+    from sqlalchemy import select
+
+    from app.db.models import EntryRelation, SettingEntry
+
+    project = Project(name="雾港")
+    session.add(project)
+    session.commit()
+    a = SettingEntry(project_id=project.id, type="faction", name="甲")
+    b = SettingEntry(project_id=project.id, type="place", name="乙")
+    session.add_all([a, b])
+    session.commit()
+    session.add(EntryRelation(project_id=project.id, from_id=a.id, to_id=b.id, kind="位于"))
+    session.commit()
+
+    session.delete(a)
+    session.commit()
+
+    remaining = session.scalars(select(EntryRelation)).all()
+    assert remaining == []
+
+
+def test_relation_is_directional(session):
+    from sqlalchemy import select
+
+    from app.db.models import EntryRelation, SettingEntry
+
+    project = Project(name="雾港")
+    session.add(project)
+    session.commit()
+    a = SettingEntry(project_id=project.id, type="faction", name="甲")
+    b = SettingEntry(project_id=project.id, type="place", name="乙")
+    session.add_all([a, b])
+    session.commit()
+    session.add(EntryRelation(project_id=project.id, from_id=a.id, to_id=b.id, kind="位于"))
+    session.commit()
+
+    forward = session.scalars(select(EntryRelation).where(EntryRelation.from_id == a.id)).all()
+    backward = session.scalars(select(EntryRelation).where(EntryRelation.from_id == b.id)).all()
+    assert len(forward) == 1
+    assert backward == []
