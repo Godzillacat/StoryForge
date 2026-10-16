@@ -207,3 +207,64 @@ def test_backup_records_the_target_version(clean_db, monkeypatch):
     db_session.run_migrations(clean_db)
 
     assert list((config.data_dir() / "backups").glob("pre-migration-v2-*"))
+
+
+def test_a_fresh_database_is_stamped_at_the_latest_version(clean_db, monkeypatch):
+    """全新库是由**当前模型**建出来的，它天然就是最新结构 —— 盖最新版本，
+    不假装要从头跑一遍历史迁移。"""
+    monkeypatch.setattr(
+        migrations,
+        "MIGRATIONS",
+        (
+            _step(1, "甲", "CREATE TABLE _a (x INTEGER)"),
+            _step(2, "乙", "SELECT 2"),
+        ),
+    )
+
+    db_session.init_db()
+
+    with clean_db.connect() as conn:
+        assert conn.exec_driver_sql("SELECT version FROM schema_migration").fetchall() == [(2,)]
+
+
+def test_a_fresh_database_does_not_run_historical_migrations_at_all(clean_db, monkeypatch):
+    """用一条**会炸**的迁移钉住这一点：全新库若真去跑它，这里就红了。
+
+    这不是刁难 —— 历史迁移改的表，在全新库里本来就还不存在（那些表要等
+    create_all 建）。让全新库跑历史迁移，它必然炸。
+    """
+    monkeypatch.setattr(migrations, "MIGRATIONS", (_step(1, "会炸的", "THIS IS NOT SQL"),))
+
+    db_session.init_db()
+
+    assert "_probe" not in inspect(clean_db).get_table_names()
+    assert "project" in inspect(clean_db).get_table_names()
+
+
+def test_an_existing_database_runs_its_pending_migrations(clean_db, monkeypatch):
+    """存量库反过来：它停在引入时的结构，必须把历史迁移补上。"""
+    Base.metadata.create_all(clean_db)
+    monkeypatch.setattr(
+        migrations, "MIGRATIONS", (_step(1, "探针", "CREATE TABLE _probe (x INTEGER)"),)
+    )
+
+    db_session.init_db()
+
+    assert "_probe" in inspect(clean_db).get_table_names()
+
+
+def test_stamping_is_idempotent_when_only_the_migration_table_survives(clean_db):
+    """「业务表没了、迁移表还在」的库仍被判为全新 —— `is_fresh_database` 刻意
+    不把 `schema_migration` 算作业务表。于是它会被**再盖一次章**，而盖章撞主键
+    就是应用启动即失败。幂等盖印章下这个状态的语义反而是对的：`create_all` 刚
+    把表建成最新结构，「所有迁移已应用」正是事实。"""
+    db_session.init_db()  # 第一次：建表 + 盖章
+
+    Base.metadata.drop_all(clean_db)  # 业务表没了，schema_migration 残留下来
+
+    db_session.init_db()  # 第二次：不该抛
+
+    with clean_db.connect() as conn:
+        assert conn.exec_driver_sql("SELECT version FROM schema_migration").fetchall() == [
+            (migrations.latest_version(),)
+        ]

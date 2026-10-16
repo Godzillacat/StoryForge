@@ -22,14 +22,19 @@ class Migration:
 MIGRATIONS: tuple[Migration, ...] = ()
 
 BASELINE_VERSION = 0
-LATEST_VERSION = MIGRATIONS[-1].version if MIGRATIONS else BASELINE_VERSION
+
+
+def latest_version() -> int:
+    """当前 schema 版本 —— 取**最大值**，不是列表末位。
+
+    **是函数不是常量。** 常量在导入时就算好了，而测试要注入临时步骤只能
+    monkeypatch `MIGRATIONS`，常量不会跟着变 —— 于是任何依赖它的代码路径
+    都永远测不到（`init_db` 正是用它给全新库盖章，那是最该被测到的一步）。
+    取 max 而非 `[-1]`：`pending()` 刻意容忍列表乱序，两者口径必须一致。
+    """
+    return max((m.version for m in MIGRATIONS), default=BASELINE_VERSION)
 
 
 def pending(applied: int) -> tuple[Migration, ...]:
-    """版本号大于 applied 的步骤，按版本号升序。
-
-    runner 一律走这里读迁移列表，**不引用 `LATEST_VERSION`** —— 后者是导入时
-    算出的常量，测试注入临时步骤（monkeypatch `MIGRATIONS`）时它不会跟着变，
-    那条执行路径就永远测不到。`LATEST_VERSION` 只用于展示与版本号唯一性检查。
-    """
+    """版本号大于 applied 的步骤，按版本号升序。**运行时现读**，不要缓存。"""
     return tuple(sorted((m for m in MIGRATIONS if m.version > applied), key=lambda m: m.version))

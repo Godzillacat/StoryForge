@@ -3,10 +3,10 @@ from app.db import migrations
 
 def test_today_the_list_is_empty_and_that_is_fine():
     """当下没有需要改的已有表，所以列表是空的 —— 框架的第一次真正使用
-    是 P1b-2 给 setting_entry 加列。空列表不该让常量算崩。"""
+    是 P1b-2 给 setting_entry 加列。空列表不该让它算崩。"""
     assert migrations.MIGRATIONS == ()
     assert migrations.BASELINE_VERSION == 0
-    assert migrations.LATEST_VERSION == 0
+    assert migrations.latest_version() == 0
 
 
 def test_versions_are_unique_and_above_the_baseline():
