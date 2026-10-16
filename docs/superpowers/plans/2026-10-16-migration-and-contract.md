@@ -43,7 +43,7 @@
 
 **Interfaces:**
 - Consumes: 无
-- Produces: `Migration`（`version: int` / `note: str` / `statements: tuple[str, ...]`）、`MIGRATIONS: tuple[Migration, ...]`、`BASELINE_VERSION = 0`、`LATEST_VERSION: int`、`pending(applied: int) -> tuple[Migration, ...]`
+- Produces: `Migration`（`version: int` / `note: str` / `statements: tuple[str, ...]`）、`MIGRATIONS: tuple[Migration, ...]`、`BASELINE_VERSION = 0`、`latest_version() -> int`、`pending(applied: int) -> tuple[Migration, ...]`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -55,10 +55,10 @@ from app.db import migrations
 
 def test_today_the_list_is_empty_and_that_is_fine():
     """当下没有需要改的已有表，所以列表是空的 —— 框架的第一次真正使用
-    是 P1b-2 给 setting_entry 加列。空列表不该让常量算崩。"""
+    是 P1b-2 给 setting_entry 加列。空列表不该让它算崩。"""
     assert migrations.MIGRATIONS == ()
     assert migrations.BASELINE_VERSION == 0
-    assert migrations.LATEST_VERSION == 0
+    assert migrations.latest_version() == 0
 
 
 def test_versions_are_unique_and_above_the_baseline():
@@ -133,16 +133,21 @@ class Migration:
 MIGRATIONS: tuple[Migration, ...] = ()
 
 BASELINE_VERSION = 0
-LATEST_VERSION = MIGRATIONS[-1].version if MIGRATIONS else BASELINE_VERSION
+
+
+def latest_version() -> int:
+    """当前 schema 版本 —— 取**最大值**，不是列表末位。
+
+    **是函数不是常量。** 常量在导入时就算好了，而测试要注入临时步骤只能
+    monkeypatch `MIGRATIONS`，常量不会跟着变 —— 于是任何依赖它的代码路径
+    都永远测不到（`init_db` 正是用它给全新库盖章，那是最该被测到的一步）。
+    取 max 而非 `[-1]`：`pending()` 刻意容忍列表乱序，两者口径必须一致。
+    """
+    return max((m.version for m in MIGRATIONS), default=BASELINE_VERSION)
 
 
 def pending(applied: int) -> tuple[Migration, ...]:
-    """版本号大于 applied 的步骤，按版本号升序。
-
-    runner 一律走这里读迁移列表，**不引用 `LATEST_VERSION`** —— 后者是导入时
-    算出的常量，测试注入临时步骤（monkeypatch `MIGRATIONS`）时它不会跟着变，
-    那条执行路径就永远测不到。`LATEST_VERSION` 只用于展示与版本号唯一性检查。
-    """
+    """版本号大于 applied 的步骤，按版本号升序。**运行时现读**，不要缓存。"""
     return tuple(sorted((m for m in MIGRATIONS if m.version > applied), key=lambda m: m.version))
 ```
 
@@ -593,7 +598,7 @@ git commit -m "feat(db): 执行迁移前自动备份数据库"
 
 **Interfaces:**
 - Consumes: `is_fresh_database` / `run_migrations`（Task 2）
-- Produces: `init_db()` —— 全新库：建表 + 盖 `LATEST_VERSION`；存量库：跑迁移 + 建缺的表
+- Produces: `init_db()` —— 全新库：建表 + 盖 `migrations.latest_version()`；存量库：跑迁移 + 建缺的表
 
 - [ ] **Step 1: Write the failing test**
 
@@ -666,7 +671,7 @@ def init_db() -> None:
         Base.metadata.create_all(engine)
         with engine.begin() as conn:
             _ensure_migration_table(conn)
-            _stamp(conn, migrations.LATEST_VERSION, "全新库")
+            _stamp(conn, migrations.latest_version(), "全新库")
         return
 
     # 存量库：先补已有的表，再让模型建新加的表 —— 迁移不建表。
