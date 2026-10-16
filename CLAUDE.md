@@ -357,7 +357,7 @@ pnpm build                                # 产物给后端同源托管
 **全新库与存量库走两条路，判据是「库里有没有业务表」**（`is_fresh_database` 排除 `sqlite_%` 与 `schema_migration`）：
 
 ```
-无业务表（全新库） → create_all() → 盖章为 latest_version() → 结束
+无业务表（全新库） → 盖章为 latest_version() → create_all() → 结束
 有业务表（存量库） → run_migrations() → create_all()（建模型新加的表）
 ```
 
