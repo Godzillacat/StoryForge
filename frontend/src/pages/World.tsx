@@ -143,7 +143,7 @@ export default function World() {
     }
   }
 
-  async function adoptCandidate(next: EntryDraft): Promise<boolean> {
+  async function adoptCandidate(next: EntryDraft, key: string): Promise<boolean> {
     try {
       await api.createEntry(projectId, {
         type: next.type,
@@ -156,6 +156,9 @@ export default function World() {
         source_run_id: lastRun?.id ?? null,
       })
       await refresh()
+      // 采纳成功即把这行移出候选：改名采纳之后，候选行里的原名字不会
+      // 落进「已存在」的判定里，按钮会一直亮着，再点一次就多一条重复条目。
+      setCandidates((prev) => prev.filter((row) => row.key !== key))
       setNotice('已采纳')
       return true
     } catch (error) {

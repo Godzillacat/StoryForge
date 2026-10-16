@@ -33,7 +33,7 @@ export default function CandidateList({
   types: EntryTypesResponse | null
   existing: SettingEntry[]
   busy: boolean
-  onAdopt: (draft: EntryDraft) => Promise<boolean>
+  onAdopt: (draft: EntryDraft, key: string) => Promise<boolean>
   onDiscard: (key: string) => void
 }) {
   // 展开态按候选的**稳定 key** 记，不按数组下标 —— 丢弃上方一行、或再点一次
@@ -43,6 +43,23 @@ export default function CandidateList({
   const [draft, setDraft] = useState<EntryDraft | null>(null)
 
   const takenNames = new Set(existing.map((e) => e.name))
+  // 别名冲突**只提示不阻断** —— 别名共用是合法的（一个人可以有多个称呼）。
+  // 但它正是日后查一致性时的敏感点，值得让作者当场看见。
+  const takenForms = new Map<string, string>()
+  for (const entry of existing) {
+    takenForms.set(entry.name, entry.name)
+    for (const alias of entry.aliases ?? []) takenForms.set(alias, entry.name)
+  }
+
+  function aliasConflicts(candidate: SuggestedEntry): string[] {
+    const out: string[] = []
+    for (const alias of candidate.aliases ?? []) {
+      const owner = takenForms.get(alias)
+      if (owner && owner !== candidate.name) out.push(`别名「${alias}」已用于「${owner}」`)
+    }
+    return out
+  }
+
   // 候选的 type 是**英文键**（后端在响应里归一过，否则表单的下拉对不上），
   // 而这一格要显示的是中文 —— 不映射就会把 `faction` 这样的键露给作者。
   const typeLabels = new Map((types?.types ?? []).map((t) => [t.key, t.label]))
@@ -84,13 +101,19 @@ export default function CandidateList({
                   <button
                     className="text-xs text-emerald-400 disabled:opacity-50"
                     disabled={busy}
-                    onClick={() => onAdopt(draftOf(candidate))}
+                    onClick={() => onAdopt(draftOf(candidate), key)}
                   >
                     采纳
                   </button>
                 )}
               </div>
               <p className="text-xs text-slate-400">{candidate.summary}</p>
+
+              {aliasConflicts(candidate).map((hint) => (
+                <p key={hint} className="text-xs text-amber-400">
+                  {hint}
+                </p>
+              ))}
 
               {openKey === key && draft && (
                 <div className="space-y-3 rounded bg-slate-900/60 p-3">
@@ -101,7 +124,7 @@ export default function CandidateList({
                     onClick={async () => {
                       // 采纳**失败时不收**展开区：失败恰恰常发生在作者刚把撞名的
                       // 候选改了名、而新名字仍然撞名时，把编辑内容收掉等于让他重敲。
-                      if (await onAdopt(draft)) {
+                      if (await onAdopt(draft, key)) {
                         setOpenKey(null)
                         setDraft(null)
                       }

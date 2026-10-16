@@ -108,15 +108,13 @@ def list_relations(session: Session, project_id: str) -> list[EntryRelation]:
     )
 
 
-def create_relation(
-    session: Session,
-    project_id: str,
-    from_id: str,
-    to_id: str,
-    kind: str,
-    note: str = "",
-) -> EntryRelation:
-    if not (kind or "").strip():
+def create_relation(session: Session, project_id: str, **fields) -> EntryRelation:
+    """收 **fields 而不是显式签名：路由用 model_dump 展开，schema 一加字段
+    显式签名就会变成运行期 TypeError —— 这张表下一切片要复用并加列。"""
+    from_id = fields.get("from_id")
+    to_id = fields.get("to_id")
+    kind = (fields.get("kind") or "").strip()
+    if not kind:
         raise ValueError("关联必须写明是什么关系")
     for label, entry_id in (("起点", from_id), ("终点", to_id)):
         entry = session.get(SettingEntry, entry_id)
@@ -126,7 +124,11 @@ def create_relation(
         if entry.project_id != project_id:
             raise ValueError(f"关联的{label}条目不属于这个项目：{entry_id}")
     relation = EntryRelation(
-        project_id=project_id, from_id=from_id, to_id=to_id, kind=kind.strip(), note=note
+        project_id=project_id,
+        from_id=from_id,
+        to_id=to_id,
+        kind=kind,
+        note=fields.get("note") or "",
     )
     session.add(relation)
     session.commit()

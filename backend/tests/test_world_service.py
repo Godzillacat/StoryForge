@@ -180,6 +180,19 @@ def test_relation_requires_a_kind(session):
         world_service.create_relation(session, project.id, from_id=a.id, to_id=b.id, kind="  ")
 
 
+def test_relation_ignores_unknown_fields(session):
+    """路由用 **model_dump() 展开，下一切片给这张表加列时不能当场崩。"""
+    project = _project(session)
+    a = world_service.create_entry(session, project.id, type="faction", name="甲")
+    b = world_service.create_entry(session, project.id, type="place", name="乙")
+
+    relation = world_service.create_relation(
+        session, project.id, from_id=a.id, to_id=b.id, kind="位于", 未来的列="x"
+    )
+
+    assert relation.kind == "位于"
+
+
 def test_delete_relation(session):
     project = _project(session)
     a = world_service.create_entry(session, project.id, type="faction", name="甲")
