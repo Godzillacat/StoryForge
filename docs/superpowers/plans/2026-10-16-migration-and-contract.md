@@ -204,9 +204,17 @@ def clean_db():
     """
     import shutil
 
+    # 逐个删 sqlite_master 里的每一张表，而不是只调 drop_all：测试用的探针表
+    # （_probe / _a / _b）是**原始 SQL** 建的、不在 metadata 里，drop_all 管不到
+    # —— 不清掉它们，下一个用例会撞上「table _probe already exists」。
+    # schema_migration 同理（它不是 ORM 模型，且迁移测试恰好在乎它在不在）。
     with db_session.engine.begin() as conn:
-        conn.exec_driver_sql("DROP TABLE IF EXISTS schema_migration")
-    Base.metadata.drop_all(db_session.engine)
+        rows = conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        for (name,) in rows:
+            conn.exec_driver_sql(f'DROP TABLE IF EXISTS "{name}"')
+
     backups = config.data_dir() / "backups"
     if backups.exists():
         shutil.rmtree(backups)
@@ -250,8 +258,12 @@ def test_existing_database_keeps_its_rows(clean_db):
     """盖章不能碰数据 —— 这是整件事的意义所在。"""
     Base.metadata.create_all(clean_db)
     with clean_db.begin() as conn:
-        conn.exec_driver_sql("INSERT INTO project (id, name, created_at, updated_at) "
-                             "VALUES ('p1', '雾港', '2026-10-16', '2026-10-16')")
+        # writing_lang / logic_check_level 是 NOT NULL，而它们的默认值只在
+        # 客户端（ORM 层）—— 原生 INSERT 必须自己给。
+        conn.exec_driver_sql(
+            "INSERT INTO project (id, name, writing_lang, logic_check_level, created_at, updated_at) "
+            "VALUES ('p1', '雾港', 'zh', 'loose', '2026-10-16', '2026-10-16')"
+        )
 
     db_session.run_migrations(clean_db)
 
