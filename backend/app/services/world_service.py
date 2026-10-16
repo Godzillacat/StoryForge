@@ -96,3 +96,46 @@ def delete_entry(session: Session, entry_id: str) -> None:
         raise ValueError(f"设定条目不存在：{entry_id}")
     session.delete(entry)
     session.commit()
+
+
+def list_relations(session: Session, project_id: str) -> list[EntryRelation]:
+    return list(
+        session.scalars(
+            select(EntryRelation)
+            .where(EntryRelation.project_id == project_id)
+            .order_by(EntryRelation.created_at)
+        )
+    )
+
+
+def create_relation(
+    session: Session,
+    project_id: str,
+    from_id: str,
+    to_id: str,
+    kind: str,
+    note: str = "",
+) -> EntryRelation:
+    if not (kind or "").strip():
+        raise ValueError("关联必须写明是什么关系")
+    for label, entry_id in (("起点", from_id), ("终点", to_id)):
+        entry = session.get(SettingEntry, entry_id)
+        if entry is None:
+            raise ValueError(f"关联的{label}条目不存在：{entry_id}")
+        # 跨项目的关联会让「这个项目有哪些关联」失去意义
+        if entry.project_id != project_id:
+            raise ValueError(f"关联的{label}条目不属于这个项目：{entry_id}")
+    relation = EntryRelation(
+        project_id=project_id, from_id=from_id, to_id=to_id, kind=kind.strip(), note=note
+    )
+    session.add(relation)
+    session.commit()
+    return relation
+
+
+def delete_relation(session: Session, relation_id: str) -> None:
+    relation = session.get(EntryRelation, relation_id)
+    if relation is None:
+        raise ValueError(f"关联不存在：{relation_id}")
+    session.delete(relation)
+    session.commit()

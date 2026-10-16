@@ -138,3 +138,58 @@ def test_update_duplicate_name_reports_the_name_the_author_typed(session):
         world_service.update_entry(session, target.id, name="甲")
 
     assert "甲" in str(excinfo.value)
+
+
+def test_create_relation_between_two_entries(session):
+    project = _project(session)
+    a = world_service.create_entry(session, project.id, type="faction", name="记忆交易局")
+    b = world_service.create_entry(session, project.id, type="place", name="雾港旧城")
+
+    relation = world_service.create_relation(
+        session, project.id, from_id=a.id, to_id=b.id, kind="位于", note="总部"
+    )
+
+    assert relation.kind == "位于"
+    assert relation.note == "总部"
+    assert [r.id for r in world_service.list_relations(session, project.id)] == [relation.id]
+
+
+def test_relation_rejects_unknown_or_cross_project_entries(session):
+    project = _project(session)
+    other = Project(name="另一本")
+    session.add(other)
+    session.commit()
+    a = world_service.create_entry(session, project.id, type="faction", name="甲")
+    outside = world_service.create_entry(session, other.id, type="place", name="境外")
+
+    with pytest.raises(ValueError):
+        world_service.create_relation(
+            session, project.id, from_id=a.id, to_id="nope", kind="位于"
+        )
+    with pytest.raises(ValueError):
+        world_service.create_relation(
+            session, project.id, from_id=a.id, to_id=outside.id, kind="位于"
+        )
+
+
+def test_relation_requires_a_kind(session):
+    project = _project(session)
+    a = world_service.create_entry(session, project.id, type="faction", name="甲")
+    b = world_service.create_entry(session, project.id, type="place", name="乙")
+    with pytest.raises(ValueError):
+        world_service.create_relation(session, project.id, from_id=a.id, to_id=b.id, kind="  ")
+
+
+def test_delete_relation(session):
+    project = _project(session)
+    a = world_service.create_entry(session, project.id, type="faction", name="甲")
+    b = world_service.create_entry(session, project.id, type="place", name="乙")
+    relation = world_service.create_relation(
+        session, project.id, from_id=a.id, to_id=b.id, kind="位于"
+    )
+
+    world_service.delete_relation(session, relation.id)
+
+    assert world_service.list_relations(session, project.id) == []
+    with pytest.raises(ValueError):
+        world_service.delete_relation(session, relation.id)

@@ -118,3 +118,10 @@ class EntryUpdate(BaseModel):
     description: str | None = None
     hardness: str | None = None
     source_run_id: str | None = None
+
+
+class RelationCreate(BaseModel):
+    from_id: str
+    to_id: str
+    kind: str = Field(min_length=1, max_length=60)
+    note: str = ""

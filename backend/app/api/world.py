@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.schemas import EntryCreate, EntryUpdate
+from app.api.schemas import EntryCreate, EntryUpdate, RelationCreate
 from app.db.session import get_session
 from app.services import world_service
 
@@ -70,5 +70,40 @@ def update_entry(
 def delete_entry(entry_id: str, session: Session = Depends(get_session)) -> None:
     try:
         world_service.delete_entry(session, entry_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+def _relation_out(relation) -> dict:
+    return {
+        "id": relation.id,
+        "project_id": relation.project_id,
+        "from_id": relation.from_id,
+        "to_id": relation.to_id,
+        "kind": relation.kind,
+        "note": relation.note,
+    }
+
+
+@router.get("/projects/{project_id}/relations")
+def list_relations(project_id: str, session: Session = Depends(get_session)) -> list[dict]:
+    return [_relation_out(r) for r in world_service.list_relations(session, project_id)]
+
+
+@router.post("/projects/{project_id}/relations", status_code=201)
+def create_relation(
+    project_id: str, payload: RelationCreate, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        relation = world_service.create_relation(session, project_id, **payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _relation_out(relation)
+
+
+@router.delete("/relations/{relation_id}", status_code=204)
+def delete_relation(relation_id: str, session: Session = Depends(get_session)) -> None:
+    try:
+        world_service.delete_relation(session, relation_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
