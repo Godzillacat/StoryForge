@@ -130,8 +130,10 @@
 }
 ```
 
-- `entries` 必填、至少 3 项；`type` 用 §2.1 的英文键，用 `enum` 约束。
-- `hardness` 只在 `type == "rule"` 时有意义，其余为空；**不在 schema 上做条件约束**（自写的校验子集不支持），改为在提示词里说明、由校验器容忍。
+- `entries` 必填、至少 3 项。
+- **`type` 与 `hardness` 都不用 `enum` 约束，改用服务层归一化。** 原因是一处真实的机制冲突：P1a 的护栏 `test_preset_prompts_do_not_hand_list_field_keys` 禁止提示词里出现英文字段键，而契约说明块只渲染属性名不渲染 **enum 值**的中文名 —— 于是模型会看到「取值：place、faction…」却无从知道哪个是「势力」，而我又不能在提示词里写 地理=place 的映射（会被护栏拦下）。这与 P1a 修掉的是同一类问题（提示词与契约对不上），只是这次出在 enum 值上。
+  - 归一化规则：中文名与英文键都落到同一个 key（`势力` → `faction`，`faction` → `faction`）；未知值**在采纳那一行**返回可读错误，而不是让整批候选降级为纯文本。
+  - `hardness` 同理：三个合法值之外或空值一律归一为 `None`，且只在规则类条目的界面上呈现。
 - 提示词沿用解析师那套纪律：引用解析卡与故事圣经里的**具体要素**说明为什么需要这条设定；**不许编造设定填空**，没把握的写进 `open_questions`；不替作者决定故事的走向。
 
 ### 3.2 候选链路
@@ -215,8 +217,9 @@
 | 关联 | 建立 / 删除；级联（删条目时其关联一并消失）；有向性（A→B 不等于 B→A） |
 | 术语投影 | 展平结果 = 全部名字 ∪ 全部别名 ∪ 裸术语；每行带来源条目；空项目返回空列表 |
 | 候选生成 | 用假传输层跑一次 `suggest`：结构化时返回候选、未结构化时返回原文与原因、无服务商时给可读中文原因 |
-| **契约一致性** | 复用 P1a 已建的护栏 —— `test_contract_block_covers_every_field_of_every_preset_agent` 与 `test_preset_prompts_do_not_hand_list_field_keys` **自动覆盖新阵容**，前提是新角色卡进 `DEFAULT_ROSTER`。另加：`type` 的 `enum` 与 §2.1 的键表一致 |
-| 类型清单 | `GET /api/entry-types` 的键集合与角色卡契约里的 `enum` 一致（防止两处漂移） |
+| **契约一致性** | 复用 P1a 已建的护栏 —— `test_contract_block_covers_every_field_of_every_preset_agent` 与 `test_preset_prompts_do_not_hand_list_field_keys` **自动覆盖新阵容**，前提是新角色卡进 `DEFAULT_ROSTER` |
+| 类型归一化 | 中文名与英文键都归到同一个 key；未知值抛可读错误；`hardness` 的非法值与空值归为 `None` |
+| 类型清单 | `GET /api/entry-types` 的键集合与归一化表用的是同一份常量（防止两处漂移） |
 
 前端：`pnpm build` 干净 + 浏览器走查。
 
