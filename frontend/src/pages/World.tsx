@@ -6,9 +6,8 @@ import {
   type Project,
   type RunView,
   type SettingEntry,
-  type SuggestedEntry,
 } from '../api/client'
-import CandidateList from '../components/CandidateList'
+import CandidateList, { type CandidateRow } from '../components/CandidateList'
 import RunTrace from '../components/RunTrace'
 import EntryEditor, {
   EMPTY_DRAFT,
@@ -40,7 +39,7 @@ export default function World() {
   const [creating, setCreating] = useState(false)
   const [notice, setNotice] = useState('')
   const [relationDraft, setRelationDraft] = useState({ to_id: '', kind: '' })
-  const [candidates, setCandidates] = useState<SuggestedEntry[]>([])
+  const [candidates, setCandidates] = useState<CandidateRow[]>([])
   const [openQuestions, setOpenQuestions] = useState<string[]>([])
   const [suggesting, setSuggesting] = useState(false)
   const [lastRun, setLastRun] = useState<RunView | null>(null)
@@ -70,6 +69,12 @@ export default function World() {
     setCreating(false)
     setDraft(EMPTY_DRAFT)
     setNotice('')
+    // 候选区也是项目作用域的状态：上一批候选的 key 与 source_run_id 都指向
+    // 旧项目，留在新项目上会被误采纳，RunTrace 也会展示旧项目的运行。
+    setCandidates([])
+    setOpenQuestions([])
+    setLastRun(null)
+    setSuggesting(false)
     api.listEntries(projectId).then(setEntries).catch((e) => setNotice((e as Error).message))
     api.listRelations(projectId).then(setRelations).catch((e) => setNotice((e as Error).message))
   }, [projectId])
@@ -112,10 +117,15 @@ export default function World() {
     try {
       const result = await api.suggestEntries(projectId)
       setLastRun(result.run)
-      setCandidates(result.entries)
+      // key 带上 run id：每批候选的 key 都不同，展开态不会跨批串味。
+      setCandidates(
+        result.entries.map((entry, index) => ({ key: `${result.run.id}:${index}`, entry })),
+      )
       setOpenQuestions(result.open_questions)
       if (!result.structured) {
-        setNotice(`未结构化：${result.parse_error ?? '模型没有按契约返回'}`)
+        // 后端保证未结构化时一定给出一句可读原因（含「上游还没做」与调用失败两种），
+        // 所以这里直接显示它，不再套「未结构化：」这个前缀 —— 模板缺失并不是格式问题。
+        setNotice(result.parse_error ?? '模型没有按契约返回')
       }
     } catch (error) {
       setNotice((error as Error).message)
@@ -124,7 +134,7 @@ export default function World() {
     }
   }
 
-  async function adoptCandidate(next: EntryDraft) {
+  async function adoptCandidate(next: EntryDraft): Promise<boolean> {
     try {
       await api.createEntry(projectId, {
         type: next.type,
@@ -138,13 +148,15 @@ export default function World() {
       })
       await refresh()
       setNotice('已采纳')
+      return true
     } catch (error) {
       setNotice((error as Error).message)
+      return false
     }
   }
 
-  function discardCandidate(index: number) {
-    setCandidates((prev) => prev.filter((_, i) => i !== index))
+  function discardCandidate(key: string) {
+    setCandidates((prev) => prev.filter((row) => row.key !== key))
   }
 
   async function save() {
