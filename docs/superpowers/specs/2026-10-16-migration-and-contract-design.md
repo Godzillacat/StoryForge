@@ -27,8 +27,8 @@
 
 ### 1.2 验收标准
 
-1. 全新数据目录启动 → 建库、建表、迁移表被盖章为基线；
-2. **存量库**（迁移框架引入之前建的）启动 → 被识别为存量、盖章为基线，**不试图重建、不丢数据**；
+1. 全新数据目录启动 → 由模型建表，迁移表被盖章为 **`LATEST_VERSION`**（不跑历史迁移）；
+2. **存量库**（迁移框架引入之前建的）启动 → 被识别为存量、盖章为**基线 0**、跑完所有历史迁移，**不试图重建、不丢数据**；
 3. 加一条迁移步骤后启动 → 该步骤执行一次、被记录；再启动 → 不重复执行；
 4. 执行迁移之前**自动备份**数据库文件（仅在真有步骤要执行时）；
 5. 某条迁移抛错 → 应用**拒绝启动**并给出可读原因，该步骤**不被记为已执行**；
@@ -71,7 +71,27 @@ CREATE TABLE IF NOT EXISTS schema_migration (
 
 好处是两套机制职责不重叠、不会互相打架，框架因此小很多。代价：新增表时模型与库结构之间没有迁移记录可查 —— 但 `create_all` 本来就没有，这不是退步。
 
-`create_all` 在迁移**之后**执行，于是顺序永远是「先补已有的表，再建缺的表」。
+**但全新库要单独走一条路 —— 否则这里是引导问题。** 设想一条迁移是「给 `setting_entry` 加一列」：
+
+- 「先迁移再建表」→ 迁移去改一张还不存在的表 → 报错；
+- 「先建表再迁移」→ 表是按**最新模型**建的、那一列已经有了 → 迁移再加一次 → 报错。
+
+两条都走不通。根因是这两种库的性质根本不同：
+
+| | 全新库 | 存量库 |
+|---|---|---|
+| 它是什么 | 由**当前模型**直接建出来的 | 迁移框架引入之前就存在 |
+| 它处在哪 | **天然就是最新结构** | 停在引入时的结构 |
+| 该做什么 | 直接建表、**盖最新版本**，不跑历史迁移 | 盖基线、跑所有历史迁移、再建模型新加的表 |
+
+所以 `init_db()` 分两条路，**判据是「库里有没有业务表」**：
+
+```
+无业务表（全新库） → create_all() → 盖章为 LATEST_VERSION → 结束
+有业务表（存量库） → run_migrations() → create_all()（建模型新加的表）
+```
+
+「盖最新版本」不是偷懒：那张表是模型此刻的定义建出来的，它**确实**处于最新结构，把它当成「还没跑过任何迁移」才是错的。
 
 ### 3.2 模块
 
@@ -97,23 +117,25 @@ def pending(applied: int) -> tuple[Migration, ...]: ...
 
 ### 3.3 runner 落点
 
-`app/db/session.py` 新增 `run_migrations(engine)`，`init_db()` 变成两步：
+`app/db/session.py` 新增两个函数 —— `is_fresh_database(engine)` 与 `run_migrations(engine)` —— 由 `init_db()` 按 §3.1 的两条路分派：
 
 ```
-run_migrations(engine)      # ① 迁移表 → ② 盖章 → ③ 备份 → ④ 执行未执行的步骤
-Base.metadata.create_all(engine)   # ⑤ 新表仍归模型
+if is_fresh_database(engine):
+    Base.metadata.create_all(engine)   # 模型就是最新结构
+    stamp(LATEST_VERSION, "全新库")     # 所以不跑历史迁移
+    return
+run_migrations(engine)                 # 存量库：盖章 → 备份 → 补步骤
+Base.metadata.create_all(engine)       # 再建模型新加的表（迁移不建表）
 ```
 
-算法：
+`is_fresh_database` 的判据：`sqlite_master` 里**没有业务表**（排除 `sqlite_%` 与 `schema_migration`）。
+
+`run_migrations(engine)` 的算法（只对存量库）：
 
 1. **建迁移表**（`CREATE TABLE IF NOT EXISTS`）。
-2. **读已执行版本**（`MAX(version)`）。
-3. **没有记录时盖章** —— 两种情形共用一条路径：
-   - 库里**已有别的表** → 这是迁移框架引入之前就存在的库，按**基线**盖章，记 `note = "基线（迁移框架引入时的库结构）"`；
-   - 库里**没有别的表** → 全新库，同样盖基线，记 `note = "全新库"`。
-   两种情形都盖 0，所以「有没有别的表」只影响记录里的说明文字，不影响行为。
-4. **有未执行的步骤时先备份**：把 `storyforge.db` 连同 `-wal` / `-shm` 复制到 `%LOCALAPPDATA%\StoryForge\backups\pre-migration-v<目标版本>-<时间戳>\`。**没有步骤要执行就不备份**（空跑不产生垃圾）。
-5. **按序执行**，每步一个事务（`engine.begin()`）：执行该步的全部语句，成功后插入 `schema_migration` 行。
+2. **读已执行版本**（`MAX(version)`）；**没有记录就盖基线 0**，记 `note = "基线（迁移框架引入时的库结构）"`。
+3. **有未执行的步骤时先备份**：把 `storyforge.db` 连同 `-wal` / `-shm` 复制到 `%LOCALAPPDATA%\StoryForge\backups\pre-migration-v<目标版本>-<时间戳>\`。**没有步骤要执行就不备份**（空跑不产生垃圾）。
+4. **按序执行**，每步一个事务（`engine.begin()`）：执行该步的全部语句，成功后插入 `schema_migration` 行。
 
 ### 3.4 失败行为
 
@@ -198,8 +220,8 @@ if expected == "object" or isinstance(value, dict):
 | 层 | 测什么 |
 |---|---|
 | `migrations.py` | `pending(0)` 返回全部步骤；`pending(N)` 只返回版本号大于 N 的；`LATEST_VERSION` 与空列表时的 0 |
-| runner — 全新库 | 数据目录空 → 建迁移表、盖章、`create_all` 建出全部业务表 |
-| runner — 存量库 | 先建一个「有业务表但没有迁移表」的库 → 启动后迁移表存在且盖章为 0，**业务表数据一行不少** |
+| runner — 全新库 | 数据目录空 → `create_all` 建出全部业务表，迁移表被盖章为 **`LATEST_VERSION`**，且**一条历史迁移都没跑**（用一条会炸的迁移步骤钉住这一点） |
+| runner — 存量库 | 先建一个「有业务表但没有迁移表」的库 → 启动后迁移表存在且盖章为基线 0，**业务表数据一行不少** |
 | runner — 执行一次 | monkeypatch `migrations.MIGRATIONS` 临时挂一条步骤（如 `CREATE TABLE _probe(x INTEGER)`）→ 执行、记录；再跑一次 → 不重复执行 |
 | runner — 失败 | 一条会抛错的步骤（如非法 SQL）→ 异常往上抛、该版本**未被记录**、备份**已产生** |
 | runner — 备份 | 有步骤可执行 → 备份目录出现且含 `.db`；无步骤可执行 → **不产生**备份目录 |
