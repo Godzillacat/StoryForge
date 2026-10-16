@@ -92,3 +92,7 @@ class AgentUpdate(BaseModel):
     role_label: str | None = Field(default=None, max_length=60)
     color: str | None = Field(default=None, max_length=20)
     enabled: bool | None = None
+
+
+class ProviderTest(BaseModel):
+    model: str | None = None

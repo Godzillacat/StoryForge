@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import config
-from app.api.schemas import ProviderCreate, ProviderUpdate, SettingsUpdate
+from app.api.schemas import ProviderCreate, ProviderTest, ProviderUpdate, SettingsUpdate
 from app.db.session import get_session
 from app.services import provider_service
 
@@ -59,8 +59,12 @@ def delete_provider(provider_id: str, session: Session = Depends(get_session)) -
 
 
 @router.post("/providers/{provider_id}/test")
-def test_provider(provider_id: str, session: Session = Depends(get_session)) -> dict:
-    return provider_service.test_connection(session, provider_id)
+def test_provider(
+    provider_id: str, payload: ProviderTest | None = None, session: Session = Depends(get_session)
+) -> dict:
+    return provider_service.test_connection(
+        session, provider_id, model=payload.model if payload else None
+    )
 
 
 @router.get("/settings")
