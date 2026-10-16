@@ -43,7 +43,7 @@
 
 **Interfaces:**
 - Consumes: 无
-- Produces: `Migration`（`version: int` / `note: str` / `statements: tuple[str, ...]`）、`MIGRATIONS: tuple[Migration, ...]`、`BASELINE_VERSION = 0`、`LATEST_VERSION: int`、`pending(applied: int) -> tuple[Migration, ...]`
+- Produces: `Migration`（`version: int` / `note: str` / `statements: tuple[str, ...]`）、`MIGRATIONS: tuple[Migration, ...]`、`BASELINE_VERSION = 0`、`latest_version() -> int`、`pending(applied: int) -> tuple[Migration, ...]`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -55,10 +55,10 @@ from app.db import migrations
 
 def test_today_the_list_is_empty_and_that_is_fine():
     """当下没有需要改的已有表，所以列表是空的 —— 框架的第一次真正使用
-    是 P1b-2 给 setting_entry 加列。空列表不该让常量算崩。"""
+    是 P1b-2 给 setting_entry 加列。空列表不该让它算崩。"""
     assert migrations.MIGRATIONS == ()
     assert migrations.BASELINE_VERSION == 0
-    assert migrations.LATEST_VERSION == 0
+    assert migrations.latest_version() == 0
 
 
 def test_versions_are_unique_and_above_the_baseline():
@@ -133,16 +133,21 @@ class Migration:
 MIGRATIONS: tuple[Migration, ...] = ()
 
 BASELINE_VERSION = 0
-LATEST_VERSION = MIGRATIONS[-1].version if MIGRATIONS else BASELINE_VERSION
+
+
+def latest_version() -> int:
+    """当前 schema 版本 —— 取**最大值**，不是列表末位。
+
+    **是函数不是常量。** 常量在导入时就算好了，而测试要注入临时步骤只能
+    monkeypatch `MIGRATIONS`，常量不会跟着变 —— 于是任何依赖它的代码路径
+    都永远测不到（`init_db` 正是用它给全新库盖章，那是最该被测到的一步）。
+    取 max 而非 `[-1]`：`pending()` 刻意容忍列表乱序，两者口径必须一致。
+    """
+    return max((m.version for m in MIGRATIONS), default=BASELINE_VERSION)
 
 
 def pending(applied: int) -> tuple[Migration, ...]:
-    """版本号大于 applied 的步骤，按版本号升序。
-
-    runner 一律走这里读迁移列表，**不引用 `LATEST_VERSION`** —— 后者是导入时
-    算出的常量，测试注入临时步骤（monkeypatch `MIGRATIONS`）时它不会跟着变，
-    那条执行路径就永远测不到。`LATEST_VERSION` 只用于展示与版本号唯一性检查。
-    """
+    """版本号大于 applied 的步骤，按版本号升序。**运行时现读**，不要缓存。"""
     return tuple(sorted((m for m in MIGRATIONS if m.version > applied), key=lambda m: m.version))
 ```
 
@@ -183,8 +188,15 @@ from sqlalchemy import inspect, text
 
 from app import config
 from app.db import migrations
+from app.db import models  # noqa: F401  注册模型到 metadata —— 见下方说明
 from app.db import session as db_session
 from app.db.base import Base
+
+
+# 必须显式导入 app.db.models：它在生产代码里是在 init_db() **函数体内**导入的，
+# 所以只 import session 是拿不到模型的。跑整个套件时别的测试文件会顺手把它注册
+# 上，于是这文件看起来「能跑」；单独跑（本计划 Step 4 就是这么跑的）时
+# metadata 是空的，create_all 什么都不建，测试当场红 —— 典型的一套绿、单跑红。
 
 
 @pytest.fixture()
@@ -197,9 +209,23 @@ def clean_db():
     """
     import shutil
 
-    with db_session.engine.begin() as conn:
-        conn.exec_driver_sql("DROP TABLE IF EXISTS schema_migration")
+    # ORM 表先交给 drop_all —— 它按依赖顺序删。**不能只按 sqlite_master 的
+    # 顺序逐个 DROP**：session.py 开着 PRAGMA foreign_keys=ON，而 sqlite_master
+    # 的顺序下 project 先于引用它的 setting_entry 被删，后者当场报
+    # 「no such table: main.project」。
     Base.metadata.drop_all(db_session.engine)
+
+    # 再清 drop_all 管不到的那些：测试探针表（_probe / _a / _b）是**原始 SQL**
+    # 建的、不在 metadata 里，不清掉会泄漏到下一个用例（撞「table _probe
+    # already exists」）；schema_migration 同理（它不是 ORM 模型，而迁移测试
+    # 恰好在乎它在不在）。这两类都没有外键，删除顺序无所谓。
+    with db_session.engine.begin() as conn:
+        rows = conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        for (name,) in rows:
+            conn.exec_driver_sql(f'DROP TABLE IF EXISTS "{name}"')
+
     backups = config.data_dir() / "backups"
     if backups.exists():
         shutil.rmtree(backups)
@@ -243,8 +269,12 @@ def test_existing_database_keeps_its_rows(clean_db):
     """盖章不能碰数据 —— 这是整件事的意义所在。"""
     Base.metadata.create_all(clean_db)
     with clean_db.begin() as conn:
-        conn.exec_driver_sql("INSERT INTO project (id, name, created_at, updated_at) "
-                             "VALUES ('p1', '雾港', '2026-10-16', '2026-10-16')")
+        # writing_lang / logic_check_level 是 NOT NULL，而它们的默认值只在
+        # 客户端（ORM 层）—— 原生 INSERT 必须自己给。
+        conn.exec_driver_sql(
+            "INSERT INTO project (id, name, writing_lang, logic_check_level, created_at, updated_at) "
+            "VALUES ('p1', '雾港', 'zh', 'loose', '2026-10-16', '2026-10-16')"
+        )
 
     db_session.run_migrations(clean_db)
 
@@ -281,6 +311,26 @@ def test_a_failing_step_is_not_recorded(clean_db, monkeypatch):
     with pytest.raises(Exception):
         db_session.run_migrations(clean_db)
 
+    with clean_db.connect() as conn:
+        assert conn.exec_driver_sql("SELECT MAX(version) FROM schema_migration").fetchone() == (0,)
+
+
+def test_a_multi_statement_step_that_fails_leaves_nothing_behind(clean_db, monkeypatch):
+    """DDL 不会因为 engine.begin() 的回滚而撤销 —— pysqlite 走 legacy 事务控制，
+    真的 BEGIN 只在第一条 DML 之前发出，纯 DDL 在 autocommit 下直接执行。
+    于是一个多语句步骤中途失败会留下「结构改了、版本没记」：下次启动重试它，
+    撞上「表已存在」而永久失败。这个用例就是钉这一点。"""
+    Base.metadata.create_all(clean_db)
+    monkeypatch.setattr(
+        migrations,
+        "MIGRATIONS",
+        (_step(1, "半截", "CREATE TABLE _probe (x INTEGER)", "THIS IS NOT SQL"),),
+    )
+
+    with pytest.raises(Exception, match="迁移 v1"):
+        db_session.run_migrations(clean_db)
+
+    assert "_probe" not in inspect(clean_db).get_table_names()
     with clean_db.connect() as conn:
         assert conn.exec_driver_sql("SELECT MAX(version) FROM schema_migration").fetchone() == (0,)
 
@@ -378,10 +428,26 @@ def run_migrations(engine) -> None:
         return
 
     for step in todo:
-        with engine.begin() as conn:
-            for sql in step.statements:
-                conn.exec_driver_sql(sql)
-            _stamp(conn, step.version, step.note)
+        # **不能用 engine.begin()**：SQLAlchemy 的 pysqlite 走 legacy 事务控制，
+        # 真的 BEGIN 只在第一条 DML 之前发出，而**纯 DDL 在 autocommit 下直接
+        # 执行** —— 于是 engine.begin() 的回滚回不到它。一步里多条语句、靠前的
+        # DDL 成功而靠后的失败时（`ALTER TABLE ADD COLUMN` + `UPDATE` 回填就是
+        # 最经典的形状），会留下「结构改了、版本没记」的半迁移状态，下次启动
+        # 在「表已存在」上永久失败，要人工介入作者的库。
+        # 所以这里自己开事务：AUTOCOMMIT 让 SQLAlchemy 不发它自己的 BEGIN，
+        # 手写的 BEGIN/COMMIT 才能真正生效。
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            conn.exec_driver_sql("BEGIN")
+            try:
+                for sql in step.statements:
+                    conn.exec_driver_sql(sql)
+                _stamp(conn, step.version, step.note)
+            except Exception as exc:
+                conn.exec_driver_sql("ROLLBACK")
+                # 带上版本号与说明：不然作者看到的是一个不带上下文的
+                # OperationalError，不知道是哪一步炸的。
+                raise RuntimeError(f"迁移 v{step.version}（{step.note}）执行失败：{exc}") from exc
+            conn.exec_driver_sql("COMMIT")
 ```
 
 并在该文件顶部导入 `migrations`：
@@ -532,7 +598,7 @@ git commit -m "feat(db): 执行迁移前自动备份数据库"
 
 **Interfaces:**
 - Consumes: `is_fresh_database` / `run_migrations`（Task 2）
-- Produces: `init_db()` —— 全新库：建表 + 盖 `LATEST_VERSION`；存量库：跑迁移 + 建缺的表
+- Produces: `init_db()` —— 全新库：建表 + 盖 `migrations.latest_version()`；存量库：跑迁移 + 建缺的表
 
 - [ ] **Step 1: Write the failing test**
 
@@ -599,19 +665,21 @@ def init_db() -> None:
     from app.db import models  # noqa: F401  确保所有模型已注册到 metadata
 
     if is_fresh_database(engine):
-        # 全新库：模型就是最新结构，直接建。它天然处于「所有迁移都已应用」
-        # 的状态 —— 盖最新版本，不假装要从头跑一遍历史迁移（那些迁移改的
-        # 表，此刻还不存在，跑必然炸）。
-        Base.metadata.create_all(engine)
+        # 全新库：模型就是最新结构。它天然处于「所有迁移都已应用」的状态 ——
+        # 盖最新版本，不假装要从头跑一遍历史迁移（那些迁移改的表，此刻还不
+        # 存在，跑必然炸）。
         with engine.begin() as conn:
             _ensure_migration_table(conn)
-            _stamp(conn, migrations.LATEST_VERSION, "全新库")
+            _stamp(conn, migrations.latest_version(), "全新库")
+        Base.metadata.create_all(engine)
         return
 
     # 存量库：先补已有的表，再让模型建新加的表 —— 迁移不建表。
     run_migrations(engine)
     Base.metadata.create_all(engine)
 ```
+
+> 注意：全新库这一支**先盖章、再建表**，这个顺序是刻意的，别对调（本切片收口时的修复波对调过一次，本代码块已随实现同步）。反过来一旦崩在中间，库里会剩下「表是最新结构、却没有迁移记录」—— 下次启动判存量、盖基线 0，等 P1b-2 落地第一条改表的迁移时它会去对一张**已有该列**的表执行 `ALTER`，永久失败、应用起不来。现在的顺序崩在中间只留下「已盖最新版本、表可能不全」，下次启动判存量、补建缺表即可。
 
 - [ ] **Step 4: Run test to verify it passes**
 

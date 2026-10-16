@@ -99,7 +99,9 @@ def suggest_entries(project_id: str, session: Session = Depends(get_session)) ->
     return {
         "run": _run_out(run),
         "entries": _normalized_candidates(parsed.get("entries", [])) if result.structured else [],
-        "open_questions": parsed.get("open_questions", []) if result.structured else [],
+        # `.get(key, [])` 的默认值只在**缺键**时生效；模型把可选的 open_questions
+        # 写成显式 null 会原样返回 None，前端读 .length 会抛错。故在边界再兜一次。
+        "open_questions": (parsed.get("open_questions") or []) if result.structured else [],
         "structured": result.structured,
         "parse_error": _reason(result),
         "raw_text": result.raw_output,

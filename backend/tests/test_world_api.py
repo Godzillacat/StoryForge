@@ -1,3 +1,5 @@
+import json
+
 from app.world_types import ENTRY_TYPES, HARDNESS_LEVELS
 
 
@@ -259,3 +261,31 @@ def test_an_unknown_type_is_left_as_is(client, monkeypatch):
 
     assert body["structured"] is True
     assert body["entries"][1]["type"] == "魔法体系"
+
+
+def _candidates_with(**overrides) -> str:
+    """在同一份候选上改几个键，免得把整份 payload 抄第二遍。"""
+    payload = json.loads(CANDIDATES)
+    payload.update(overrides)
+    return json.dumps(payload)
+
+
+def test_null_open_questions_comes_back_as_an_empty_list(client, monkeypatch):
+    """契约校验器现在放过可选字段的 null，接口就必须把它归一成空列表。
+
+    `open_questions` 是可选字段，模型写成显式 null 是「这项为空」的另一种
+    写法。前端 `World.tsx` 直接把它塞进 state、随后读 `.length` —— 返回
+    `None` 会当场抛 `null.length`。归一在边界做一次（与 _normalized_candidates
+    同一条路数：纯逻辑、能被 pytest 覆盖），而不是让前端再抄一份守卫。
+    """
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _seed_slots(project["id"])
+    _patch_runtime(monkeypatch, _candidates_with(open_questions=None))
+
+    body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
+
+    # 先钉住这次真的结构化通过了 —— 否则「返回空列表」可能只是因为整批降级，
+    # 这条测试就变成在断言「失败也给空列表」，失去它想锁住的东西。
+    assert body["structured"] is True
+    assert body["open_questions"] == []
+    assert len(body["entries"]) == 3

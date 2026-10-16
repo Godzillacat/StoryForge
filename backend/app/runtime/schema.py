@@ -86,12 +86,19 @@ def _validate_node(value: Any, schema: dict, path: str, errors: list[str]) -> No
 
     if expected == "object" or isinstance(value, dict):
         properties = schema.get("properties", {})
-        for key in schema.get("required", []):
+        required = schema.get("required", [])
+        for key in required:
             if key not in value:
                 errors.append(f"{path} 缺少必填字段 {key}")
         for key, sub_schema in properties.items():
-            if key in value:
-                _validate_node(value[key], sub_schema, f"{path}.{key}", errors)
+            if key not in value:
+                continue
+            # 可选字段的显式 null 视同「没提供」：模型把「这项为空」写成 null
+            # 是常见形态，而契约里没有 nullable 的表达方式。**必填不在此列** ——
+            # 那里 null 是真的缺东西，仍要按类型报错。
+            if value[key] is None and key not in required:
+                continue
+            _validate_node(value[key], sub_schema, f"{path}.{key}", errors)
 
     if expected == "array" or isinstance(value, list):
         item_schema = schema.get("items")
@@ -103,13 +110,22 @@ def _validate_node(value: Any, schema: dict, path: str, errors: list[str]) -> No
 
 
 def validate_json(data: Any, schema: dict) -> tuple[bool, list[str]]:
+    """校验已解析的数据，返回 (是否通过, 错误清单)。
+
+    关键语义：契约里**可选**字段的显式 `null` 视同缺键、判通过；**必填**字段的
+    `null` 不算省略，仍按类型报错（契约没有 nullable 的表达方式，见 `_validate_node`）。
+    """
     errors: list[str] = []
     _validate_node(data, schema, "$", errors)
     return (not errors), errors
 
 
 def apply_contract(raw_text: str, schema: dict | None) -> tuple[Any | None, bool, str | None]:
-    """返回 (解析结果, 是否结构化, 失败原因)。"""
+    """运行时的对外入口：解析模型返回并校验，返回 (解析结果, 是否结构化, 失败原因)。
+
+    校验语义与 `validate_json` 一致 —— 可选字段的显式 `null` 通过，必填字段的
+    `null` 仍判失败。
+    """
     if not schema:
         return None, False, "该智能体未定义输出结构"
     data = extract_json(raw_text)

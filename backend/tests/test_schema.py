@@ -1,3 +1,4 @@
+from app.agents.roster import DEFAULT_ROSTER
 from app.runtime.schema import apply_contract, extract_json, validate_json
 
 SCHEMA = {
@@ -112,3 +113,78 @@ def test_apply_contract_uses_last_fence():
     data, structured, err = apply_contract(text, SCHEMA)
     assert structured is True and err is None
     assert data["genre"] == "悬疑"
+
+
+def test_optional_fields_may_be_null():
+    """模型把可选字段写成 null 是「这项为空」的常见写法 —— 契约里没有
+    nullable 的表达方式，不该让整份 payload 因此降级成纯文本。"""
+    parser = next(e for e in DEFAULT_ROSTER if e["key"] == "idea_parser")
+    payload = {
+        "genre": "悬疑",
+        "premise": "p",
+        "protagonist_desire": "d",
+        "conflict_source": "c",
+        "open_questions": [],
+        # 以下全是可选字段
+        "sub_genre": None,
+        "emotional_core": None,
+        "tone": None,
+        "length_expectation": None,
+        "comparable_works": None,
+    }
+
+    ok, errors = validate_json(payload, parser["output_schema"])
+
+    assert ok, errors
+
+
+def test_required_fields_may_not_be_null():
+    """必填字段的 null 是真空缺，不是省略 —— 仍要按类型报错。"""
+    parser = next(e for e in DEFAULT_ROSTER if e["key"] == "idea_parser")
+    payload = {
+        "genre": None,  # 必填
+        "premise": "p",
+        "protagonist_desire": "d",
+        "conflict_source": "c",
+        "open_questions": [],
+    }
+
+    ok, errors = validate_json(payload, parser["output_schema"])
+
+    assert not ok
+    assert any("genre" in error for error in errors)
+
+
+def test_the_worldbuilders_optional_hardness_may_be_null():
+    """世界观构建师的非规则类候选会填一个空的硬度 —— 契约把它声明为 string，
+    而模型写成 null 是同一件事的另一种写法。"""
+    builder = next(e for e in DEFAULT_ROSTER if e["key"] == "worldbuilder")
+    # 该契约的 entries 带 minItems=3，不足会因条数报错 —— 那条与「可选字段的
+    # null」无关，故把候选凑满；后两条只留必填键，顺带盖住「可选字段缺键」。
+    entry = {"type": "地理", "name": "南滨旧城", "summary": "小城"}
+    payload = {
+        "entries": [
+            {**entry, "aliases": None, "description": None, "hardness": None},
+            dict(entry, name="北岸码头"),
+            dict(entry, name="西关水系"),
+        ]
+    }
+
+    ok, errors = validate_json(payload, builder["output_schema"])
+
+    assert ok, errors
+
+
+def test_a_null_inside_an_array_item_is_still_checked():
+    """放过的是「可选字段的 null」，不是「数组元素里的 null」—— 那里 null
+    不是省略，是一个类型不对的元素。"""
+    schema = {
+        "type": "object",
+        "required": ["items"],
+        "properties": {"items": {"type": "array", "items": {"type": "string"}}},
+    }
+
+    ok, errors = validate_json({"items": ["甲", None]}, schema)
+
+    assert not ok
+    assert any("items[1]" in error for error in errors)
