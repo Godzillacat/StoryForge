@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   api,
   type Act,
@@ -39,29 +39,68 @@ export default function Architecture() {
   const [draft, setDraft] = useState(EMPTY_DRAFT)
   const [draftActs, setDraftActs] = useState<DraftAct[]>([])
   const [manual, setManual] = useState(false)
+  // 项目里已经写入过故事圣经 —— 这时编辑器要能回填并继续改
+  const [hasSaved, setHasSaved] = useState(false)
+  // 作废在途推荐响应用的令牌：递增即代表「这次推荐的结果已经不要了」
+  const runToken = useRef(0)
 
   useEffect(() => {
-    api.listProjects().then((list) => {
-      setProjects(list)
-      if (list[0]) setProjectId(list[0].id)
-    })
+    api
+      .listProjects()
+      .then((list) => {
+        setProjects(list)
+        if (list[0]) setProjectId(list[0].id)
+      })
+      .catch((error) => setMessage((error as Error).message))
   }, [])
 
   useEffect(() => {
     if (!projectId) return
-    api.getArchitecture(projectId).then((data) => setSavedActs(data.acts))
+    runToken.current++ // 换项目即作废在途推荐，别让它回来填错项目
     setRecommendation(null)
     setChosen(null)
     setManual(false)
+    setMessage('')
     setDraft(EMPTY_DRAFT)
     setDraftActs([])
+    setSavedActs([]) // 先清空，避免旧项目的幕挂在新项目标题下
+    setHasSaved(false)
+
+    api
+      .getArchitecture(projectId)
+      .then((data) => {
+        setSavedActs(data.acts)
+        const arch = data.architecture
+        if (!arch) return
+        setHasSaved(true)
+        setDraft({
+          logline: arch.logline ?? '',
+          theme: arch.theme ?? '',
+          premise: arch.premise ?? '',
+          ending_direction: arch.ending_direction ?? '',
+        })
+        setDraftActs(
+          data.acts.map((act, index) => ({
+            seq: index + 1,
+            name: act.name,
+            purpose: act.purpose ?? '',
+            target_word_ratio:
+              act.target_word_ratio == null ? '' : String(act.target_word_ratio),
+          })),
+        )
+      })
+      .catch((error) => setMessage((error as Error).message))
   }, [projectId])
 
   async function recommend() {
     setBusy(true)
     setMessage('')
+    const token = runToken.current
+
     try {
       const result = await api.recommendArchitecture(projectId)
+      // 期间作者换了项目、或转去手工写了 —— 这次的结果已经作废，丢掉。
+      if (token !== runToken.current) return
       setRecommendation(result)
       if (result.structured) {
         const bible = result.story_bible_v0
@@ -74,13 +113,15 @@ export default function Architecture() {
         setDraftActs(actsFromBible(bible))
       }
     } catch (error) {
-      setMessage((error as Error).message)
+      if (token === runToken.current) setMessage((error as Error).message)
     } finally {
-      setBusy(false)
+      if (token === runToken.current) setBusy(false)
     }
   }
 
   function startManual() {
+    runToken.current++ // 作废在途推荐：作者已经在手写了，别让模型产出回来覆盖
+    setBusy(false)
     setManual(true)
     setRecommendation(null)
     setChosen(null)
@@ -107,15 +148,15 @@ export default function Architecture() {
   }
 
   async function adopt() {
-    const useManual = manual || !recommendation
-    if (!useManual && !chosen) return
+    // 三种可采纳的来源：手工录入、选中了某套推荐、或项目里已有结构（继续编辑）。
+    if (!manual && !chosen && !hasSaved) return
 
     const acts = draftActs
       .filter((act) => act.name.trim())
       .map((act, index) => ({
         seq: index + 1,
         name: act.name.trim(),
-        purpose: act.purpose.trim() || undefined,
+        purpose: act.purpose.trim(),
         target_word_ratio: act.target_word_ratio.trim()
           ? Number(act.target_word_ratio)
           : undefined,
@@ -127,23 +168,26 @@ export default function Architecture() {
 
     const payload: AdoptPayload = {
       tool_ref: chosen?.tool,
-      logline: draft.logline.trim() || undefined,
-      theme: draft.theme.trim() || undefined,
-      premise: draft.premise.trim() || undefined,
-      ending_direction: draft.ending_direction.trim() || undefined,
+      // 空串是「清空这一项」。不能传 undefined —— 键会从请求里消失，
+      // 而后端把「键缺失」当成「保持原值」，作者删掉的文字会静默回来。
+      logline: draft.logline.trim(),
+      theme: draft.theme.trim(),
+      premise: draft.premise.trim(),
+      ending_direction: draft.ending_direction.trim(),
       acts,
     }
 
     try {
       const saved = await api.adoptArchitecture(projectId, payload)
       setSavedActs(saved.acts)
+      setHasSaved(true)
       setMessage('已写入项目结构')
     } catch (error) {
       setMessage((error as Error).message)
     }
   }
 
-  const showEditor = manual || (recommendation?.structured ?? false)
+  const showEditor = manual || (recommendation?.structured ?? false) || hasSaved
 
   return (
     <div className="space-y-6">
@@ -224,7 +268,12 @@ export default function Architecture() {
       {showEditor && (
         <section className="space-y-3 rounded border border-slate-800 p-4 text-sm">
           <h3 className="text-sm font-medium text-slate-300">
-            故事圣经 v0{manual ? '（手工）' : '（可编辑，采纳的是你改过的版本）'}
+            故事圣经 v0
+            {manual
+              ? '（手工）'
+              : recommendation?.structured
+                ? '（可编辑，采纳的是你改过的版本）'
+                : '（已写入项目，可继续修改）'}
           </h3>
 
           <label className="block">
@@ -299,11 +348,11 @@ export default function Architecture() {
           <button
             className="rounded bg-emerald-700 px-4 py-2 text-sm disabled:opacity-50"
             onClick={adopt}
-            disabled={!manual && !chosen}
+            disabled={!manual && !chosen && !hasSaved}
           >
             采纳并写入项目
           </button>
-          {!manual && !chosen && (
+          {recommendation?.structured && !chosen && !manual && !hasSaved && (
             <p className="text-xs text-slate-500">先在上面选一套方案，再采纳。</p>
           )}
         </section>
