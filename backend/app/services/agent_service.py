@@ -91,3 +91,19 @@ def list_versions(session: Session, agent_id: str) -> list[AgentVersion]:
             .order_by(AgentVersion.version_no.desc())
         )
     )
+
+
+_AGENT_LEVEL_FIELDS = ("name", "role_label", "color", "enabled")
+
+
+def update_agent(session: Session, agent_id: str, **fields) -> Agent:
+    """只改 agent 级字段，不产生新版本。"""
+    agent = session.get(Agent, agent_id)
+    if agent is None:
+        raise ValueError(f"智能体不存在：{agent_id}")
+    for key in _AGENT_LEVEL_FIELDS:
+        value = fields.get(key)
+        if value is not None:
+            setattr(agent, key, value)
+    session.commit()
+    return agent

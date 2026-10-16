@@ -83,3 +83,12 @@ class ProviderUpdate(BaseModel):
 
 class SettingsUpdate(BaseModel):
     values: dict[str, Any]
+
+
+class AgentUpdate(BaseModel):
+    """agent 级字段。改这些不动版本 —— 版本只承载提示词与运行配置（D-06）。"""
+
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    role_label: str | None = Field(default=None, max_length=60)
+    color: str | None = Field(default=None, max_length=20)
+    enabled: bool | None = None

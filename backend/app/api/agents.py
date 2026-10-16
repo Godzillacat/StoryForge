@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.schemas import VersionCreate
+from app.api.schemas import AgentUpdate, VersionCreate
 from app.db.session import get_session
 from app.services import agent_service
 
@@ -48,6 +48,24 @@ def list_agents(session: Session = Depends(get_session)) -> list[dict]:
         version = agent_service.get_version(session, agent.current_version_id) if agent.current_version_id else None
         out.append(_agent_out(agent, version))
     return out
+
+
+@router.patch("/{agent_id}")
+def update_agent(
+    agent_id: str, payload: AgentUpdate, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        agent = agent_service.update_agent(
+            session, agent_id, **payload.model_dump(exclude_none=True)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    version = (
+        agent_service.get_version(session, agent.current_version_id)
+        if agent.current_version_id
+        else None
+    )
+    return _agent_out(agent, version)
 
 
 @router.get("/{agent_id}/versions")

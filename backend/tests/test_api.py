@@ -175,3 +175,38 @@ def _patch_client(monkeypatch, content: str) -> None:
 
     fake = HttpxChatClient(transport=httpx.MockTransport(handler))
     monkeypatch.setattr(RuntimeService, "_resolve_client", lambda self, timeout: fake)
+
+
+def test_patch_agent_updates_agent_level_fields(client):
+    agent = client.get("/api/agents").json()[0]
+
+    response = client.patch(
+        f"/api/agents/{agent['id']}",
+        json={"role_label": "解析官", "color": "#ff0000", "enabled": False},
+    )
+
+    assert response.status_code == 200
+    updated = response.json()
+    assert updated["role_label"] == "解析官"
+    assert updated["color"] == "#ff0000"
+    assert updated["enabled"] is False
+    assert updated["name"] == agent["name"]  # 没传的字段不动
+    assert updated["task_type"] == agent["task_type"]
+    # 改 agent 级字段不该产生新版本
+    assert updated["current_version"]["version_no"] == agent["current_version"]["version_no"]
+
+
+def test_patch_unknown_agent_is_404(client):
+    assert client.patch("/api/agents/nope", json={"name": "x"}).status_code == 404
+
+
+def test_slots_endpoint_reflects_the_registry(client):
+    from app.runtime.context import SLOT_REGISTRY
+
+    payload = client.get("/api/slots").json()
+
+    assert {s["key"] for s in payload} == set(SLOT_REGISTRY)
+    assert payload == sorted(payload, key=lambda s: -s["priority"])
+    by_key = {s["key"]: s for s in payload}
+    assert by_key["raw_idea"]["label"] == SLOT_REGISTRY["raw_idea"].label
+    assert by_key["raw_idea"]["over_budget"] == "drop"
