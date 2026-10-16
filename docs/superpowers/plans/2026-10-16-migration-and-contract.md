@@ -183,8 +183,15 @@ from sqlalchemy import inspect, text
 
 from app import config
 from app.db import migrations
+from app.db import models  # noqa: F401  注册模型到 metadata —— 见下方说明
 from app.db import session as db_session
 from app.db.base import Base
+
+
+# 必须显式导入 app.db.models：它在生产代码里是在 init_db() **函数体内**导入的，
+# 所以只 import session 是拿不到模型的。跑整个套件时别的测试文件会顺手把它注册
+# 上，于是这文件看起来「能跑」；单独跑（本计划 Step 4 就是这么跑的）时
+# metadata 是空的，create_all 什么都不建，测试当场红 —— 典型的一套绿、单跑红。
 
 
 @pytest.fixture()
