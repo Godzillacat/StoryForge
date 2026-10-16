@@ -24,32 +24,44 @@ def get_version(session: Session, version_id: str) -> AgentVersion | None:
 
 
 def create_version(session: Session, agent_id: str, **fields) -> AgentVersion:
-    """插入新版本并移动 current_version_id。旧版本保留，可回滚。"""
+    """插入新版本并移动 current_version_id。旧版本保留，可回滚。
+
+    两件事用的是不同的源，别合并：
+    - **版本号**取最大版本号 + 1，避免与历史撞号（回滚后新建必然撞）；
+    - **内容继承源**取 `current_version_id` 指向的版本，而不是版本号最大的
+      那个 —— 回滚之后这两者会分叉，取错会把作者刚弃用的内容悄悄带回来。
+    """
     agent = session.get(Agent, agent_id)
     if agent is None:
         raise ValueError(f"智能体不存在：{agent_id}")
 
-    latest = session.scalars(
+    highest = session.scalars(
         select(AgentVersion)
         .where(AgentVersion.agent_id == agent_id)
         .order_by(AgentVersion.version_no.desc())
     ).first()
+    base = (
+        session.get(AgentVersion, agent.current_version_id)
+        if agent.current_version_id
+        else None
+    ) or highest
+
     version = AgentVersion(
         agent_id=agent_id,
-        version_no=(latest.version_no + 1) if latest else 1,
-        system_prompt=fields.get("system_prompt", latest.system_prompt if latest else ""),
+        version_no=(highest.version_no + 1) if highest else 1,
+        system_prompt=fields.get("system_prompt", base.system_prompt if base else ""),
         model_binding_json=fields.get(
-            "model_binding_json", latest.model_binding_json if latest else {}
+            "model_binding_json", base.model_binding_json if base else {}
         ),
-        param_profile=fields.get("param_profile", latest.param_profile if latest else "balanced"),
+        param_profile=fields.get("param_profile", base.param_profile if base else "balanced"),
         context_slots_json=fields.get(
-            "context_slots_json", latest.context_slots_json if latest else []
+            "context_slots_json", base.context_slots_json if base else []
         ),
         output_schema_json=fields.get(
-            "output_schema_json", latest.output_schema_json if latest else None
+            "output_schema_json", base.output_schema_json if base else None
         ),
-        skills_json=fields.get("skills_json", latest.skills_json if latest else []),
-        trigger_mode=fields.get("trigger_mode", latest.trigger_mode if latest else "manual"),
+        skills_json=fields.get("skills_json", base.skills_json if base else []),
+        trigger_mode=fields.get("trigger_mode", base.trigger_mode if base else "manual"),
         note=fields.get("note", ""),
     )
     session.add(version)
