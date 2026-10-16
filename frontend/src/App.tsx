@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard'
 import Idea from './pages/Idea'
 import Models from './pages/Models'
 import Studio from './pages/Studio'
+import Terms from './pages/Terms'
 import World from './pages/World'
 
 const NAV = [
@@ -11,6 +12,7 @@ const NAV = [
   { to: '/idea', label: '灵感与解析' },
   { to: '/architecture', label: '架构推荐' },
   { to: '/world', label: '世界观' },
+  { to: '/terms', label: '术语表' },
   { to: '/studio', label: '智能体工作室' },
   { to: '/models', label: '模型与费用' },
 ]
@@ -43,6 +45,7 @@ export default function App() {
           <Route path="/idea" element={<Idea />} />
           <Route path="/architecture" element={<Architecture />} />
           <Route path="/world" element={<World />} />
+          <Route path="/terms" element={<Terms />} />
           <Route path="/studio" element={<Studio />} />
           <Route path="/models" element={<Models />} />
         </Routes>
