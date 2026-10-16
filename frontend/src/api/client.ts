@@ -69,6 +69,41 @@ export const api = {
 
   listTools: () => request<Tool[]>('/api/tools'),
 
+  listEntryTypes: () => request<EntryTypesResponse>('/api/entry-types'),
+
+  listEntries: (projectId: string, type?: string) =>
+    request<SettingEntry[]>(
+      `/api/projects/${projectId}/entries${type ? `?type=${encodeURIComponent(type)}` : ''}`,
+    ),
+  createEntry: (projectId: string, body: Record<string, unknown>) =>
+    request<SettingEntry>(`/api/projects/${projectId}/entries`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  updateEntry: (entryId: string, body: Record<string, unknown>) =>
+    request<SettingEntry>(`/api/entries/${entryId}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  deleteEntry: (entryId: string) => request<void>(`/api/entries/${entryId}`, { method: 'DELETE' }),
+
+  listRelations: (projectId: string) =>
+    request<EntryRelation[]>(`/api/projects/${projectId}/relations`),
+  createRelation: (projectId: string, body: Record<string, unknown>) =>
+    request<EntryRelation>(`/api/projects/${projectId}/relations`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  deleteRelation: (relationId: string) =>
+    request<void>(`/api/relations/${relationId}`, { method: 'DELETE' }),
+
+  listTerms: (projectId: string) => request<TermRow[]>(`/api/projects/${projectId}/terms`),
+  suggestEntries: (projectId: string) =>
+    request<SuggestResponse>(`/api/projects/${projectId}/entries/suggest`, { method: 'POST' }),
+
   listProviders: () => request<ProviderView[]>('/api/providers'),
   createProvider: (body: Record<string, unknown>) =>
     request<ProviderView>('/api/providers', {
@@ -255,4 +290,63 @@ export interface SlotSpec {
   label: string
   priority: number
   over_budget: 'never' | 'summarize' | 'drop'
+}
+
+export interface EntryTypeOption {
+  key: string
+  label: string
+}
+
+export interface EntryTypesResponse {
+  types: EntryTypeOption[]
+  hardness: EntryTypeOption[]
+}
+
+export interface SettingEntry {
+  id: string
+  project_id: string
+  type: string
+  name: string
+  aliases: string[]
+  tags: string[]
+  summary: string
+  description: string
+  hardness: string | null
+  source_run_id: string | null
+  created_at: string
+}
+
+export interface EntryRelation {
+  id: string
+  project_id: string
+  from_id: string
+  to_id: string
+  kind: string
+  note: string
+}
+
+export interface TermRow {
+  entry_id: string
+  entry_name: string
+  type: string
+  form: string
+  is_primary: boolean
+}
+
+export interface SuggestedEntry {
+  type?: string
+  name?: string
+  aliases?: string[]
+  summary?: string
+  description?: string
+  hardness?: string | null
+}
+
+export interface SuggestResponse {
+  run: RunView
+  entries: SuggestedEntry[]
+  open_questions: string[]
+  structured: boolean
+  parse_error: string | null
+  raw_text: string
 }
