@@ -57,7 +57,8 @@ def test_execute_writes_generation_run(session):
 
     assert result.status == "ok"
     stored = session.get(GenerationRun, run.id)
-    assert stored.rendered_prompt == "解析这段灵感：能听见死者遗言的验尸官"
+    assert stored.rendered_prompt.startswith("解析这段灵感：能听见死者遗言的验尸官")
+    assert "【输出契约】" in stored.rendered_prompt
     assert stored.raw_output == '{"genre": "悬疑"}'
     assert stored.parsed_json == {"genre": "悬疑"}
     assert stored.structured is True
