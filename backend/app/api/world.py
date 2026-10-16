@@ -6,8 +6,19 @@ from sqlalchemy.orm import Session
 from app.api.schemas import EntryCreate, EntryUpdate, RelationCreate
 from app.db.session import get_session
 from app.services import world_service
+from app.world_types import ENTRY_TYPES, HARDNESS_LEVELS
 
 router = APIRouter(prefix="/api", tags=["world"])
+
+
+@router.get("/entry-types")
+def list_entry_types() -> dict:
+    """类型清单的唯一真相在 app/world_types.py，这里只做投影 ——
+    前端不必再硬编一份，否则又会出现两份清单互相不一致的老问题。"""
+    return {
+        "types": [{"key": k, "label": v} for k, v in ENTRY_TYPES.items()],
+        "hardness": [{"key": k, "label": v} for k, v in HARDNESS_LEVELS.items()],
+    }
 
 
 def _entry_out(entry) -> dict:
