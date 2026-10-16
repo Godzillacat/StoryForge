@@ -2879,6 +2879,125 @@ git commit -m "docs: 同步 P1b-1 的路线图与变更记录"
 
 ---
 
+### Task 15: 候选的类型与硬度在边界上归一化（T13 真实复验发现）
+
+**Files:**
+- Modify: `backend/app/api/world.py`
+- Test: `backend/tests/test_world_api.py`
+
+**Interfaces:**
+- Consumes: `world_types.normalize_type` / `normalize_hardness`（Task 1）
+- Produces: `POST /api/projects/{id}/entries/suggest` 返回的 `entries` 里，`type` 一律是英文键、`hardness` 一律是 `hard`/`soft`/`atmosphere`/`None`
+
+**为什么**：真实模型返回的是**中文值**（`"type": "规则体系"`、`"hardness": "硬规则"`）—— 因为契约块的 `title` 里能合法写出的只有中文（写英文键会被「禁英文字段键」的护栏拦下）。落库时服务层会归一化，**但界面拿标签去匹配英文键的下拉会落空**：类型显示成第一个选项（一条规则在表单里显示成「地理」），而规则类的硬度控件（条件是 `draft.type === 'rule'`）根本不出现 —— 硬度恰恰是提示词要求模型为规则类填的那一项。
+
+- [ ] **Step 1: 写失败测试**
+
+**先把 `CANDIDATES` 改成用中文值**（与真实模型一致）：第一条 `"type": "势力"`、第二条 `"type": "规则体系"` 且 `"hardness": "硬规则"`、第三条 `"type": "地理"`。再追加两条测试：
+
+```python
+def test_candidates_come_back_normalized(client, monkeypatch):
+    """模型按契约块里教它的中文值返回类型与硬度，归一化要在边界做一次。
+
+    否则界面拿「规则体系」去匹配英文键的下拉会落空：类型显示成第一个
+    选项，规则类的硬度控件也不出现 —— 而硬度正是提示词要求模型为规则
+    类填的那一项。
+    """
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _seed_slots(project["id"])
+    _patch_runtime(monkeypatch, CANDIDATES)
+
+    body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
+
+    assert [e["type"] for e in body["entries"]] == ["faction", "rule", "place"]
+    assert [e["hardness"] for e in body["entries"]] == [None, "hard", None]
+
+
+def test_an_unknown_type_is_left_as_is(client, monkeypatch):
+    """归一不了就原样留着：作者会在表单里看到它并改掉，采纳时才报可读错误 ——
+    整批候选不该因为一条怪类型而拿不到。"""
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    _seed_slots(project["id"])
+    _patch_runtime(monkeypatch, CANDIDATES.replace("规则体系", "魔法体系"))
+
+    body = client.post(f"/api/projects/{project['id']}/entries/suggest").json()
+
+    assert body["structured"] is True
+    assert body["entries"][1]["type"] == "魔法体系"
+```
+
+- [ ] **Step 2: 跑测试确认失败**
+
+Run: `uv run pytest tests/test_world_api.py -v -k "normalized or unknown_type"`
+Expected: FAIL —— `assert '规则体系' == 'rule'`
+
+- [ ] **Step 3: 实现**
+
+`backend/app/api/world.py`：顶部补导入（该文件已导入 `ENTRY_TYPES` 与 `HARDNESS_LEVELS`，加上两个归一化函数）：
+
+```python
+from app.world_types import (
+    ENTRY_TYPES,
+    HARDNESS_LEVELS,
+    normalize_hardness,
+    normalize_type,
+)
+```
+
+在 `_reason` 之前加：
+
+```python
+def _normalized_candidates(entries: list) -> list[dict]:
+    """把候选里的类型与硬度归一到英文键再交给前端。
+
+    模型看到的是契约块里的**中文值**（那是唯一能合法写进契约的东西），
+    所以它返回的是「规则体系」而不是 rule。落库时服务层会归一化，但界面
+    拿标签去匹配英文键的下拉会落空：类型显示成第一个选项，规则类的硬度
+    控件也不出现。在边界上归一一次，前端就不必再抄一遍映射 —— 而且这里
+    的映射是纯逻辑，能被 pytest 覆盖。
+    """
+    out: list[dict] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        normalized = dict(item)
+        try:
+            normalized["type"] = normalize_type(str(item.get("type", "")))
+        except ValueError:
+            # 归一不了就原样留着：作者在表单里看得见、改得掉，采纳时才报
+            # 可读错误 —— 不因为一条怪类型让整批候选拿不到。
+            pass
+        normalized["hardness"] = normalize_hardness(item.get("hardness"))
+        out.append(normalized)
+    return out
+```
+
+并把路由里这一行
+
+```python
+        "entries": parsed.get("entries", []) if result.structured else [],
+```
+
+改成
+
+```python
+        "entries": _normalized_candidates(parsed.get("entries", [])) if result.structured else [],
+```
+
+- [ ] **Step 4: 跑测试确认通过**
+
+Run: `uv run pytest tests/test_world_api.py -v`，再跑完整 `uv run pytest`
+Expected: 全绿
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add backend/app/api/world.py backend/tests/test_world_api.py
+git commit -m "fix(world): 候选的类型与硬度在边界归一化，界面才显示得出中文与硬度控件"
+```
+
+---
+
 ## 附：本计划明确不做的事
 
 - 人物、关系网、时间线（P1b-2）。
