@@ -77,7 +77,7 @@ def list_versions(agent_id: str, session: Session = Depends(get_session)) -> lis
 def create_version(agent_id: str, payload: VersionCreate, session: Session = Depends(get_session)) -> dict:
     try:
         version = agent_service.create_version(
-            session, agent_id, **payload.model_dump(exclude_none=True)
+            session, agent_id, **payload.model_dump(exclude_unset=True)
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

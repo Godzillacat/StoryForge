@@ -210,3 +210,33 @@ def test_slots_endpoint_reflects_the_registry(client):
     by_key = {s["key"]: s for s in payload}
     assert by_key["raw_idea"]["label"] == SLOT_REGISTRY["raw_idea"].label
     assert by_key["raw_idea"]["over_budget"] == "drop"
+
+
+def test_explicit_null_output_schema_clears_it(client):
+    """显式传 null 表示「不要契约」，不能被当成「未提供」而继承上一版。
+
+    工作室页留空输出契约文本框时发的就是 null；若后端把它丢掉，作者
+    清空契约后新版本仍带着旧契约，而界面写着「留空表示不做结构化校验」。
+    """
+    agent = client.get("/api/agents").json()[0]
+    assert agent["current_version"]["output_schema_json"] is not None
+
+    created = client.post(
+        f"/api/agents/{agent['id']}/versions",
+        json={"output_schema_json": None, "note": "清空契约"},
+    ).json()
+
+    assert created["output_schema_json"] is None
+
+
+def test_omitted_version_field_still_inherits(client):
+    """没传的字段仍要继承 —— 别把「未提供」也一起清空了。"""
+    agent = client.get("/api/agents").json()[0]
+
+    created = client.post(
+        f"/api/agents/{agent['id']}/versions",
+        json={"note": "只改备注"},
+    ).json()
+
+    assert created["output_schema_json"] == agent["current_version"]["output_schema_json"]
+    assert created["context_slots_json"] == agent["current_version"]["context_slots_json"]
