@@ -2438,6 +2438,9 @@ export default function CandidateList({
   const [draft, setDraft] = useState<EntryDraft | null>(null)
 
   const takenNames = new Set(existing.map((e) => e.name))
+  // 候选的 type 是**英文键**（后端在响应里归一过，否则表单的下拉对不上），
+  // 而这一格要显示的是中文 —— 不映射就会把 `faction` 这样的键露给作者。
+  const typeLabels = new Map((types?.types ?? []).map((t) => [t.key, t.label]))
 
   function toggle(key: string, candidate: SuggestedEntry) {
     if (openKey === key) {
@@ -2461,7 +2464,9 @@ export default function CandidateList({
           return (
             <li key={key} className="space-y-2 border-b border-slate-800 pb-2 last:border-0">
               <div className="flex flex-wrap items-center gap-3">
-                <span className="text-xs text-slate-500">{candidate.type ?? '?'}</span>
+                <span className="text-xs text-slate-500">
+                  {typeLabels.get(candidate.type ?? '') ?? candidate.type ?? '?'}
+                </span>
                 <span className="font-medium">{candidate.name}</span>
                 {duplicated && <span className="text-xs text-amber-400">已存在，默认跳过</span>}
                 <button className="text-xs text-indigo-400" onClick={() => toggle(key, candidate)}>
