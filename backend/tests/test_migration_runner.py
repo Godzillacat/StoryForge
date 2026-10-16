@@ -253,6 +253,48 @@ def test_an_existing_database_runs_its_pending_migrations(clean_db, monkeypatch)
     assert "_probe" in inspect(clean_db).get_table_names()
 
 
+def test_a_crash_while_stamping_a_fresh_database_self_heals(clean_db, monkeypatch):
+    """全新库必须**先盖章、再建表**。反过来（先建表、后盖章）一旦崩在中间，
+    库里会剩下「表是最新结构、却没有迁移记录」：下次启动判存量、盖基线 0，
+    而真加迁移时会去对一张已有该列的表执行 ALTER，永久失败。
+
+    这里用一条**对最新结构必然失败**的迁移钉住顺序：`project.name` 本就有，
+    重复 ADD COLUMN 会报 `duplicate column name`。
+    - 新顺序：第一次崩在盖章、create_all 还没跑（无业务表）；第二次仍判全新
+      → 盖章 → 建表，根本不碰迁移 → 不抛。
+    - 旧顺序：第一次 create_all 已经建好表才崩；第二次判存量 → 盖基线 0 →
+      跑那条 ALTER → duplicate column name → 抛。测试变红。
+    """
+    monkeypatch.setattr(
+        migrations,
+        "MIGRATIONS",
+        (migrations.Migration(1, "重复加列", ("ALTER TABLE project ADD COLUMN name TEXT",)),),
+    )
+
+    calls = {"n": 0}
+    real_stamp = db_session._stamp
+
+    def _stamp_that_dies_once(conn, version, note):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("模拟崩在盖章上")
+        return real_stamp(conn, version, note)
+
+    monkeypatch.setattr(db_session, "_stamp", _stamp_that_dies_once)
+
+    with pytest.raises(RuntimeError, match="模拟崩在盖章上"):
+        db_session.init_db()
+
+    # 第二次启动必须自愈 —— 这就是整条修复的意义
+    db_session.init_db()
+
+    assert "project" in inspect(clean_db).get_table_names()
+    with clean_db.connect() as conn:
+        assert conn.exec_driver_sql("SELECT MAX(version) FROM schema_migration").fetchone() == (
+            migrations.latest_version(),
+        )
+
+
 def test_stamping_is_idempotent_when_only_the_migration_table_survives(clean_db):
     """「业务表没了、迁移表还在」的库仍被判为全新 —— `is_fresh_database` 刻意
     不把 `schema_migration` 算作业务表。于是它会被**再盖一次章**，而盖章撞主键

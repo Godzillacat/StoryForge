@@ -145,13 +145,21 @@ def init_db() -> None:
     from app.db import models  # noqa: F401  确保所有模型已注册到 metadata
 
     if is_fresh_database(engine):
-        # 全新库：模型就是最新结构，直接建。它天然处于「所有迁移都已应用」
-        # 的状态 —— 盖最新版本，不假装要从头跑一遍历史迁移（那些迁移改的
-        # 表，此刻还不存在，跑必然炸）。
-        Base.metadata.create_all(engine)
+        # 全新库：模型就是最新结构。它天然处于「所有迁移都已应用」的状态 ——
+        # 盖最新版本，不假装要从头跑一遍历史迁移（那些迁移改的表，此刻还不
+        # 存在，跑必然炸）。
+        #
+        # **先盖章、再建表**，这个顺序是刻意的。反过来（先建表、后盖章）一旦
+        # 崩在中间（进程被杀、磁盘满、盖章本身抛错），库里会剩下「表是最新
+        # 结构、却没有迁移记录」：下次启动 `is_fresh_database` 判存量、盖基线
+        # 0，于是当 P1b-2 真加进第一条改表的迁移时，它会去对一张**已有该列**
+        # 的表执行 ALTER —— 永久失败、应用拒绝启动，要人工介入作者的库。
+        # 现在这个顺序崩在中间只留下「已盖最新版本、表可能不全」：下次启动判
+        # 存量、pending 为空、create_all 补建缺表，能自愈。
         with engine.begin() as conn:
             _ensure_migration_table(conn)
             _stamp(conn, migrations.latest_version(), "全新库")
+        Base.metadata.create_all(engine)
         return
 
     # 存量库：先补已有的表，再让模型建新加的表 —— 迁移不建表。
