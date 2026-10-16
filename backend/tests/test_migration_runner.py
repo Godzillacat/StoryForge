@@ -146,3 +146,23 @@ def test_steps_run_in_version_order(clean_db, monkeypatch):
 
     with clean_db.connect() as conn:
         assert conn.exec_driver_sql("SELECT x FROM _probe").fetchall() == [(42,)]
+
+
+def test_a_multi_statement_step_that_fails_leaves_nothing_behind(clean_db, monkeypatch):
+    """DDL 不会因为 engine.begin() 的回滚而撤销 —— pysqlite 走 legacy 事务控制，
+    真的 BEGIN 只在第一条 DML 之前发出，纯 DDL 在 autocommit 下直接执行。
+    于是一个多语句步骤中途失败会留下「结构改了、版本没记」：下次启动重试它，
+    撞上「表已存在」而永久失败。这个用例就是钉这一点。"""
+    Base.metadata.create_all(clean_db)
+    monkeypatch.setattr(
+        migrations,
+        "MIGRATIONS",
+        (_step(1, "半截", "CREATE TABLE _probe (x INTEGER)", "THIS IS NOT SQL"),),
+    )
+
+    with pytest.raises(Exception, match="迁移 v1"):
+        db_session.run_migrations(clean_db)
+
+    assert "_probe" not in inspect(clean_db).get_table_names()
+    with clean_db.connect() as conn:
+        assert conn.exec_driver_sql("SELECT MAX(version) FROM schema_migration").fetchone() == (0,)

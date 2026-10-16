@@ -88,10 +88,26 @@ def run_migrations(engine) -> None:
         return
 
     for step in todo:
-        with engine.begin() as conn:
-            for sql in step.statements:
-                conn.exec_driver_sql(sql)
-            _stamp(conn, step.version, step.note)
+        # **不能用 engine.begin()**：SQLAlchemy 的 pysqlite 走 legacy 事务控制，
+        # 真的 BEGIN 只在第一条 DML 之前发出，而**纯 DDL 在 autocommit 下直接
+        # 执行** —— 于是 engine.begin() 的回滚回不到它。一步里多条语句、靠前的
+        # DDL 成功而靠后的失败时（`ALTER TABLE ADD COLUMN` + `UPDATE` 回填就是
+        # 最经典的形状），会留下「结构改了、版本没记」的半迁移状态，下次启动
+        # 在「表已存在」上永久失败，要人工介入作者的库。
+        # 所以这里自己开事务：AUTOCOMMIT 让 SQLAlchemy 不发它自己的 BEGIN，
+        # 手写的 BEGIN/COMMIT 才能真正生效。
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            conn.exec_driver_sql("BEGIN")
+            try:
+                for sql in step.statements:
+                    conn.exec_driver_sql(sql)
+                _stamp(conn, step.version, step.note)
+            except Exception as exc:
+                conn.exec_driver_sql("ROLLBACK")
+                # 带上版本号与说明：不然作者看到的是一个不带上下文的
+                # OperationalError，不知道是哪一步炸的。
+                raise RuntimeError(f"迁移 v{step.version}（{step.note}）执行失败：{exc}") from exc
+            conn.exec_driver_sql("COMMIT")
 
 
 def init_db() -> None:
