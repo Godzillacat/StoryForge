@@ -27,7 +27,7 @@
 
 ### 1.2 验收标准
 
-1. 全新数据目录启动 → 由模型建表，迁移表被盖章为 **`LATEST_VERSION`**（不跑历史迁移）；
+1. 全新数据目录启动 → 由模型建表，迁移表被盖章为 **`latest_version()`**（不跑历史迁移）；
 2. **存量库**（迁移框架引入之前建的）启动 → 被识别为存量、盖章为**基线 0**、跑完所有历史迁移，**不试图重建、不丢数据**；
 3. 加一条迁移步骤后启动 → 该步骤执行一次、被记录；再启动 → 不重复执行；
 4. 执行迁移之前**自动备份**数据库文件（仅在真有步骤要执行时）；
@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS schema_migration (
 所以 `init_db()` 分两条路，**判据是「库里有没有业务表」**：
 
 ```
-无业务表（全新库） → create_all() → 盖章为 LATEST_VERSION → 结束
+无业务表（全新库） → create_all() → 盖章为 latest_version() → 结束
 有业务表（存量库） → run_migrations() → create_all()（建模型新加的表）
 ```
 
@@ -106,14 +106,23 @@ class Migration:
 
 MIGRATIONS: tuple[Migration, ...] = ()   # 今天是空的
 BASELINE_VERSION = 0
-LATEST_VERSION = MIGRATIONS[-1].version if MIGRATIONS else 0
+
+def latest_version() -> int:
+    """当前 schema 版本 —— **是函数不是常量**。
+
+    常量在导入时就算好，而测试要注入临时步骤只能 monkeypatch `MIGRATIONS`，
+    常量不跟着变；任何依赖它的代码路径就永远测不到 —— `init_db` 正是用它给
+    全新库盖章，那是最该被测到的一步。取 max 而非列表末位，与 `pending()`
+    容忍乱序的口径一致。
+    """
+    return max((m.version for m in MIGRATIONS), default=BASELINE_VERSION)
 
 def pending(applied: int) -> tuple[Migration, ...]: ...
 ```
 
 **今天 `MIGRATIONS` 是空的**，因为当下没有任何需要改的已有表。框架的第一次真正使用是 P1b-2 给 `setting_entry` 加列。这不影响本切片可验证：**盖章路径（全新库与存量库）在作者的库上真实跑一遍**，而迁移的执行路径由测试覆盖（测试里临时挂一条步骤）。
 
-**runner 一律通过 `pending(applied)` 读迁移列表，不许引用 `LATEST_VERSION`。** 理由：`LATEST_VERSION` 是模块导入时算出的常量，测试要注入一条临时步骤只能 monkeypatch `migrations.MIGRATIONS`，而常量不会跟着变；runner 若依赖常量，那条路径就永远测不到。`LATEST_VERSION` 只用于展示与版本号唯一性的那条测试。
+**runner 一律通过 `pending(applied)` 读迁移列表，不靠 `latest_version()`。** 原先这条禁令的理由是：`LATEST_VERSION` 是模块导入时算出的常量，测试要注入一条临时步骤只能 monkeypatch `migrations.MIGRATIONS`，而常量不会跟着变；runner 若依赖常量，那条路径就永远测不到。**改成函数后这条理由不再成立** —— `latest_version()` 每次现读 `MIGRATIONS`，monkeypatch 立刻生效。禁令保留下来，是因为 runner 要的本来就是**「哪些步骤还没跑」这张列表**，版本号给不出它：`latest_version()` 只服务于 `init_db()` 给全新库盖章那一处，以及版本号唯一性的那条测试。
 
 ### 3.3 runner 落点
 
@@ -122,7 +131,7 @@ def pending(applied: int) -> tuple[Migration, ...]: ...
 ```
 if is_fresh_database(engine):
     Base.metadata.create_all(engine)   # 模型就是最新结构
-    stamp(LATEST_VERSION, "全新库")     # 所以不跑历史迁移
+    stamp(latest_version(), "全新库")   # 所以不跑历史迁移
     return
 run_migrations(engine)                 # 存量库：盖章 → 备份 → 补步骤
 Base.metadata.create_all(engine)       # 再建模型新加的表（迁移不建表）
@@ -219,8 +228,8 @@ if expected == "object" or isinstance(value, dict):
 
 | 层 | 测什么 |
 |---|---|
-| `migrations.py` | `pending(0)` 返回全部步骤；`pending(N)` 只返回版本号大于 N 的；`LATEST_VERSION` 与空列表时的 0 |
-| runner — 全新库 | 数据目录空 → `create_all` 建出全部业务表，迁移表被盖章为 **`LATEST_VERSION`**，且**一条历史迁移都没跑**（用一条会炸的迁移步骤钉住这一点） |
+| `migrations.py` | `pending(0)` 返回全部步骤；`pending(N)` 只返回版本号大于 N 的；空 `MIGRATIONS` 时 `latest_version()` 回落到基线 0 |
+| runner — 全新库 | 数据目录空 → `create_all` 建出全部业务表，迁移表被盖章为 **`latest_version()`**，且**一条历史迁移都没跑**（用一条会炸的迁移步骤钉住这一点） |
 | runner — 存量库 | 先建一个「有业务表但没有迁移表」的库 → 启动后迁移表存在且盖章为基线 0，**业务表数据一行不少** |
 | runner — 执行一次 | monkeypatch `migrations.MIGRATIONS` 临时挂一条步骤（如 `CREATE TABLE _probe(x INTEGER)`）→ 执行、记录；再跑一次 → 不重复执行 |
 | runner — 失败 | 一条会抛错的步骤（如非法 SQL）→ 异常往上抛、该版本**未被记录**、备份**已产生** |
@@ -238,7 +247,7 @@ if expected == "object" or isinstance(value, dict):
 
 | # | 任务 | 验证方式 |
 |---|---|---|
-| 1 | `migrations.py`：`Migration` / `MIGRATIONS` / `BASELINE_VERSION` / `LATEST_VERSION` / `pending` | pytest |
+| 1 | `migrations.py`：`Migration` / `MIGRATIONS` / `BASELINE_VERSION` / `latest_version()` / `pending` | pytest |
 | 2 | runner：建表、盖章（全新 vs 存量）、按序执行、每步一个事务、失败即抛 | pytest |
 | 3 | 执行前的自动备份（仅在有步骤时） | pytest |
 | 4 | `init_db()` 接上 runner，并把「迁移之后才 `create_all`」的顺序钉住 | pytest + 在作者的真实库上启动一次 |
