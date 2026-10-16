@@ -1496,7 +1496,7 @@ git commit -m "feat(frontend): 接口封装补齐智能体/槽位/服务商，�
 把 `frontend/src/pages/Studio.tsx` 整体替换为：
 
 ```tsx
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   api,
   type Agent,
@@ -1553,8 +1553,19 @@ export default function Studio() {
     })
   }, [])
 
+  // 重置草稿的时机：换智能体，或当前版本变了（保存了新版本 / 回滚）。
+  // 不能只依赖 selected —— 保存 agent 级字段后 refreshAgents 会造出一个新的
+  // selected 对象，若那时也整体重置，作者在提示词/模型里未保存的改动会被静默还原。
+  const seededKey = useRef<string | null>(null)
+
   useEffect(() => {
     if (!selected) return
+
+    const key = `${selected.id}:${selected.current_version?.id ?? ''}`
+    if (seededKey.current === key) return
+    const agentChanged = seededKey.current?.split(':')[0] !== selected.id
+    seededKey.current = key
+
     const version = selected.current_version
     const binding = (version?.model_binding_json ?? {}) as Record<string, unknown>
     setDraft({
@@ -1573,7 +1584,10 @@ export default function Studio() {
       triggerMode: version?.trigger_mode ?? 'manual',
     })
     setSchemaError('')
-    setNotice('')
+    if (agentChanged) {
+      setNotice('')
+      setRun(null)
+    }
     api.listVersions(selected.id).then(setVersions)
   }, [selected])
 
