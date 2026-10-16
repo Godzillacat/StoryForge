@@ -2086,6 +2086,13 @@ export default function World() {
     setCreating(false)
     setDraft(EMPTY_DRAFT)
     setNotice('')
+    // 候选与它的运行记录同样是**项目作用域**的，必须一起换掉：留着会让 A 的
+    // 候选被采纳进 B，而 source_run_id 指向的是 A 的那次运行 —— 它是无外键的
+    // 裸字符串，后端不会拦，D-03 的「凭这条查回它怎么来的」就成了悬空引用。
+    setCandidates([])
+    setOpenQuestions([])
+    setLastRun(null)
+    setSuggesting(false)
     api.listEntries(projectId).then(setEntries).catch((e) => setNotice((e as Error).message))
     api.listRelations(projectId).then(setRelations).catch((e) => setNotice((e as Error).message))
   }, [projectId])
@@ -2401,6 +2408,13 @@ function draftOf(candidate: SuggestedEntry): EntryDraft {
   }
 }
 
+/** 候选行的稳定标识。由 World 页在拿到候选时生成 —— 展开态靠它定位，
+ *  所以它必须在整份候选的生命周期里不变。 */
+export interface CandidateRow {
+  key: string
+  entry: SuggestedEntry
+}
+
 export default function CandidateList({
   candidates,
   types,
@@ -2409,25 +2423,28 @@ export default function CandidateList({
   onAdopt,
   onDiscard,
 }: {
-  candidates: SuggestedEntry[]
+  candidates: CandidateRow[]
   types: EntryTypesResponse | null
   existing: SettingEntry[]
   busy: boolean
-  onAdopt: (draft: EntryDraft) => Promise<void>
-  onDiscard: (index: number) => void
+  onAdopt: (draft: EntryDraft) => Promise<boolean>
+  onDiscard: (key: string) => void
 }) {
-  const [openIndex, setOpenIndex] = useState<number | null>(null)
+  // 展开态按候选的**稳定 key** 记，不按数组下标 —— 丢弃上方一行、或再点一次
+  // 「让 AI 提候选」，下标都会整体前移，草稿于是漂到别的候选上，点采纳提交的
+  // 是作者没在改的那条，source_run_id 还对不上。这直接打在「作者裁决」上。
+  const [openKey, setOpenKey] = useState<string | null>(null)
   const [draft, setDraft] = useState<EntryDraft | null>(null)
 
   const takenNames = new Set(existing.map((e) => e.name))
 
-  function toggle(index: number, candidate: SuggestedEntry) {
-    if (openIndex === index) {
-      setOpenIndex(null)
+  function toggle(key: string, candidate: SuggestedEntry) {
+    if (openKey === key) {
+      setOpenKey(null)
       setDraft(null)
       return
     }
-    setOpenIndex(index)
+    setOpenKey(key)
     setDraft(draftOf(candidate))
   }
 
@@ -2438,18 +2455,18 @@ export default function CandidateList({
       </h3>
 
       <ul className="space-y-2 text-sm">
-        {candidates.map((candidate, index) => {
+        {candidates.map(({ key, entry: candidate }) => {
           const duplicated = takenNames.has(candidate.name ?? '')
           return (
-            <li key={`${candidate.name}-${index}`} className="space-y-2 border-b border-slate-800 pb-2 last:border-0">
+            <li key={key} className="space-y-2 border-b border-slate-800 pb-2 last:border-0">
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-xs text-slate-500">{candidate.type ?? '?'}</span>
                 <span className="font-medium">{candidate.name}</span>
                 {duplicated && <span className="text-xs text-amber-400">已存在，默认跳过</span>}
-                <button className="text-xs text-indigo-400" onClick={() => toggle(index, candidate)}>
-                  {openIndex === index ? '收起' : '改后采纳'}
+                <button className="text-xs text-indigo-400" onClick={() => toggle(key, candidate)}>
+                  {openKey === key ? '收起' : '改后采纳'}
                 </button>
-                <button className="text-xs text-slate-500" onClick={() => onDiscard(index)}>
+                <button className="text-xs text-slate-500" onClick={() => onDiscard(key)}>
                   丢弃
                 </button>
                 {!duplicated && (
@@ -2464,16 +2481,19 @@ export default function CandidateList({
               </div>
               <p className="text-xs text-slate-400">{candidate.summary}</p>
 
-              {openIndex === index && draft && (
+              {openKey === key && draft && (
                 <div className="space-y-3 rounded bg-slate-900/60 p-3">
                   <EntryEditor draft={draft} types={types} onChange={setDraft} />
                   <button
                     className="rounded bg-emerald-700 px-4 py-2 text-sm disabled:opacity-50"
                     disabled={busy}
                     onClick={async () => {
-                      await onAdopt(draft)
-                      setOpenIndex(null)
-                      setDraft(null)
+                      // 采纳**失败时不收**展开区：失败恰恰常发生在作者刚把撞名的
+                      // 候选改了名、而新名字仍然撞名时，把编辑内容收掉等于让他重敲。
+                      if (await onAdopt(draft)) {
+                        setOpenKey(null)
+                        setDraft(null)
+                      }
                     }}
                   >
                     按改后的内容采纳
@@ -2496,13 +2516,13 @@ export default function CandidateList({
 `frontend/src/pages/World.tsx`：加导入：
 
 ```tsx
-import CandidateList from '../components/CandidateList'
+import CandidateList, { type CandidateRow } from '../components/CandidateList'
 ```
 
 加状态：
 
 ```tsx
-  const [candidates, setCandidates] = useState<SuggestedEntry[]>([])
+  const [candidates, setCandidates] = useState<CandidateRow[]>([])
   const [openQuestions, setOpenQuestions] = useState<string[]>([])
   const [suggesting, setSuggesting] = useState(false)
   const [lastRun, setLastRun] = useState<RunView | null>(null)
@@ -2519,10 +2539,15 @@ import CandidateList from '../components/CandidateList'
     try {
       const result = await api.suggestEntries(projectId)
       setLastRun(result.run)
-      setCandidates(result.entries)
+      // key 带上 run id：每批候选的 key 都不同，展开态不会跨批串味。
+      setCandidates(
+        result.entries.map((entry, index) => ({ key: `${result.run.id}:${index}`, entry })),
+      )
       setOpenQuestions(result.open_questions)
       if (!result.structured) {
-        setNotice(`未结构化：${result.parse_error ?? '模型没有按契约返回'}`)
+        // 后端保证未结构化时一定给出一句可读原因（含「上游还没做」与调用失败两种），
+        // 所以这里直接显示它，不再套「未结构化：」这个前缀 —— 模板缺失并不是格式问题。
+        setNotice(result.parse_error ?? '模型没有按契约返回')
       }
     } catch (error) {
       setNotice((error as Error).message)
@@ -2531,7 +2556,7 @@ import CandidateList from '../components/CandidateList'
     }
   }
 
-  async function adoptCandidate(next: EntryDraft) {
+  async function adoptCandidate(next: EntryDraft): Promise<boolean> {
     try {
       await api.createEntry(projectId, {
         type: next.type,
@@ -2545,13 +2570,15 @@ import CandidateList from '../components/CandidateList'
       })
       await refresh()
       setNotice('已采纳')
+      return true
     } catch (error) {
       setNotice((error as Error).message)
+      return false
     }
   }
 
-  function discardCandidate(index: number) {
-    setCandidates((prev) => prev.filter((_, i) => i !== index))
+  function discardCandidate(key: string) {
+    setCandidates((prev) => prev.filter((row) => row.key !== key))
   }
 ```
 
