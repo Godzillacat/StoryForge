@@ -204,10 +204,16 @@ def clean_db():
     """
     import shutil
 
-    # 逐个删 sqlite_master 里的每一张表，而不是只调 drop_all：测试用的探针表
-    # （_probe / _a / _b）是**原始 SQL** 建的、不在 metadata 里，drop_all 管不到
-    # —— 不清掉它们，下一个用例会撞上「table _probe already exists」。
-    # schema_migration 同理（它不是 ORM 模型，且迁移测试恰好在乎它在不在）。
+    # ORM 表先交给 drop_all —— 它按依赖顺序删。**不能只按 sqlite_master 的
+    # 顺序逐个 DROP**：session.py 开着 PRAGMA foreign_keys=ON，而 sqlite_master
+    # 的顺序下 project 先于引用它的 setting_entry 被删，后者当场报
+    # 「no such table: main.project」。
+    Base.metadata.drop_all(db_session.engine)
+
+    # 再清 drop_all 管不到的那些：测试探针表（_probe / _a / _b）是**原始 SQL**
+    # 建的、不在 metadata 里，不清掉会泄漏到下一个用例（撞「table _probe
+    # already exists」）；schema_migration 同理（它不是 ORM 模型，而迁移测试
+    # 恰好在乎它在不在）。这两类都没有外键，删除顺序无所谓。
     with db_session.engine.begin() as conn:
         rows = conn.exec_driver_sql(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
