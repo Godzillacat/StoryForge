@@ -6,7 +6,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import EntryRelation, SettingEntry, TimelineEvent
+from app.db.models import (
+    Chapter,
+    EntryRelation,
+    Scene,
+    SettingEntry,
+    TimelineEvent,
+    Volume,
+)
 from app.world_types import CHARACTER_FIELDS, normalize_hardness, normalize_type
 
 # 服务层说领域名（aliases / tags），存储层的 *_json 后缀不往上传 ——
@@ -97,8 +104,8 @@ def delete_entry(session: Session, entry_id: str) -> None:
     entry = session.get(SettingEntry, entry_id)
     if entry is None:
         raise ValueError(f"设定条目不存在：{entry_id}")
-    # 时间线的参与者是 JSON 列表，外键管不到 —— 显式剔除。JSON 列必须
-    # **赋新列表**再提交，原地 mutate 不会被 SQLAlchemy 跟踪。
+    # 时间线的参与者与场景的出场人物都是 JSON 列表，外键管不到 —— 显式剔除。
+    # JSON 列必须 **赋新列表**再提交，原地 mutate 不会被 SQLAlchemy 跟踪。
     # 地点由 FK 的 ON DELETE SET NULL 处理。
     events = session.scalars(
         select(TimelineEvent).where(TimelineEvent.project_id == entry.project_id)
@@ -107,6 +114,18 @@ def delete_entry(session: Session, entry_id: str) -> None:
         participants = list(event.participants_json or [])
         if entry_id in participants:
             event.participants_json = [pid for pid in participants if pid != entry_id]
+    scenes = session.scalars(
+        select(Scene)
+        .join(Chapter, Scene.chapter_id == Chapter.id)
+        .join(Volume, Chapter.volume_id == Volume.id)
+        .where(Volume.project_id == entry.project_id)
+    ).all()
+    for scene in scenes:
+        character_ids = list(scene.characters_json or [])
+        if entry_id in character_ids:
+            scene.characters_json = [
+                cid for cid in character_ids if cid != entry_id
+            ]
     session.delete(entry)
     session.commit()
 

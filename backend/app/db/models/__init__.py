@@ -1,5 +1,6 @@
 from app.db.models.agent import Agent, AgentVersion
 from app.db.models.architecture import Act, Architecture
+from app.db.models.chapter import Chapter, Foreshadow, Scene, Volume
 from app.db.models.config_models import Provider, Setting
 from app.db.models.idea import Idea
 from app.db.models.project import Project
@@ -13,13 +14,17 @@ __all__ = [
     "Agent",
     "AgentVersion",
     "Architecture",
+    "Chapter",
     "EntryRelation",
+    "Foreshadow",
     "GenerationRun",
     "Idea",
     "Project",
     "Provider",
+    "Scene",
     "Setting",
     "SettingEntry",
     "TimelineEvent",
     "ToolTemplate",
+    "Volume",
 ]

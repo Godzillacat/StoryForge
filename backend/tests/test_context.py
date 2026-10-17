@@ -160,3 +160,8 @@ def test_summarize_returning_empty_marks_slot_as_dropped():
     bundle = build_context(["parsed_idea", "project_core"], source, token_budget=60)
     assert "parsed_idea" not in bundle.contents
     assert bundle.trimmed["parsed_idea"] == "已丢弃"   # 记录必须如实反映「丢掉了」
+
+
+def test_new_slots_are_registered():
+    for key in ("world_context", "timeline", "volume_outline", "chapter_outline"):
+        assert key in SLOT_REGISTRY

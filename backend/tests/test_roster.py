@@ -8,6 +8,7 @@ def test_task_types_cover_documented_roster():
         "architecture",
         "worldbuilding",
         "chapter_plan",
+        "scene_plan",
         "write",
         "polish",
         "continuity",
@@ -193,6 +194,48 @@ def test_worldbuilder_character_fields_are_optional_and_generated_from_the_vocab
         assert key not in item["required"]
         assert item["properties"][key]["title"] == f"{label}（只有人物才填）"
         assert item["properties"][key]["type"] == "string"
+
+
+def test_chapter_planner_is_in_the_default_roster():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "chapter_planner")
+    assert entry["task_type"] == "chapter_plan"
+    assert entry["context_slots"] == [
+        "project_core",
+        "story_bible",
+        "architecture",
+        "parsed_idea",
+        "world_context",
+        "tool_library",
+    ]
+    props = entry["output_schema"]["properties"]
+    assert set(props) == {"volumes", "open_questions"}
+    chapter = props["volumes"]["items"]["properties"]["chapters"]["items"]
+    assert {"title", "pov", "target_words", "conflict_level", "dialogue_ratio", "hook_strength"} <= set(
+        chapter["properties"]
+    )
+    assert "编造" in entry["system_prompt"]
+
+
+def test_scene_planner_is_in_the_default_roster():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "scene_planner")
+    assert entry["task_type"] == "scene_plan"
+    assert entry["context_slots"] == [
+        "project_core",
+        "story_bible",
+        "architecture",
+        "world_context",
+        "timeline",
+        "volume_outline",
+        "chapter_outline",
+        "tool_library",
+    ]
+    props = entry["output_schema"]["properties"]
+    assert set(props) == {"scenes", "open_questions"}
+    scene = props["scenes"]["items"]
+    assert {"goal", "conflict", "turn", "characters", "location", "foreshadow_plants", "foreshadow_pays"} <= set(
+        scene["properties"]
+    )
+    assert "编造" in entry["system_prompt"]
 
 
 def test_worldbuilder_type_descriptions_match_the_vocabulary():

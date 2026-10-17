@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -151,3 +151,133 @@ class RelationUpdate(BaseModel):
     kind: str | None = Field(default=None, min_length=1, max_length=60)
     strength: int | None = Field(default=None, ge=1, le=5)
     note: str | None = None
+
+
+class VolumeCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    purpose: str = ""
+    summary: str = ""
+    act_seq: int | None = None
+    target_words: int | None = None
+    status: str = "planned"
+
+
+class VolumeUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    purpose: str | None = None
+    summary: str | None = None
+    act_seq: int | None = None
+    target_words: int | None = None
+    status: str | None = None
+
+
+class ChapterCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    pov: str = ""
+    target_words: int | None = None
+    emotional_tone: str = ""
+    lines: list[str] = Field(default_factory=list)
+    hook: str = ""
+    summary: str = ""
+    conflict_level: int | None = None
+    dialogue_ratio: float | None = None
+    hook_strength: int | None = None
+    status: str = "planned"
+
+
+class ChapterUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    pov: str | None = None
+    target_words: int | None = None
+    emotional_tone: str | None = None
+    lines: list[str] | None = None
+    hook: str | None = None
+    summary: str | None = None
+    conflict_level: int | None = None
+    dialogue_ratio: float | None = None
+    hook_strength: int | None = None
+    status: str | None = None
+
+
+class MoveRequest(BaseModel):
+    direction: Literal["up", "down"]
+
+
+class SceneCreate(BaseModel):
+    goal: str = ""
+    conflict: str = ""
+    turn: str = ""
+    characters: list[str] = Field(default_factory=list)  # 名称
+    location: str | None = None  # 名称
+    story_time: str = ""
+    pov: str = ""
+    target_words_min: int | None = None
+    target_words_max: int | None = None
+    foreshadow_plants: list[str] = Field(default_factory=list)
+    foreshadow_pays: list[str] = Field(default_factory=list)
+    status: str = "planned"
+
+
+class SceneUpdate(BaseModel):
+    goal: str | None = None
+    conflict: str | None = None
+    turn: str | None = None
+    characters: list[str] | None = None
+    location: str | None = None
+    story_time: str | None = None
+    pov: str | None = None
+    target_words_min: int | None = None
+    target_words_max: int | None = None
+    foreshadow_plants: list[str] | None = None
+    foreshadow_pays: list[str] | None = None
+    status: str | None = None
+
+
+class SceneWrite(BaseModel):
+    mode: Literal["replace", "append"]
+    source_run_id: str | None = None
+    scenes: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class PlanChapter(BaseModel):
+    title: str = ""
+    pov: str = ""
+    target_words: int | None = None
+    emotional_tone: str = ""
+    lines: list[str] = Field(default_factory=list)
+    hook: str = ""
+    summary: str = ""
+    conflict_level: int | None = None
+    dialogue_ratio: float | None = None
+    hook_strength: int | None = None
+    status: str = "planned"
+
+
+class PlanVolume(BaseModel):
+    name: str = ""
+    purpose: str = ""
+    summary: str = ""
+    act_seq: int | None = None
+    target_words: int | None = None
+    status: str = "planned"
+    chapters: list[PlanChapter] = Field(default_factory=list)
+
+
+class ChapterPlanWrite(BaseModel):
+    mode: Literal["replace", "append"]
+    source_run_id: str | None = None
+    volumes: list[PlanVolume] = Field(default_factory=list)
+
+
+class ForeshadowCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    note: str = ""
+    status: str = "planned"
+
+
+class ForeshadowUpdate(BaseModel):
+    # plant_scene_id 由场景挂接管理，不开放这里改。
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    note: str | None = None
+    plan_pay_scene_id: str | None = None
+    status: str | None = None

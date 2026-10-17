@@ -2878,7 +2878,7 @@ SCENE_PLANNER_PROMPT = """你是长篇小说场景策划，服务对象是作者
 
 要求：
 1. 把本章拆成 3–6 个场景；每场有具体目标、冲突与转折；转折要让处境更糟或更难；
-2. 只用【世界观】里已有的人物与地点名称；人物只用人物条目，地点可用任意条目；没有合适地点就省略并写进待确认问题；
+2. 只用【世界观】里已有的人物与地点名称，不编造；人物只用人物条目，地点可用任意条目；没有合适地点就省略并写进待确认问题；
 3. 每场写故事内时间、视角、目标字数区间；沿用本章视角，除非有明确理由；
 4. 埋设与回收的伏笔用名称；回收的伏笔必须是前文已埋设或本章埋设的；不确定的写进待确认问题；
 5. 不写正文；返回符合输出契约的结构化结果。"""
@@ -4605,6 +4605,7 @@ export default function SceneEditor({
   scene,
   statuses,
   entries,
+  entriesReady,
   foreshadows,
   busy,
   onSave,
@@ -4613,6 +4614,7 @@ export default function SceneEditor({
   scene: SceneNode
   statuses: ChapterStatusOption[]
   entries: SettingEntry[]
+  entriesReady: boolean
   foreshadows: Foreshadow[]
   busy: boolean
   onSave: (fields: Record<string, unknown>) => Promise<void>
@@ -4652,11 +4654,12 @@ export default function SceneEditor({
     })
     setPlantInput('')
     setPayInput('')
-  }, [scene])
+  }, [scene.id])
 
   const set = (patch: Partial<typeof draft>) => setDraft({ ...draft, ...patch })
   const characters = entries.filter((entry) => entry.type === 'character')
   const nameOf = (id: string) => entries.find((entry) => entry.id === id)?.name ?? '（已删除）'
+  const resolvedNameOf = (id: string) => entries.find((entry) => entry.id === id)?.name
 
   function toggleCharacter(id: string) {
     set({
@@ -4800,20 +4803,34 @@ export default function SceneEditor({
 
       <div className="flex items-center gap-2">
         <button className="rounded bg-indigo-600 px-4 py-2 disabled:opacity-50" disabled={busy}
-                onClick={() => onSave({
-                  goal: draft.goal,
-                  conflict: draft.conflict,
-                  turn: draft.turn,
-                  story_time: draft.storyTime,
-                  pov: draft.pov,
-                  target_words_min: draft.minWords.trim() ? Number(draft.minWords) : null,
-                  target_words_max: draft.maxWords.trim() ? Number(draft.maxWords) : null,
-                  status: draft.status,
-                  characters: draft.characterIds.map(nameOf),
-                  location: draft.locationId ? nameOf(draft.locationId) : '',
-                  foreshadow_plants: draft.plantNames,
-                  foreshadow_pays: draft.payNames,
-                })}>
+                onClick={() => {
+                  const fields: Record<string, unknown> = {
+                    goal: draft.goal,
+                    conflict: draft.conflict,
+                    turn: draft.turn,
+                    story_time: draft.storyTime,
+                    pov: draft.pov,
+                    target_words_min: draft.minWords.trim() ? Number(draft.minWords) : null,
+                    target_words_max: draft.maxWords.trim() ? Number(draft.maxWords) : null,
+                    status: draft.status,
+                    foreshadow_plants: draft.plantNames,
+                    foreshadow_pays: draft.payNames,
+                  }
+                  // 只有条目确实属于当前项目且已加载时，才敢把 ID 映射成名称。
+                  // 否则整键省略：后端 exclude_unset 会保留库里的原值，而明确
+                  // 发送空值等于静默清空场景的人物与地点。
+                  if (entriesReady) {
+                    // 世界观里已删除的条目只剩一个解析不到名称的 ID；丢弃它，
+                    // 免得一个残影让每次保存都被后端拒绝。
+                    fields.characters = draft.characterIds
+                      .map(resolvedNameOf)
+                      .filter((name): name is string => Boolean(name))
+                    fields.location = draft.locationId
+                      ? resolvedNameOf(draft.locationId) ?? ''
+                      : ''
+                  }
+                  onSave(fields)
+                }}>
           保存
         </button>
         <button className="rounded border border-amber-700 px-4 py-2 text-amber-400" disabled={busy}
@@ -4848,15 +4865,27 @@ import {
 
 ```tsx
   const [entries, setEntries] = useState<SettingEntry[]>([])
+  // 条目属于哪个项目：entries 是异步加载的，空列表并不等于「这个项目没有条目」。
+  // 只有 entriesProjectId === projectId 时，场景编辑器才敢用 entries 映射名称。
+  const [entriesProjectId, setEntriesProjectId] = useState('')
   const [foreshadows, setForeshadows] = useState<Foreshadow[]>([])
+  // 每次条目请求自增；迟到的旧项目响应凭 token 失效，不能覆盖当前项目的数据。
+  const entriesRequestRef = useRef(0)
 ```
 
 项目切换 effect 里加：
 
 ```tsx
     setEntries([])
+    setEntriesProjectId('')
     setForeshadows([])
-    api.listEntries(projectId).then(setEntries).catch((error) => setNotice((error as Error).message))
+    // 每次条目请求自增；迟到的旧项目响应凭 token 失效，不能覆盖当前项目的数据。
+    const token = ++entriesRequestRef.current
+    api.listEntries(projectId).then((list) => {
+      if (entriesRequestRef.current !== token) return
+      setEntries(list)
+      setEntriesProjectId(projectId)
+    }).catch((error) => setNotice((error as Error).message))
     api.listForeshadows(projectId).then(setForeshadows).catch((error) => setNotice((error as Error).message))
 ```
 
@@ -4864,13 +4893,18 @@ import {
 
 ```tsx
   async function refresh() {
+    const requestProjectId = projectId
+    const token = ++entriesRequestRef.current
     const [tree, entryList, foreshadowList] = await Promise.all([
-      api.getChapterTree(projectId),
-      api.listEntries(projectId),
-      api.listForeshadows(projectId),
+      api.getChapterTree(requestProjectId),
+      api.listEntries(requestProjectId),
+      api.listForeshadows(requestProjectId),
     ])
+    // 期间切了项目（或又发起了一次刷新）：这批数据属于旧请求，整批丢弃。
+    if (entriesRequestRef.current !== token) return
     setVolumes(tree.volumes)
     setEntries(entryList)
+    setEntriesProjectId(requestProjectId)
     setForeshadows(foreshadowList)
   }
 ```
@@ -4879,9 +4913,11 @@ import {
 
 ```tsx
             <SceneEditor
+              key={scene.id}
               scene={scene}
               statuses={statuses}
               entries={entries}
+              entriesReady={entriesProjectId === projectId}
               foreshadows={foreshadows}
               busy={busy}
               onSave={async (fields) => run(async () => {

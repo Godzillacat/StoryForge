@@ -11,9 +11,31 @@ import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Act, Architecture, Idea, Project, ToolTemplate
+from app.db.models import (
+    Act,
+    Architecture,
+    Chapter,
+    Foreshadow,
+    Idea,
+    Project,
+    Scene,
+    SettingEntry,
+    TimelineEvent,
+    ToolTemplate,
+    Volume,
+)
+from app.world_types import ENTRY_TYPES, HARDNESS_LEVELS
 
 _SUMMARY_LIMIT = 120
+# 槽位里每个长文本字段的截断上限：上下文要的是够写场景的骨架，
+# 不是把设定全文搬进提示词。
+_FIELD_LIMIT = 160
+
+
+def _clip(text: str) -> str:
+    if len(text) <= _FIELD_LIMIT:
+        return text
+    return text[:_FIELD_LIMIT] + "……"
 
 
 class DbSlotSource:
@@ -119,6 +141,158 @@ class DbSlotSource:
 
     def style_samples(self) -> str | None:
         return None  # P2 接入风格样本
+
+    def world_context(self) -> str | None:
+        """设定条目的摘要视图，按类型分组；不搬全文描述。"""
+        entries = self._session.scalars(
+            select(SettingEntry)
+            .where(SettingEntry.project_id == self._project_id)
+            .order_by(SettingEntry.type, SettingEntry.name)
+        ).all()
+        if not entries:
+            return None
+        lines = []
+        for entry in entries:
+            label = ENTRY_TYPES.get(entry.type, entry.type)
+            aliases = (
+                f"（别名：{'、'.join(entry.aliases_json)}）" if entry.aliases_json else ""
+            )
+            parts = [f"【{label}】{entry.name}{aliases}"]
+            summary = entry.summary or entry.description
+            if summary:
+                parts.append(f"概述：{_clip(summary)}")
+            if entry.type == "character":
+                for key, label in (
+                    ("desire", "欲望"),
+                    ("fear", "恐惧"),
+                    ("current_state", "当前状态"),
+                ):
+                    value = getattr(entry, key)
+                    if value:
+                        parts.append(f"{label}：{_clip(value)}")
+            if entry.type == "rule" and entry.hardness:
+                parts.append(HARDNESS_LEVELS.get(entry.hardness, entry.hardness))
+            lines.append(" — ".join(parts))
+        return "\n".join(lines)
+
+    def timeline(self) -> str | None:
+        events = self._session.scalars(
+            select(TimelineEvent)
+            .where(TimelineEvent.project_id == self._project_id)
+            .order_by(TimelineEvent.order_index, TimelineEvent.created_at)
+        ).all()
+        if not events:
+            return None
+        entries = {
+            entry.id: entry.name
+            for entry in self._session.scalars(
+                select(SettingEntry).where(SettingEntry.project_id == self._project_id)
+            )
+        }
+        lines = []
+        for event in events:
+            people = "、".join(
+                entries.get(pid, "（已删除）") for pid in (event.participants_json or [])
+            )
+            location = entries.get(event.location_id, "") if event.location_id else ""
+            parts = [event.story_time or "（未标时间）", event.title]
+            if people:
+                parts.append(f"参与者：{people}")
+            if location:
+                parts.append(f"地点：{location}")
+            if event.description:
+                parts.append(f"描述：{_clip(event.description)}")
+            lines.append("｜".join(parts))
+        return "\n".join(lines)
+
+    def _volume(self) -> Volume | None:
+        volume_id = self._extra.get("volume_id")
+        if not volume_id:
+            return None
+        volume = self._session.get(Volume, volume_id)
+        if volume is None or volume.project_id != self._project_id:
+            return None
+        return volume
+
+    def volume_outline(self) -> str | None:
+        volume = self._volume()
+        if volume is None:
+            return None
+        header = f"第{volume.seq + 1}卷 {volume.name}"
+        if volume.purpose:
+            header += f"（{volume.purpose}）"
+        lines = [header]
+        chapters = self._session.scalars(
+            select(Chapter).where(Chapter.volume_id == volume.id).order_by(Chapter.seq)
+        ).all()
+        for chapter in chapters:
+            line = f"第{chapter.seq + 1}章 {chapter.title}"
+            extras = []
+            if chapter.pov:
+                extras.append(f"视角：{chapter.pov}")
+            if chapter.summary:
+                extras.append(_clip(chapter.summary))
+            if chapter.hook:
+                extras.append(f"钩子：{_clip(chapter.hook)}")
+            if extras:
+                line += " — " + "；".join(extras)
+            lines.append(line)
+        return "\n".join(lines)
+
+    def _chapter(self) -> Chapter | None:
+        chapter_id = self._extra.get("chapter_id")
+        if not chapter_id:
+            return None
+        chapter = self._session.get(Chapter, chapter_id)
+        if chapter is None:
+            return None
+        volume = self._session.get(Volume, chapter.volume_id)
+        if volume is None or volume.project_id != self._project_id:
+            return None
+        return chapter
+
+    def chapter_outline(self) -> str | None:
+        chapter = self._chapter()
+        if chapter is None:
+            return None
+        lines = [f"章标题：{chapter.title}"]
+        for label, value in (
+            ("视角", chapter.pov),
+            ("目标字数", chapter.target_words),
+            ("情绪基调", chapter.emotional_tone),
+            ("章末钩子", chapter.hook),
+            ("摘要", chapter.summary),
+        ):
+            if value not in (None, ""):
+                lines.append(f"{label}：{_clip(str(value))}")
+        if chapter.lines_json:
+            lines.append(f"推进的线：{'、'.join(chapter.lines_json)}")
+        scenes = self._session.scalars(
+            select(Scene).where(Scene.chapter_id == chapter.id).order_by(Scene.seq)
+        ).all()
+        if scenes:
+            foreshadows = self._session.scalars(
+                select(Foreshadow).where(Foreshadow.project_id == self._project_id)
+            ).all()
+            plants_by_scene: dict[str, list[str]] = {}
+            pays_by_scene: dict[str, list[str]] = {}
+            for row in foreshadows:
+                if row.plant_scene_id:
+                    plants_by_scene.setdefault(row.plant_scene_id, []).append(row.name)
+                if row.plan_pay_scene_id:
+                    pays_by_scene.setdefault(row.plan_pay_scene_id, []).append(row.name)
+            for scene in scenes:
+                parts = [f"场景{scene.seq + 1}：{scene.goal or '（未写目标）'}"]
+                if scene.conflict:
+                    parts.append(f"冲突：{_clip(scene.conflict)}")
+                if scene.turn:
+                    parts.append(f"转折：{_clip(scene.turn)}")
+                if plants_by_scene.get(scene.id):
+                    parts.append(f"埋设：{'、'.join(plants_by_scene[scene.id])}")
+                if pays_by_scene.get(scene.id):
+                    parts.append(f"回收：{'、'.join(pays_by_scene[scene.id])}")
+                lines.append("；".join(parts))
+        return "\n".join(lines)
 
     def summarize(self, slot_key: str, text: str) -> str:
         """超预算时的降级压缩。P1a 只截断，不调用模型，避免额外花钱。"""
