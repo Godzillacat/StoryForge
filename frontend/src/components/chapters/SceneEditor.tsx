@@ -62,6 +62,7 @@ export default function SceneEditor({
   const set = (patch: Partial<typeof draft>) => setDraft({ ...draft, ...patch })
   const characters = entries.filter((entry) => entry.type === 'character')
   const nameOf = (id: string) => entries.find((entry) => entry.id === id)?.name ?? '（已删除）'
+  const resolvedNameOf = (id: string) => entries.find((entry) => entry.id === id)?.name
 
   function toggleCharacter(id: string) {
     set({
@@ -130,8 +131,19 @@ export default function SceneEditor({
           )}
         </div>
         {draft.characterIds.length > 0 && (
-          <div className="text-xs text-slate-500">
-            已选：{draft.characterIds.map(nameOf).join('、')}
+          <div className="flex flex-wrap items-center gap-1 text-xs text-slate-500">
+            <span>已选：</span>
+            {draft.characterIds.map((id) => (
+              <span key={id} className="rounded bg-slate-800 px-2 py-1">
+                {nameOf(id)}
+                <button className="ml-2 text-amber-400"
+                        onClick={() => set({
+                          characterIds: draft.characterIds.filter((item) => item !== id),
+                        })}>
+                  ×
+                </button>
+              </span>
+            ))}
           </div>
         )}
       </div>
@@ -214,8 +226,12 @@ export default function SceneEditor({
                   target_words_min: draft.minWords.trim() ? Number(draft.minWords) : null,
                   target_words_max: draft.maxWords.trim() ? Number(draft.maxWords) : null,
                   status: draft.status,
-                  characters: draft.characterIds.map(nameOf),
-                  location: draft.locationId ? nameOf(draft.locationId) : '',
+                  // 世界观里已删除的条目只剩一个解析不到名称的 ID；丢弃它，
+                  // 免得一个残影让每次保存都被后端拒绝。
+                  characters: draft.characterIds
+                    .map(resolvedNameOf)
+                    .filter((name): name is string => Boolean(name)),
+                  location: draft.locationId ? resolvedNameOf(draft.locationId) ?? '' : '',
                   foreshadow_plants: draft.plantNames,
                   foreshadow_pays: draft.payNames,
                 })}>

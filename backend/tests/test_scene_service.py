@@ -192,6 +192,33 @@ def test_replace_without_mention_clears_foreshadow_link(session):
         assert row.plant_scene_id is None
 
 
+def test_delete_character_clears_it_from_scene_characters(session):
+    """JSON 列没有外键：删人物必须显式把它从场景的出场人物里剔除。
+
+    否则场景里会留下一个永远解析不到名称的 ID：编辑器显示「（已删除）」，
+    每次保存都会把无效名称发给后端并得到 400。
+    """
+    project = _project(session)
+    chapter = _chapter(session, project)
+    chen, lin, _place = _entries(session, project)
+    only_chen = scene_service.create_scene(
+        session, chapter.id, goal="独场", characters=["陈默"]
+    )
+    both = scene_service.create_scene(
+        session, chapter.id, goal="同场", characters=["陈默", "林晚"]
+    )
+
+    world_service.delete_entry(session, chen.id)
+
+    with SessionLocal() as fresh:
+        row = fresh.get(type(only_chen), only_chen.id)
+        assert row is not None
+        assert row.characters_json == []
+        other = fresh.get(type(both), both.id)
+        assert other is not None
+        assert other.characters_json == [lin.id]
+
+
 def test_move_scene_and_delete(session):
     project = _project(session)
     chapter = _chapter(session, project)
