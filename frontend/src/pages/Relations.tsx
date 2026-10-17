@@ -48,17 +48,19 @@ export default function Relations() {
     ? entries.filter((e) => e.type === 'character')
     : entries
 
+  // 分对只看「仅人物之间」，**不看**关系类型筛选：后者只决定每一行显不显示。
+  // 若拿筛过的集合分对，某一方向的关系会被误判成「未记录」，作者点「补录反向」
+  // 就会往已占用的方向再写一条。
   const pairs = useMemo(() => {
-    const visible = relations.filter((relation) => {
+    const relevant = relations.filter((relation) => {
       const from = byId.get(relation.from_id)
       const to = byId.get(relation.to_id)
       if (!from || !to) return false
       if (onlyCharacters && (from.type !== 'character' || to.type !== 'character')) return false
-      if (kindFilter.trim() && !relation.kind.includes(kindFilter.trim())) return false
       return true
     })
     const map = new Map<string, Pair>()
-    for (const relation of visible) {
+    for (const relation of relevant) {
       const from = byId.get(relation.from_id)!
       const to = byId.get(relation.to_id)!
       const [a, b] = [from, to].sort((x, y) => x.id.localeCompare(y.id))
@@ -72,7 +74,24 @@ export default function Relations() {
       else pair.backward.push(relation)
     }
     return [...map.values()]
-  }, [relations, byId, onlyCharacters, kindFilter])
+  }, [relations, byId, onlyCharacters])
+
+  function filterByKind(rows: EntryRelation[]) {
+    const needle = kindFilter.trim()
+    return needle ? rows.filter((relation) => relation.kind.includes(needle)) : rows
+  }
+
+  // 每一对的方向存在性用**未筛**的 rows 判断；只有要渲染的行才受类型筛选影响。
+  const visiblePairs = pairs
+    .map((pair) => ({
+      pair,
+      forward: filterByKind(pair.forward),
+      backward: filterByKind(pair.backward),
+    }))
+    .filter(
+      (view) =>
+        !kindFilter.trim() || view.forward.length > 0 || view.backward.length > 0,
+    )
 
   function nameOf(id: string) {
     return byId.get(id)?.name ?? '（已删除）'
@@ -145,7 +164,13 @@ export default function Relations() {
     }
   }
 
-  function directionRows(from: SettingEntry, to: SettingEntry, rows: EntryRelation[], other: EntryRelation[]) {
+  function directionRows(
+    from: SettingEntry,
+    to: SettingEntry,
+    rows: EntryRelation[],
+    total: number,
+    other: EntryRelation[],
+  ) {
     return (
       <div className="space-y-2">
         <div className="text-xs text-slate-500">
@@ -187,7 +212,10 @@ export default function Relations() {
             </button>
           </div>
         ))}
-        {rows.length === 0 && (
+        {rows.length === 0 && total > 0 && (
+          <div className="text-xs text-slate-500">另有 {total} 条关系未匹配当前筛选</div>
+        )}
+        {total === 0 && (
           <div className="flex items-center gap-3 text-xs text-slate-500">
             <span>未记录</span>
             {other[0] && (
@@ -305,18 +333,20 @@ export default function Relations() {
       {notice && <p className="text-sm text-slate-400">{notice}</p>}
 
       <div className="space-y-3">
-        {pairs.map((pair) => (
+        {visiblePairs.map(({ pair, forward, backward }) => (
           <section key={pair.key} className="space-y-3 rounded border border-slate-800 p-4">
             <h3 className="text-sm font-medium text-slate-300">
               {pair.a.name} ⇄ {pair.b.name}
             </h3>
-            {directionRows(pair.a, pair.b, pair.forward, pair.backward)}
-            {directionRows(pair.b, pair.a, pair.backward, pair.forward)}
+            {directionRows(pair.a, pair.b, forward, pair.forward.length, backward)}
+            {directionRows(pair.b, pair.a, backward, pair.backward.length, forward)}
           </section>
         ))}
-        {pairs.length === 0 && (
+        {visiblePairs.length === 0 && (
           <p className="text-sm text-slate-500">
-            还没有关系。先在世界观里建两个人物，再回这里建立关系。
+            {kindFilter.trim()
+              ? `没有关系类型包含「${kindFilter.trim()}」的关系。`
+              : '还没有关系。先在世界观里建两个人物，再回这里建立关系。'}
           </p>
         )}
       </div>
