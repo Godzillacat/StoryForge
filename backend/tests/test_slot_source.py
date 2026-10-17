@@ -87,3 +87,58 @@ def test_raw_idea_returns_the_requested_idea_not_the_oldest(session):
     assert source.raw_idea() == "第二个灵感：海边的灯塔看守人"
     # 不传 extra_slots 时保持原行为（取最早一条），供其它槽位调用方使用
     assert DbSlotSource(session, project.id).raw_idea() == first.raw_text
+
+
+def test_world_context_lists_entries_with_character_fields(session):
+    project = _seed(session)
+    from app.db.models import SettingEntry
+
+    session.add(SettingEntry(project_id=project.id, type="character", name="陈默",
+                             aliases_json=["阿默"], summary="主角",
+                             desire="找回记忆", fear="想起自己做过的事",
+                             current_state="暂居南滨"))
+    session.add(SettingEntry(project_id=project.id, type="rule", name="死者不能复活",
+                             hardness="hard", summary="体系根基"))
+    session.commit()
+
+    text = DbSlotSource(session, project.id).world_context()
+
+    assert "陈默" in text and "阿默" in text
+    assert "欲望" in text and "找回记忆" in text
+    assert "硬规则" in text
+    assert "死者不能复活" in text
+
+
+def test_timeline_renders_events(session):
+    project = _seed(session)
+    from app.db.models import SettingEntry, TimelineEvent
+
+    character = SettingEntry(project_id=project.id, type="character", name="陈默")
+    session.add(character)
+    session.commit()
+    session.add(TimelineEvent(project_id=project.id, title="初遇", story_time="第三年·春",
+                              participants_json=[character.id], description="录音带"))
+    session.commit()
+
+    text = DbSlotSource(session, project.id).timeline()
+
+    assert "初遇" in text and "第三年·春" in text and "陈默" in text
+
+
+def test_volume_and_chapter_outline_are_scoped(session):
+    project = _seed(session)
+    from app.services import chapter_service, scene_service
+
+    volume = chapter_service.create_volume(session, project.id, name="第一卷", purpose="立目标")
+    chapter = chapter_service.create_chapter(session, volume.id, title="第一章", pov="陈默")
+    scene_service.create_scene(session, chapter.id, goal="找到录音带")
+
+    volume_text = DbSlotSource(session, project.id, extra_slots={"volume_id": volume.id}).volume_outline()
+    chapter_text = DbSlotSource(
+        session, project.id, extra_slots={"chapter_id": chapter.id, "volume_id": volume.id}
+    ).chapter_outline()
+
+    assert "第一卷" in volume_text and "第一章" in volume_text
+    assert "第一章" in chapter_text and "找到录音带" in chapter_text
+    assert DbSlotSource(session, project.id).volume_outline() is None
+    assert DbSlotSource(session, project.id).chapter_outline() is None
