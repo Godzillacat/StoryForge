@@ -1962,11 +1962,10 @@ git commit -m "feat(agents): 预置身份、内容指纹与显式应用预置"
 - Create: `frontend/src/pages/Relations.tsx`
 - Modify: `frontend/src/App.tsx`
 - Modify: `frontend/src/pages/World.tsx`
-- Modify: `frontend/src/components/EntryEditor.tsx`
 
 **Interfaces:**
 - Consumes: Task 2 的 `strength` 与 `PATCH /api/relations/{id}`。
-- Produces: `/relations` 页面；世界观编辑器可录入 / 显示强度。
+- Produces: `/relations` 页面；世界观编辑器可录入 / 显示强度。`EntryEditor.tsx` **不改** —— 草稿必须继续载入隐藏的人物字段（见 Task 7 的裁定）。
 
 - [ ] **Step 1: 更新 API 客户端类型与方法**
 
