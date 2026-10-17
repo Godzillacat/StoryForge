@@ -7,6 +7,7 @@ export default function Terms() {
   const [terms, setTerms] = useState<TermRow[]>([])
   const [types, setTypes] = useState<EntryTypesResponse | null>(null)
   const [keyword, setKeyword] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
   const [notice, setNotice] = useState('')
 
   useEffect(() => {
@@ -33,9 +34,10 @@ export default function Terms() {
 
   const visible = useMemo(() => {
     const needle = keyword.trim()
-    if (!needle) return terms
-    return terms.filter((t) => t.form.includes(needle))
-  }, [terms, keyword])
+    return terms.filter(
+      (t) => (!typeFilter || t.type === typeFilter) && (!needle || t.form.includes(needle)),
+    )
+  }, [terms, keyword, typeFilter])
 
   return (
     <div className="space-y-6">
@@ -58,6 +60,19 @@ export default function Terms() {
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
         />
+        <select
+          className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
+          aria-label="按类型筛选"
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+        >
+          <option value="">全部类型</option>
+          {(types?.types ?? []).map((t) => (
+            <option key={t.key} value={t.key}>
+              {t.label}
+            </option>
+          ))}
+        </select>
         <span className="text-xs text-slate-500">
           这一页是投影：每个条目的名字与别名都算术语，只有名字的裸术语也在列。
         </span>
@@ -91,7 +106,9 @@ export default function Terms() {
               <td colSpan={3} className="py-4 text-slate-500">
                 {keyword.trim()
                   ? `没有匹配「${keyword.trim()}」的写法。`
-                  : '还没有术语。到「世界观」页建几条设定，它们的名字与别名会自动出现在这里。'}
+                  : typeFilter
+                    ? `「${typeLabel(typeFilter)}」这一类还没有术语。`
+                    : '还没有术语。到「世界观」页建几条设定，它们的名字与别名会自动出现在这里。'}
               </td>
             </tr>
           )}
