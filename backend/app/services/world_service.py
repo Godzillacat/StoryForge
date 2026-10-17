@@ -185,15 +185,25 @@ def update_relation(session: Session, relation_id: str, **fields) -> EntryRelati
     relation = session.get(EntryRelation, relation_id)
     if relation is None:
         raise ValueError(f"关联不存在：{relation_id}")
+    # 先把每个要给的值算完、验完，再落到对象上 —— 任何一项校验失败时，
+    # 对象必须保持原样。边验边改的话，直接调用方捕获异常后若继续提交这个
+    # session，会把「kind 已改、strength 没改」的半截改动落库；HTTP 路径只是
+    # 靠请求结束时 session.close() 的回滚才没暴露这个洞。
     if "kind" in fields:
         kind = (fields.get("kind") or "").strip()
         if not kind:
             raise ValueError("关联必须写明是什么关系")
+    if "strength" in fields:
+        strength = normalize_strength(fields.get("strength"))
+    if "note" in fields:
+        note = fields.get("note") or ""
+    # 全部校验通过后才动对象。
+    if "kind" in fields:
         relation.kind = kind
     if "strength" in fields:
-        relation.strength = normalize_strength(fields.get("strength"))
+        relation.strength = strength
     if "note" in fields:
-        relation.note = fields.get("note") or ""
+        relation.note = note
     session.commit()
     return relation
 

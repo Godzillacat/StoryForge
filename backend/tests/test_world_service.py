@@ -413,3 +413,32 @@ def test_deleting_one_direction_keeps_the_other(session):
 
     remaining = world_service.list_relations(session, project.id)
     assert [r.id for r in remaining] == [reverse.id]
+
+
+def test_failed_update_leaves_the_relation_untouched(session):
+    """校验失败时对象必须原样不动 —— 先验完所有值，再落到对象上。
+
+    若边验边改，`kind` 已经写进内存里的那条，接着 `strength` 校验失败抛错。
+    HTTP 路径靠请求结束时 `session.close()` 的回滚躲过一劫，但服务层是被
+    直接调用的公共面：调用方捕获异常后若继续用这个 session，下一次提交就会
+    把半截改动落库 —— 这里显式补一次 `session.commit()` 来模拟那个调用方。
+    """
+    project = _project(session)
+    a, b = _two_characters(session, project)
+    relation = world_service.create_relation(
+        session, project.id, from_id=a.id, to_id=b.id, kind="挚友", strength=3
+    )
+
+    with pytest.raises(ValueError):
+        world_service.update_relation(session, relation.id, kind="陌路", strength=9)
+
+    # 内存里的对象在失败时也必须保持原样
+    assert relation.kind == "挚友"
+    assert relation.strength == 3
+
+    # 模拟「调用方捕获异常后继续使用同一个 session」：提交一次再换 session 回库读
+    session.commit()
+    with SessionLocal() as fresh:
+        again = fresh.get(EntryRelation, relation.id)
+        assert again.kind == "挚友"
+        assert again.strength == 3
