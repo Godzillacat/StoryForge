@@ -195,6 +195,40 @@ def test_timeline_event_roundtrip(session):
     assert stored.order_index == 0
 
 
+def test_agent_preset_key_unique_index_exists_in_fresh_database(session):
+    """新鲜库由 create_all 建表，唯一索引必须来自 Agent.__table_args__。
+
+    迁移路径上的同一条索引由 migrations v3 建出；这里单独钉住模型侧，
+    否则「迁移路径有测试、新鲜库路径没有」会让两条路径悄悄分叉。
+    """
+    from sqlalchemy import inspect
+    from sqlalchemy.exc import IntegrityError
+
+    indexes = inspect(session.get_bind()).get_indexes("agent")
+    preset = next(i for i in indexes if i["name"] == "uq_agent_preset_key")
+    # SQLite 反射回来的是 1/0，不是 True/False。
+    assert preset["unique"]
+
+    # SQLite 的唯一索引允许多个 NULL：没被预置认领的角色卡不受约束。
+    session.add_all(
+        [
+            Agent(name="甲", task_type="idea_parse"),
+            Agent(name="乙", task_type="idea_parse"),
+        ]
+    )
+    session.commit()
+
+    session.add_all(
+        [
+            Agent(name="架构师", task_type="architecture", preset_key="architect"),
+            Agent(name="另一个架构师", task_type="architecture", preset_key="architect"),
+        ]
+    )
+    with pytest.raises(IntegrityError):
+        session.commit()
+    session.rollback()
+
+
 def test_agent_preset_fields_default_to_none(session):
     agent = Agent(name="某智能体", task_type="idea_parse")
     session.add(agent)

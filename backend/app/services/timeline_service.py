@@ -86,20 +86,35 @@ def update_event(session: Session, event_id: str, **fields) -> TimelineEvent:
     event = session.get(TimelineEvent, event_id)
     if event is None:
         raise ValueError(f"时间线事件不存在：{event_id}")
+    # 先把每个要给的值算完、验完，再落到对象上 —— 任何一项校验失败时，
+    # 对象必须保持原样。边验边改的话，直接调用方捕获异常后若继续提交这个
+    # session，会把「title 已改、参与者没改」的半截改动落库；HTTP 路径只是
+    # 靠请求结束时 session.close() 的回滚才没暴露这个洞。
     if "title" in fields:
-        event.title = _clean_title(fields.get("title"))
+        title = _clean_title(fields.get("title"))
     if "story_time" in fields:
-        event.story_time = (fields.get("story_time") or "").strip()
+        story_time = (fields.get("story_time") or "").strip()
     if "description" in fields:
-        event.description = fields.get("description") or ""
+        description = fields.get("description") or ""
     if "participants" in fields:
-        event.participants_json = _validated_participants(
+        participants = _validated_participants(
             session, event.project_id, fields.get("participants")
         )
     if "location_id" in fields:
-        event.location_id = _validated_location(
+        location_id = _validated_location(
             session, event.project_id, fields.get("location_id")
         )
+    # 全部校验通过后才动对象。
+    if "title" in fields:
+        event.title = title
+    if "story_time" in fields:
+        event.story_time = story_time
+    if "description" in fields:
+        event.description = description
+    if "participants" in fields:
+        event.participants_json = participants
+    if "location_id" in fields:
+        event.location_id = location_id
     session.commit()
     return event
 

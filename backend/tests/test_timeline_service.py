@@ -138,6 +138,36 @@ def test_update_fields_and_clear_location(session):
     assert updated.participants_json == []
 
 
+def test_failed_update_leaves_the_event_untouched(session):
+    """校验失败时对象必须原样不动 —— 先验完所有值，再落到对象上。
+
+    若边验边改，`title` 已经写进内存里的那条，接着参与者校验失败抛错。
+    HTTP 路径靠请求结束时 `session.close()` 的回滚躲过一劫，但服务层是被
+    直接调用的公共面：调用方捕获异常后若继续用这个 session，下一次提交就会
+    把半截改动落库 —— 这里显式补一次 `session.commit()` 来模拟那个调用方。
+    """
+    project = _project(session)
+    place = _entry(session, project, "place", "南滨")
+    event = timeline_service.create_event(
+        session, project.id, title="初遇", story_time="第三年·春"
+    )
+
+    with pytest.raises(ValueError, match="不是人物"):
+        timeline_service.update_event(
+            session, event.id, title="改", participants=[place.id]
+        )
+
+    # 内存里的对象在失败时也必须保持原样
+    assert event.title == "初遇"
+
+    # 模拟「调用方捕获异常后继续使用同一个 session」：提交一次再换 session 回库读
+    session.commit()
+    with SessionLocal() as fresh:
+        again = fresh.get(TimelineEvent, event.id)
+        assert again.title == "初遇"
+        assert again.story_time == "第三年·春"
+
+
 def test_delete_entry_removes_it_from_participants_and_clears_location(session):
     project = _project(session)
     character = _entry(session, project, "character", "陈默")
