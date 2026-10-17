@@ -9,6 +9,8 @@ export interface EntryDraft {
   summary: string
   description: string
   hardness: string
+  /** 类型专属字段（今天只有人物用），键与值都来自接口下发的清单 */
+  fields: Record<string, string>
 }
 
 export const EMPTY_DRAFT: EntryDraft = {
@@ -19,6 +21,30 @@ export const EMPTY_DRAFT: EntryDraft = {
   summary: '',
   description: '',
   hardness: '',
+  fields: {},
+}
+
+/** 从一条已存条目里取类型专属字段 —— World 页与候选行共用，避免两份。 */
+export function characterFieldsOf(entry: {
+  appearance?: string | null
+  personality?: string | null
+  desire?: string | null
+  fear?: string | null
+  arc_type?: string | null
+  abilities?: string | null
+  speech_style?: string | null
+  current_state?: string | null
+}): Record<string, string> {
+  return {
+    appearance: entry.appearance ?? '',
+    personality: entry.personality ?? '',
+    desire: entry.desire ?? '',
+    fear: entry.fear ?? '',
+    arc_type: entry.arc_type ?? '',
+    abilities: entry.abilities ?? '',
+    speech_style: entry.speech_style ?? '',
+    current_state: entry.current_state ?? '',
+  }
 }
 
 /** 界面上别名与标签用顿号分隔 —— 作者一次输入一串比逐个添加省事。 */
@@ -85,6 +111,27 @@ export default function EntryEditor({
           </>
         )}
       </div>
+
+      {/* 类型专属字段由接口下发的清单驱动，前端不硬编 —— 后端加第九项时自动跟上。 */}
+      {draft.type === 'character' &&
+        (types?.character_fields ?? []).map((field) => (
+          <label className="block" key={field.key}>
+            <span className="text-slate-500">{field.label}</span>
+            {field.multiline ? (
+              <textarea
+                className="mt-1 h-20 w-full rounded border border-slate-700 bg-slate-900 p-3 text-sm"
+                value={draft.fields[field.key] ?? ''}
+                onChange={(e) => set({ fields: { ...draft.fields, [field.key]: e.target.value } })}
+              />
+            ) : (
+              <input
+                className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
+                value={draft.fields[field.key] ?? ''}
+                onChange={(e) => set({ fields: { ...draft.fields, [field.key]: e.target.value } })}
+              />
+            )}
+          </label>
+        ))}
 
       <label className="block">
         <span className="text-slate-500">别名与称呼（顿号分隔）</span>

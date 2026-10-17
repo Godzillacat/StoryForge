@@ -11,6 +11,7 @@ import CandidateList, { type CandidateRow } from '../components/CandidateList'
 import RunTrace from '../components/RunTrace'
 import EntryEditor, {
   EMPTY_DRAFT,
+  characterFieldsOf,
   joinList,
   splitList,
   type EntryDraft,
@@ -25,6 +26,7 @@ function draftOf(entry: SettingEntry): EntryDraft {
     summary: entry.summary,
     description: entry.description,
     hardness: entry.hardness ?? '',
+    fields: characterFieldsOf(entry),
   }
 }
 
@@ -108,6 +110,7 @@ export default function World() {
       summary: next.summary,
       description: next.description,
       hardness: next.hardness || null,
+      ...next.fields,
     }
   }
 
@@ -153,6 +156,7 @@ export default function World() {
         summary: next.summary,
         description: next.description,
         hardness: next.hardness || null,
+        ...next.fields,
         source_run_id: lastRun?.id ?? null,
       })
       await refresh()

@@ -300,6 +300,7 @@ export interface EntryTypeOption {
 export interface EntryTypesResponse {
   types: EntryTypeOption[]
   hardness: EntryTypeOption[]
+  character_fields: { key: string; label: string; multiline: boolean }[]
 }
 
 export interface SettingEntry {
@@ -313,6 +314,14 @@ export interface SettingEntry {
   description: string
   hardness: string | null
   source_run_id: string | null
+  appearance: string | null
+  personality: string | null
+  desire: string | null
+  fear: string | null
+  arc_type: string | null
+  abilities: string | null
+  speech_style: string | null
+  current_state: string | null
   created_at: string
 }
 
@@ -340,6 +349,14 @@ export interface SuggestedEntry {
   summary?: string
   description?: string
   hardness?: string | null
+  appearance?: string | null
+  personality?: string | null
+  desire?: string | null
+  fear?: string | null
+  arc_type?: string | null
+  abilities?: string | null
+  speech_style?: string | null
+  current_state?: string | null
 }
 
 export interface SuggestResponse {

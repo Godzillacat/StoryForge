@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { EntryTypesResponse, SettingEntry, SuggestedEntry } from '../api/client'
-import EntryEditor, { joinList, type EntryDraft } from './EntryEditor'
+import EntryEditor, { characterFieldsOf, joinList, type EntryDraft } from './EntryEditor'
 
 function draftOf(candidate: SuggestedEntry): EntryDraft {
   return {
@@ -11,6 +11,7 @@ function draftOf(candidate: SuggestedEntry): EntryDraft {
     summary: candidate.summary ?? '',
     description: candidate.description ?? '',
     hardness: candidate.hardness ?? '',
+    fields: characterFieldsOf(candidate),
   }
 }
 
