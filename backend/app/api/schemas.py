@@ -239,6 +239,36 @@ class SceneWrite(BaseModel):
     scenes: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class PlanChapter(BaseModel):
+    title: str = ""
+    pov: str = ""
+    target_words: int | None = None
+    emotional_tone: str = ""
+    lines: list[str] = Field(default_factory=list)
+    hook: str = ""
+    summary: str = ""
+    conflict_level: int | None = None
+    dialogue_ratio: float | None = None
+    hook_strength: int | None = None
+    status: str = "planned"
+
+
+class PlanVolume(BaseModel):
+    name: str = ""
+    purpose: str = ""
+    summary: str = ""
+    act_seq: int | None = None
+    target_words: int | None = None
+    status: str = "planned"
+    chapters: list[PlanChapter] = Field(default_factory=list)
+
+
+class ChapterPlanWrite(BaseModel):
+    mode: Literal["replace", "append"]
+    source_run_id: str | None = None
+    volumes: list[PlanVolume] = Field(default_factory=list)
+
+
 class ForeshadowCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     note: str = ""

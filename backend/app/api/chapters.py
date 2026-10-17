@@ -3,8 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api._serializers import _run_out
 from app.api.schemas import (
     ChapterCreate,
+    ChapterPlanWrite,
     ChapterUpdate,
     MoveRequest,
     SceneCreate,
@@ -14,7 +16,14 @@ from app.api.schemas import (
     VolumeUpdate,
 )
 from app.db.session import get_session
-from app.services import chapter_service, scene_service
+from app.services import (
+    agent_service,
+    architecture_service,
+    chapter_plan_service,
+    chapter_service,
+    scene_service,
+)
+from app.services.runtime_service import RuntimeService
 
 router = APIRouter(prefix="/api", tags=["chapters"])
 
@@ -237,3 +246,105 @@ def write_scenes(
         raise _bad_request(exc) from exc
     project = chapter_service.get_project_for_chapter(session, chapter_id)
     return {"volumes": chapter_service.build_tree(session, project.id)}
+
+
+def _plan_reason(result, kind: str) -> str | None:
+    if result.structured:
+        return None
+    if result.parse_error:
+        return result.parse_error
+    error = result.error or {}
+    if error.get("kind") == "template":
+        if kind == "chapter":
+            return (
+                "章纲策划需要故事圣经、幕骨架与世界观：先去「架构推荐」采纳一套结构，"
+                "再到「世界观」建至少一条设定。"
+                f"（运行记录里说缺的是：{error.get('message') or '未知变量'}）"
+            )
+        return (
+            "场景策划需要本卷纲要与本章章纲：先选中一章，并确认它的卷章结构与世界观已建好。"
+            f"（运行记录里说缺的是：{error.get('message') or '未知变量'}）"
+        )
+    return error.get("message") or "这次运行没有得到可用的返回"
+
+
+def _acts(session: Session, project_id: str) -> set[int]:
+    _arch, acts = architecture_service.get_architecture(session, project_id)
+    return {act.seq for act in acts}
+
+
+@router.post("/projects/{project_id}/chapters/plan")
+def plan_chapters(project_id: str, session: Session = Depends(get_session)) -> dict:
+    agent = agent_service.find_by_task_type(session, "chapter_plan")
+    if agent is None:
+        raise HTTPException(status_code=500, detail="找不到章纲策划，请重新预置阵容")
+    try:
+        run, result = RuntimeService(session).execute(project_id, agent.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    volumes, warnings = chapter_plan_service.normalize_chapter_plan(
+        result.parsed, _acts(session, project_id)
+    )
+    parsed = result.parsed or {}
+    return {
+        "run": _run_out(run),
+        "volumes": volumes,
+        "open_questions": (parsed.get("open_questions") or []) if result.structured else [],
+        "warnings": warnings,
+        "structured": result.structured,
+        "parse_error": _plan_reason(result, "chapter"),
+        "raw_text": result.raw_output,
+    }
+
+
+@router.post("/chapters/{chapter_id}/scenes/plan")
+def plan_scenes(chapter_id: str, session: Session = Depends(get_session)) -> dict:
+    from app.db.models import Chapter
+
+    chapter = session.get(Chapter, chapter_id)
+    if chapter is None:
+        raise HTTPException(status_code=404, detail=f"章不存在：{chapter_id}")
+    project = chapter_service.get_project_for_chapter(session, chapter_id)
+    agent = agent_service.find_by_task_type(session, "scene_plan")
+    if agent is None:
+        raise HTTPException(status_code=500, detail="找不到场景策划，请重新预置阵容")
+    try:
+        run, result = RuntimeService(session).execute(
+            project.id,
+            agent.id,
+            {"chapter_id": chapter.id, "volume_id": chapter.volume_id},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    scenes, warnings = chapter_plan_service.normalize_scene_plan(
+        result.parsed, session, project.id
+    )
+    parsed = result.parsed or {}
+    return {
+        "run": _run_out(run),
+        "scenes": scenes,
+        "open_questions": (parsed.get("open_questions") or []) if result.structured else [],
+        "warnings": warnings,
+        "structured": result.structured,
+        "parse_error": _plan_reason(result, "scene"),
+        "raw_text": result.raw_output,
+    }
+
+
+@router.put("/projects/{project_id}/chapters")
+def write_chapters(
+    project_id: str, payload: ChapterPlanWrite, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        tree = chapter_plan_service.write_chapter_plan(
+            session,
+            project_id,
+            [volume.model_dump() for volume in payload.volumes],
+            payload.mode,
+            payload.source_run_id,
+        )
+    except ValueError as exc:
+        if "项目不存在" in str(exc):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise _bad_request(exc) from exc
+    return {"volumes": tree}
