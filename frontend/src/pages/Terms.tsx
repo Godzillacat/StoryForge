@@ -39,6 +39,9 @@ export default function Terms() {
     )
   }, [terms, keyword, typeFilter])
 
+  // 空态先看所选类型本身有没有词：有词、只是被关键词筛空，才说「没有匹配」。
+  const typeHasTerms = !typeFilter || terms.some((t) => t.type === typeFilter)
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
@@ -104,10 +107,12 @@ export default function Terms() {
           {visible.length === 0 && (
             <tr>
               <td colSpan={3} className="py-4 text-slate-500">
-                {keyword.trim()
-                  ? `没有匹配「${keyword.trim()}」的写法。`
-                  : typeFilter
-                    ? `「${typeLabel(typeFilter)}」这一类还没有术语。`
+                {!typeHasTerms
+                  ? `「${typeLabel(typeFilter)}」这一类还没有术语。`
+                  : keyword.trim()
+                    ? typeFilter
+                      ? `在「${typeLabel(typeFilter)}」里没有匹配「${keyword.trim()}」的写法。`
+                      : `没有匹配「${keyword.trim()}」的写法。`
                     : '还没有术语。到「世界观」页建几条设定，它们的名字与别名会自动出现在这里。'}
               </td>
             </tr>
