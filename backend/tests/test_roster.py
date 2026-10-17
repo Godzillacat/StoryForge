@@ -191,7 +191,7 @@ def test_worldbuilder_character_fields_are_optional_and_generated_from_the_vocab
 
     for key, (label, _multiline) in CHARACTER_FIELDS.items():
         assert key not in item["required"]
-        assert item["properties"][key]["title"].startswith(label)
+        assert item["properties"][key]["title"] == f"{label}（只有人物才填）"
         assert item["properties"][key]["type"] == "string"
 
 
