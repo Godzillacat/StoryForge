@@ -10,6 +10,7 @@ from app.api import (
     agents,
     architecture,
     chapters,
+    foreshadows,
     ideas,
     projects,
     providers,
@@ -53,5 +54,6 @@ for module in (
     world,
     timeline,
     chapters,
+    foreshadows,
 ):
     app.include_router(module.router)

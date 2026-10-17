@@ -237,3 +237,17 @@ class SceneWrite(BaseModel):
     mode: Literal["replace", "append"]
     source_run_id: str | None = None
     scenes: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ForeshadowCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    note: str = ""
+    status: str = "planned"
+
+
+class ForeshadowUpdate(BaseModel):
+    # plant_scene_id 由场景挂接管理，不开放这里改。
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    note: str | None = None
+    plan_pay_scene_id: str | None = None
+    status: str | None = None
