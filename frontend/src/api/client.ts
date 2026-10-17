@@ -57,6 +57,8 @@ export const api = {
     }),
   rollback: (agentId: string, versionId: string) =>
     request<Agent>(`/api/agents/${agentId}/rollback/${versionId}`, { method: 'POST' }),
+  applyPreset: (agentId: string) =>
+    request<Agent>(`/api/agents/${agentId}/apply-preset`, { method: 'POST' }),
 
   listRuns: (projectId?: string) =>
     request<RunView[]>(`/api/runs${projectId ? `?project_id=${projectId}` : ''}`),
@@ -267,6 +269,13 @@ export interface AgentVersion {
   note: string
 }
 
+export interface AgentPresetStatus {
+  key: string | null
+  update_available: boolean
+  can_restore: boolean
+  up_to_date: boolean
+}
+
 export interface Agent {
   id: string
   name: string
@@ -275,6 +284,7 @@ export interface Agent {
   task_type: string
   enabled: boolean
   builtin: boolean
+  preset: AgentPresetStatus
   current_version: AgentVersion | null
 }
 

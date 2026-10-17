@@ -414,3 +414,21 @@ def test_relation_update_can_clear_strength(client):
 def test_updating_a_missing_relation_is_404(client):
     response = client.patch("/api/relations/nope", json={"kind": "挚友"})
     assert response.status_code == 404
+
+
+def test_updating_an_entry_without_character_fields_keeps_them(client):
+    """前端守卫依赖这条契约：省略八个键 = 不改，而不是清空。
+
+    这正是「把人物改成势力再保存」时八项能保住的原因。
+    """
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    created = client.post(
+        f"/api/projects/{project['id']}/entries",
+        json={"type": "人物", "name": "陈默", "appearance": "瘦高", "desire": "找回记忆"},
+    ).json()
+
+    updated = client.patch(f"/api/entries/{created['id']}", json={"type": "势力"}).json()
+
+    assert updated["type"] == "faction"
+    assert updated["appearance"] == "瘦高"
+    assert updated["desire"] == "找回记忆"

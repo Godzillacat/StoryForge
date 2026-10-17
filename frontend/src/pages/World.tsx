@@ -110,7 +110,9 @@ export default function World() {
       summary: next.summary,
       description: next.description,
       hardness: next.hardness || null,
-      ...next.fields,
+      // 人物八项只对人物类条目有意义；非人物条目若原样带上这些键，
+      // 会把脏值写成空串（或把隐藏草稿里的旧值带过去）。
+      ...(next.type === 'character' ? next.fields : {}),
     }
   }
 
@@ -156,7 +158,7 @@ export default function World() {
         summary: next.summary,
         description: next.description,
         hardness: next.hardness || null,
-        ...next.fields,
+        ...(next.type === 'character' ? next.fields : {}),
         source_run_id: lastRun?.id ?? null,
       })
       await refresh()
