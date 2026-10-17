@@ -1,5 +1,6 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import Architecture from './pages/Architecture'
+import Chapters from './pages/Chapters'
 import Dashboard from './pages/Dashboard'
 import Idea from './pages/Idea'
 import Models from './pages/Models'
@@ -17,6 +18,7 @@ const NAV = [
   { to: '/relations', label: '关系网' },
   { to: '/timeline', label: '时间线' },
   { to: '/terms', label: '术语表' },
+  { to: '/chapters', label: '章节设计' },
   { to: '/studio', label: '智能体工作室' },
   { to: '/models', label: '模型与费用' },
 ]
@@ -52,6 +54,7 @@ export default function App() {
           <Route path="/relations" element={<Relations />} />
           <Route path="/timeline" element={<Timeline />} />
           <Route path="/terms" element={<Terms />} />
+          <Route path="/chapters" element={<Chapters />} />
           <Route path="/studio" element={<Studio />} />
           <Route path="/models" element={<Models />} />
         </Routes>
