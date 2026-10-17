@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react'
-import { api, type ChapterStatusOption, type Project, type VolumeNode } from '../api/client'
+import {
+  api,
+  type ChapterStatusOption,
+  type Foreshadow,
+  type Project,
+  type SettingEntry,
+  type VolumeNode,
+} from '../api/client'
 import ChapterTree, { type Selection } from '../components/chapters/ChapterTree'
 import ChapterEditor from '../components/chapters/ChapterEditor'
 import SceneEditor from '../components/chapters/SceneEditor'
@@ -10,6 +17,8 @@ export default function Chapters() {
   const [projectId, setProjectId] = useState('')
   const [statuses, setStatuses] = useState<ChapterStatusOption[]>([])
   const [volumes, setVolumes] = useState<VolumeNode[]>([])
+  const [entries, setEntries] = useState<SettingEntry[]>([])
+  const [foreshadows, setForeshadows] = useState<Foreshadow[]>([])
   const [selected, setSelected] = useState<Selection | null>(null)
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -28,13 +37,23 @@ export default function Chapters() {
     setSelected(null)
     setNotice('')
     setVolumes([])
+    setEntries([])
+    setForeshadows([])
     api.getChapterTree(projectId).then((data) => setVolumes(data.volumes))
       .catch((error) => setNotice((error as Error).message))
+    api.listEntries(projectId).then(setEntries).catch((error) => setNotice((error as Error).message))
+    api.listForeshadows(projectId).then(setForeshadows).catch((error) => setNotice((error as Error).message))
   }, [projectId])
 
   async function refresh() {
-    const data = await api.getChapterTree(projectId)
-    setVolumes(data.volumes)
+    const [tree, entryList, foreshadowList] = await Promise.all([
+      api.getChapterTree(projectId),
+      api.listEntries(projectId),
+      api.listForeshadows(projectId),
+    ])
+    setVolumes(tree.volumes)
+    setEntries(entryList)
+    setForeshadows(foreshadowList)
   }
 
   async function run(action: () => Promise<void>) {
@@ -167,6 +186,8 @@ export default function Chapters() {
               key={scene.id}
               scene={scene}
               statuses={statuses}
+              entries={entries}
+              foreshadows={foreshadows}
               busy={busy}
               onSave={async (fields) => run(async () => {
                 await api.updateScene(scene.id, fields)

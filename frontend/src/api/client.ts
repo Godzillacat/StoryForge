@@ -196,6 +196,23 @@ export const api = {
       body: JSON.stringify({ direction }),
     }),
 
+  listForeshadows: (projectId: string) =>
+    request<Foreshadow[]>(`/api/projects/${projectId}/foreshadows`),
+  createForeshadow: (projectId: string, body: Record<string, unknown>) =>
+    request<Foreshadow>(`/api/projects/${projectId}/foreshadows`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  updateForeshadow: (foreshadowId: string, body: Record<string, unknown>) =>
+    request<Foreshadow>(`/api/foreshadows/${foreshadowId}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  deleteForeshadow: (foreshadowId: string) =>
+    request<void>(`/api/foreshadows/${foreshadowId}`, { method: 'DELETE' }),
+
   listProviders: () => request<ProviderView[]>('/api/providers'),
   createProvider: (body: Record<string, unknown>) =>
     request<ProviderView>('/api/providers', {
@@ -506,6 +523,17 @@ export interface SceneNode {
   status: string
   source_run_id: string | null
   foreshadows: { plants: { id: string; name: string }[]; pays: { id: string; name: string }[] }
+}
+
+export interface Foreshadow {
+  id: string
+  project_id: string
+  name: string
+  note: string
+  plant_scene_id: string | null
+  plan_pay_scene_id: string | null
+  status: string
+  source_run_id: string | null
 }
 
 export interface ChapterNode {
