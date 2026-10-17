@@ -97,6 +97,12 @@ export const api = {
       headers: JSON_HEADERS,
       body: JSON.stringify(body),
     }),
+  updateRelation: (relationId: string, body: Record<string, unknown>) =>
+    request<EntryRelation>(`/api/relations/${relationId}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
   deleteRelation: (relationId: string) =>
     request<void>(`/api/relations/${relationId}`, { method: 'DELETE' }),
 
@@ -331,6 +337,7 @@ export interface EntryRelation {
   from_id: string
   to_id: string
   kind: string
+  strength: number | null
   note: string
 }
 

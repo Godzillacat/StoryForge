@@ -40,7 +40,7 @@ export default function World() {
   const [draft, setDraft] = useState<EntryDraft>(EMPTY_DRAFT)
   const [creating, setCreating] = useState(false)
   const [notice, setNotice] = useState('')
-  const [relationDraft, setRelationDraft] = useState({ to_id: '', kind: '' })
+  const [relationDraft, setRelationDraft] = useState({ to_id: '', kind: '', strength: '' })
   const [candidates, setCandidates] = useState<CandidateRow[]>([])
   const [openQuestions, setOpenQuestions] = useState<string[]>([])
   const [suggesting, setSuggesting] = useState(false)
@@ -91,7 +91,7 @@ export default function World() {
     setCreating(false)
     setDraft(draftOf(entry, types?.character_fields ?? []))
     setNotice('')
-    setRelationDraft({ to_id: '', kind: '' })
+    setRelationDraft({ to_id: '', kind: '', strength: '' })
   }
 
   function startCreating() {
@@ -220,8 +220,9 @@ export default function World() {
         from_id: selectedId,
         to_id: relationDraft.to_id,
         kind: relationDraft.kind.trim(),
+        strength: relationDraft.strength ? Number(relationDraft.strength) : null,
       })
-      setRelationDraft({ to_id: '', kind: '' })
+      setRelationDraft({ to_id: '', kind: '', strength: '' })
       await refresh()
       setNotice('已建立关联')
     } catch (error) {
@@ -375,6 +376,9 @@ export default function World() {
                 {outgoing.map((relation) => (
                   <li key={relation.id} className="flex items-center gap-3">
                     <span className="text-slate-400">{relation.kind}</span>
+                    <span className="text-xs text-slate-500">
+                      强度 {relation.strength ?? '未评'}
+                    </span>
                     <span>{nameOf(relation.to_id)}</span>
                     <button
                       className="text-xs text-amber-400"
@@ -395,6 +399,18 @@ export default function World() {
                   value={relationDraft.kind}
                   onChange={(e) => setRelationDraft({ ...relationDraft, kind: e.target.value })}
                 />
+                <select
+                  className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
+                  value={relationDraft.strength}
+                  onChange={(e) => setRelationDraft({ ...relationDraft, strength: e.target.value })}
+                >
+                  <option value="">未评</option>
+                  {[1, 2, 3, 4, 5].map((value) => (
+                    <option key={value} value={value}>
+                      强度 {value}
+                    </option>
+                  ))}
+                </select>
                 <select
                   className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
                   value={relationDraft.to_id}
