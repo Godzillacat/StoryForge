@@ -12,6 +12,10 @@ def list_agents(session: Session) -> list[Agent]:
     return list(session.scalars(select(Agent).order_by(Agent.created_at)))
 
 
+def get_agent(session: Session, agent_id: str) -> Agent | None:
+    return session.get(Agent, agent_id)
+
+
 def find_by_task_type(session: Session, task_type: str) -> Agent | None:
     """取该任务类型下第一个启用的智能体。选题型属于业务判断，放服务层。"""
     return session.scalars(
@@ -63,6 +67,9 @@ def create_version(session: Session, agent_id: str, **fields) -> AgentVersion:
         skills_json=fields.get("skills_json", base.skills_json if base else []),
         trigger_mode=fields.get("trigger_mode", base.trigger_mode if base else "manual"),
         note=fields.get("note", ""),
+        # **作者编辑出的版本永远没有指纹。** 若从 base 继承，作者改一版后
+        # 系统会误以为它仍是未改动的预置，下一次更新就会覆盖作者的修改。
+        preset_fingerprint=fields.get("preset_fingerprint"),
     )
     session.add(version)
     session.flush()
