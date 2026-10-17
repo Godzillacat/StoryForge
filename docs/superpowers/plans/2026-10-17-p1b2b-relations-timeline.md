@@ -62,9 +62,8 @@
 
 - `frontend/src/api/client.ts` —— 关系强度、关系更新、时间线、预置状态与 `applyPreset`。
 - `frontend/src/App.tsx` —— 两条导航与路由。
-- `frontend/src/pages/World.tsx` —— 关系强度、人物字段守卫（保存与采纳）。
-- `frontend/src/components/EntryEditor.tsx` —— `characterFieldsOf` 的守卫。
-- `frontend/src/pages/Studio.tsx` —— 预置更新 / 恢复按钮。
+- `frontend/src/pages/World.tsx` —— 关系强度、人物字段守卫（保存与采纳两处载荷）。
+- `frontend/src/pages/Studio.tsx` —— 预置更新 / 恢复按钮。`EntryEditor` 的草稿初始化**不动**。
 
 **文档**
 
@@ -2760,7 +2759,6 @@ git commit -m "feat(frontend): 时间线页面"
 - Modify: `frontend/src/api/client.ts`
 - Modify: `frontend/src/pages/Studio.tsx`
 - Modify: `frontend/src/pages/World.tsx`
-- Modify: `frontend/src/components/EntryEditor.tsx`
 - Test: `backend/tests/test_world_api.py`（补一条守卫契约测试）
 
 **Interfaces:**
@@ -2841,23 +2839,9 @@ export interface AgentPresetStatus {
             )}
 ```
 
-- [ ] **Step 3: 人物字段守卫**
+- [ ] **Step 3: 人物字段守卫（只守载荷，不守草稿）**
 
-`frontend/src/components/EntryEditor.tsx`：
-把 `characterFieldsOf` 改为：
-
-```tsx
-export function characterFieldsOf(
-  entry: object,
-  fields: { key: string }[],
-): Record<string, string> {
-  const source = entry as Record<string, unknown>
-  // 非人物条目不该初始化这八个键：它们会在保存时被当作「作者清空」提交，
-  // 把「人物改成势力」时本应保留的八项静默抹掉。
-  if (source.type !== 'character') return {}
-  return Object.fromEntries(fields.map((field) => [field.key, String(source[field.key] ?? '')]))
-}
-```
+**不要改 `EntryEditor.characterFieldsOf`。** 草稿必须继续从条目里载入隐藏的八项，否则「人物 → 势力 → 人物」改回来时字段会变空，保存就把它们清掉。守卫只放在提交载荷处。
 
 `frontend/src/pages/World.tsx`：
 - `payloadOf` 的 `...next.fields` 改为：
@@ -2871,6 +2855,8 @@ export function characterFieldsOf(
 ```tsx
         ...(next.type === 'character' ? next.fields : {}),
 ```
+
+- `characterFieldsOf` 保持原样。
 
 - [ ] **Step 4: 补后端契约测试**
 
@@ -2912,7 +2898,7 @@ Expected: PASS。
 - [ ] **Step 7: 提交**
 
 ```bash
-git add frontend/src/api/client.ts frontend/src/pages/Studio.tsx frontend/src/pages/World.tsx frontend/src/components/EntryEditor.tsx backend/tests/test_world_api.py
+git add frontend/src/api/client.ts frontend/src/pages/Studio.tsx frontend/src/pages/World.tsx backend/tests/test_world_api.py
 git commit -m "feat(frontend): 预置更新入口与人物字段守卫"
 ```
 
