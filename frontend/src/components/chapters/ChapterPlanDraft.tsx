@@ -106,10 +106,12 @@ export default function ChapterPlanDraft({
                        onChange={(e) => updateChapter(vIndex, cIndex, {
                          conflict_level: e.target.value.trim() ? Number(e.target.value) : null,
                        })} />
+                {/* 界面按百分比编辑；草稿内部与写入载荷仍是 0–1，和章编辑器一致。 */}
                 <input className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                       placeholder="对话占比" value={chapter.dialogue_ratio ?? ''}
+                       placeholder="对话占比（%）"
+                       value={chapter.dialogue_ratio == null ? '' : String(Math.round(chapter.dialogue_ratio * 100))}
                        onChange={(e) => updateChapter(vIndex, cIndex, {
-                         dialogue_ratio: e.target.value.trim() ? Number(e.target.value) : null,
+                         dialogue_ratio: e.target.value.trim() ? Number(e.target.value) / 100 : null,
                        })} />
                 <input className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1"
                        placeholder="钩子强度" value={chapter.hook_strength ?? ''}

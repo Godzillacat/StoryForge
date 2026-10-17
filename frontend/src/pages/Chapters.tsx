@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   api,
+  type ChapterNode,
   type ChapterPlanResponse,
   type ChapterStatusOption,
   type Foreshadow,
@@ -33,7 +34,13 @@ export default function Chapters() {
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [chapterPlan, setChapterPlan] = useState<ChapterPlanResponse | null>(null)
-  const [scenePlan, setScenePlan] = useState<ScenePlanResponse | null>(null)
+  // 场景草稿必须记住它是为哪一章生成的：作者可能生成后切换选中的章再写入，
+  // 此时绝不能把这一章的草稿写进另一章。
+  const [scenePlan, setScenePlan] = useState<{
+    data: ScenePlanResponse
+    chapterId: string
+    chapterTitle: string
+  } | null>(null)
   const [planning, setPlanning] = useState(false)
   const runToken = useRef(0)
   // 每次条目请求自增；迟到的旧项目响应凭 token 失效，不能覆盖当前项目的数据。
@@ -134,14 +141,18 @@ export default function Chapters() {
     }
   }
 
-  async function runScenePlan(chapterId: string) {
+  async function runScenePlan(chapter: ChapterNode) {
     setPlanning(true)
     setNotice('')
     const token = runToken.current
     try {
-      const result = await api.planScenes(chapterId)
+      const result = await api.planScenes(chapter.id)
       if (token !== runToken.current) return
-      setScenePlan(result)
+      setScenePlan({
+        data: result,
+        chapterId: chapter.id,
+        chapterTitle: `第${chapter.seq + 1}章 ${chapter.title}`,
+      })
       if (!result.structured) setNotice(result.parse_error ?? '模型没有按契约返回')
     } catch (error) {
       if (token === runToken.current) setNotice((error as Error).message)
@@ -171,13 +182,20 @@ export default function Chapters() {
   }
 
   async function writeScenePlan(scenes: PlanScene[], mode: 'replace' | 'append') {
-    if (!scenePlan || !activeChapter) return
+    if (!scenePlan) return
+    const { chapterId, chapterTitle } = scenePlan
+    // 草稿生成后章可能已被替换或删除。此时保留草稿并说明原因，
+    // 绝不退回到「当前选中的章」——那会把场景写进另一章。
+    if (!volumes.flatMap((v) => v.chapters).some((c) => c.id === chapterId)) {
+      setNotice(`「${chapterTitle}」已不在当前结构里（可能已被替换或删除），草稿仍保留。请重新运行场景策划。`)
+      return
+    }
     setPlanning(true)
     setNotice('')
     try {
-      const result = await api.writeScenes(activeChapter.id, {
+      const result = await api.writeScenes(chapterId, {
         mode,
-        source_run_id: scenePlan.run.id,
+        source_run_id: scenePlan.data.run.id,
         scenes,
       })
       setVolumes(result.volumes)
@@ -273,15 +291,16 @@ export default function Chapters() {
       {scenePlan && (
         <>
           <ScenePlanDraft
-            key={scenePlan.run.id}
-            scenes={scenePlan.scenes}
-            warnings={scenePlan.warnings}
-            openQuestions={scenePlan.open_questions}
+            key={scenePlan.data.run.id}
+            chapterTitle={scenePlan.chapterTitle}
+            scenes={scenePlan.data.scenes}
+            warnings={scenePlan.data.warnings}
+            openQuestions={scenePlan.data.open_questions}
             busy={planning}
             onWrite={writeScenePlan}
             onClose={() => setScenePlan(null)}
           />
-          <RunTrace run={scenePlan.run} />
+          <RunTrace run={scenePlan.data.run} />
         </>
       )}
 
@@ -302,7 +321,7 @@ export default function Chapters() {
               <button
                 className="rounded border border-emerald-700 px-3 py-1.5 text-sm text-emerald-300 disabled:opacity-50"
                 disabled={planning}
-                onClick={() => runScenePlan(activeChapter.id)}
+                onClick={() => runScenePlan(activeChapter)}
               >
                 AI 写场景卡
               </button>

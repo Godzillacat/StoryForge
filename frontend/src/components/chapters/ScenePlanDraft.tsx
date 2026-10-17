@@ -7,6 +7,7 @@ const EMPTY_SCENE: PlanScene = {
 }
 
 export default function ScenePlanDraft({
+  chapterTitle,
   scenes: initial,
   warnings,
   openQuestions,
@@ -14,6 +15,7 @@ export default function ScenePlanDraft({
   onWrite,
   onClose,
 }: {
+  chapterTitle: string
   scenes: PlanScene[]
   warnings: string[]
   openQuestions: string[]
@@ -39,7 +41,7 @@ export default function ScenePlanDraft({
   return (
     <section className="space-y-3 rounded border border-emerald-800 bg-slate-950/60 p-4 text-sm">
       <div className="flex flex-wrap items-center gap-3">
-        <h3 className="font-medium text-emerald-300">场景草稿（逐项可改）</h3>
+        <h3 className="font-medium text-emerald-300">场景草稿 · {chapterTitle}（逐项可改）</h3>
         <button className="text-xs text-emerald-400"
                 onClick={() => setScenes([...scenes, { ...EMPTY_SCENE }])}>+场景</button>
         <button className="text-xs text-slate-400" onClick={onClose}>收起</button>
