@@ -36,7 +36,7 @@ export default function SceneEditor({
       maxWords: scene.target_words_max == null ? '' : String(scene.target_words_max),
       status: scene.status,
     })
-  }, [scene])
+  }, [scene.id])
 
   const set = (patch: Partial<typeof draft>) => setDraft({ ...draft, ...patch })
 

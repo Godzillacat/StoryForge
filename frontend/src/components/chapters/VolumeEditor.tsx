@@ -32,7 +32,7 @@ export default function VolumeEditor({
       targetWords: volume.target_words == null ? '' : String(volume.target_words),
       status: volume.status,
     })
-  }, [volume.id, volume.name, volume.purpose, volume.summary, volume.act_seq, volume.target_words, volume.status])
+  }, [volume.id])
 
   const set = (patch: Partial<typeof draft>) => setDraft({ ...draft, ...patch })
 

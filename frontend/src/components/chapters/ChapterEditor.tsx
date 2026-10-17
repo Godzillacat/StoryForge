@@ -43,7 +43,7 @@ export default function ChapterEditor({
       hookStrength: chapter.hook_strength == null ? '' : String(chapter.hook_strength),
       status: chapter.status,
     })
-  }, [chapter])
+  }, [chapter.id])
 
   const set = (patch: Partial<typeof draft>) => setDraft({ ...draft, ...patch })
   const levels = ['', '1', '2', '3', '4', '5']

@@ -136,6 +136,7 @@ export default function Chapters() {
           )}
           {volume && (
             <VolumeEditor
+              key={volume.id}
               volume={volume}
               statuses={statuses}
               busy={busy}
@@ -149,6 +150,7 @@ export default function Chapters() {
           )}
           {chapter && (
             <ChapterEditor
+              key={chapter.id}
               chapter={chapter}
               statuses={statuses}
               busy={busy}
@@ -162,6 +164,7 @@ export default function Chapters() {
           )}
           {scene && (
             <SceneEditor
+              key={scene.id}
               scene={scene}
               statuses={statuses}
               busy={busy}
