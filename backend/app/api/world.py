@@ -125,14 +125,9 @@ def _entry_out(entry) -> dict:
         "description": entry.description,
         "hardness": entry.hardness,
         "source_run_id": entry.source_run_id,
-        "appearance": entry.appearance,
-        "personality": entry.personality,
-        "desire": entry.desire,
-        "fear": entry.fear,
-        "arc_type": entry.arc_type,
-        "abilities": entry.abilities,
-        "speech_style": entry.speech_style,
-        "current_state": entry.current_state,
+        # 人物八项从唯一真相派生（同 world_service 的 _FIELD_TO_COLUMN）：
+        # 手抄第二份清单的话，加第九项会在这里静默漏掉。
+        **{key: getattr(entry, key) for key in CHARACTER_FIELDS},
         "created_at": entry.created_at.isoformat(),
     }
 

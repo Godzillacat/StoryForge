@@ -317,3 +317,24 @@ def test_character_fields_round_trip_over_http(client):
 
     listed = client.get(f"/api/projects/{project['id']}/entries").json()
     assert listed[0]["appearance"] == "瘦高"
+
+
+def test_entry_serialization_covers_the_character_field_list(client):
+    """序列化输出必须覆盖 CHARACTER_FIELDS 的每一个键。
+
+    与 Task 1 那条「接口下发覆盖字段清单」同一路数：字段清单是唯一真相，
+    输出从它派生（`_entry_out` 里的 `**{key: getattr(entry, key) ...}`）。
+    将来给清单加第九项、却没有对应的列时，这里当场炸（AttributeError →
+    500），而不是安静地少输出一个键 —— 那时作者会发现字段填了却存不下来。
+    """
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    created = client.post(
+        f"/api/projects/{project['id']}/entries",
+        json={"type": "人物", "name": "陈默", "appearance": "瘦高"},
+    ).json()
+
+    assert set(CHARACTER_FIELDS) <= set(created)
+
+    # 列表路径单独走一遍：它读的是重新从库里取的对象，不是刚写的那个
+    listed = client.get(f"/api/projects/{project['id']}/entries").json()
+    assert set(CHARACTER_FIELDS) <= set(listed[0])
