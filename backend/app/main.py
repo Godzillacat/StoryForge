@@ -9,6 +9,7 @@ from app import config
 from app.api import (
     agents,
     architecture,
+    chapters,
     ideas,
     projects,
     providers,
@@ -51,5 +52,6 @@ for module in (
     slots,
     world,
     timeline,
+    chapters,
 ):
     app.include_router(module.router)

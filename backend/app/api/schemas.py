@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -151,3 +151,53 @@ class RelationUpdate(BaseModel):
     kind: str | None = Field(default=None, min_length=1, max_length=60)
     strength: int | None = Field(default=None, ge=1, le=5)
     note: str | None = None
+
+
+class VolumeCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    purpose: str = ""
+    summary: str = ""
+    act_seq: int | None = None
+    target_words: int | None = None
+    status: str = "planned"
+
+
+class VolumeUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    purpose: str | None = None
+    summary: str | None = None
+    act_seq: int | None = None
+    target_words: int | None = None
+    status: str | None = None
+
+
+class ChapterCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    pov: str = ""
+    target_words: int | None = None
+    emotional_tone: str = ""
+    lines: list[str] = Field(default_factory=list)
+    hook: str = ""
+    summary: str = ""
+    conflict_level: int | None = None
+    dialogue_ratio: float | None = None
+    hook_strength: int | None = None
+    status: str = "planned"
+
+
+class ChapterUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    pov: str | None = None
+    target_words: int | None = None
+    emotional_tone: str | None = None
+    lines: list[str] | None = None
+    hook: str | None = None
+    summary: str | None = None
+    conflict_level: int | None = None
+    dialogue_ratio: float | None = None
+    hook_strength: int | None = None
+    status: str | None = None
+
+
+class MoveRequest(BaseModel):
+    direction: Literal["up", "down"]
