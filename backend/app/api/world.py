@@ -9,6 +9,7 @@ from app.db.session import get_session
 from app.services import agent_service, world_service
 from app.services.runtime_service import RuntimeService
 from app.world_types import (
+    CHARACTER_FIELDS,
     ENTRY_TYPES,
     HARDNESS_LEVELS,
     normalize_hardness,
@@ -25,6 +26,10 @@ def list_entry_types() -> dict:
     return {
         "types": [{"key": k, "label": v} for k, v in ENTRY_TYPES.items()],
         "hardness": [{"key": k, "label": v} for k, v in HARDNESS_LEVELS.items()],
+        "character_fields": [
+            {"key": key, "label": label, "multiline": multiline}
+            for key, (label, multiline) in CHARACTER_FIELDS.items()
+        ],
     }
 
 

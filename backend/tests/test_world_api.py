@@ -1,6 +1,6 @@
 import json
 
-from app.world_types import ENTRY_TYPES, HARDNESS_LEVELS
+from app.world_types import CHARACTER_FIELDS, ENTRY_TYPES, HARDNESS_LEVELS
 
 
 def test_entry_types_endpoint_is_the_frontends_only_source(client):
@@ -10,6 +10,17 @@ def test_entry_types_endpoint_is_the_frontends_only_source(client):
     assert {h["key"]: h["label"] for h in payload["hardness"]} == HARDNESS_LEVELS
     # 顺序稳定，前端不必再排一次
     assert [t["key"] for t in payload["types"]] == list(ENTRY_TYPES)
+
+
+def test_entry_types_lists_character_fields(client):
+    payload = client.get("/api/entry-types").json()
+
+    assert [f["key"] for f in payload["character_fields"]] == list(CHARACTER_FIELDS)
+    assert payload["character_fields"][0] == {
+        "key": "appearance",
+        "label": "外貌",
+        "multiline": True,
+    }
 
 
 def test_entry_crud_over_http(client):
