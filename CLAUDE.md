@@ -504,7 +504,7 @@ pnpm build                                # 产物给后端同源托管
 
 **2026-10-18 · P1c-1 章节结构（实施完成并通过真实模型复验）**
 
-设计 `docs/superpowers/specs/2026-10-18-p1c1-chapter-design.md`；实施计划 `docs/superpowers/plans/2026-10-18-p1c1-chapter-design.md`。在隔离 worktree（`worktree-p1c1-chapter-design`）内执行，**10 个任务**，master 未动。做法同前几个切片：每个任务一个实施者 + 一个独立审查，任务间由控制方裁定；真实模型复验、走查清单与本文件同步由 **Task 10 实施者执行、控制方复核**。
+设计 `docs/superpowers/specs/2026-10-18-p1c1-chapter-design.md`；实施计划 `docs/superpowers/plans/2026-10-18-p1c1-chapter-design.md`。在隔离 worktree（`worktree-p1c1-chapter-design`）内执行，**10 个任务**；实施期间 master 未动，2026-10-18 以合并提交 `73edbaf` 收口。做法同前几个切片：每个任务一个实施者 + 一个独立审查，任务间由控制方裁定；真实模型复验、走查清单与本文件同步由 **Task 10 实施者执行、控制方复核**。
 
 **为什么把 P1c 拆成两段。** P1c 原本装「章节结构 + 节奏曲线 + 伏笔账本 + pywebview 外壳 + 打包」。前两项要动模型（章纲策划、场景策划），后两项是纯视图（节奏曲线、伏笔账本），壳与打包是发行事项。把「依赖模型的」先切出来，真实模型验证点就不会被视图与打包推到更晚 —— 沿用 P1a「切片越大真实验证越晚」的教训。pywebview 外壳与打包改归 **P5**。
 
