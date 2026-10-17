@@ -107,6 +107,28 @@ export const api = {
     request<void>(`/api/relations/${relationId}`, { method: 'DELETE' }),
 
   listTerms: (projectId: string) => request<TermRow[]>(`/api/projects/${projectId}/terms`),
+  listTimeline: (projectId: string) =>
+    request<TimelineEvent[]>(`/api/projects/${projectId}/timeline`),
+  createTimelineEvent: (projectId: string, body: Record<string, unknown>) =>
+    request<TimelineEvent>(`/api/projects/${projectId}/timeline`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  updateTimelineEvent: (eventId: string, body: Record<string, unknown>) =>
+    request<TimelineEvent>(`/api/timeline/${eventId}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  moveTimelineEvent: (eventId: string, direction: 'up' | 'down') =>
+    request<TimelineEvent>(`/api/timeline/${eventId}/move`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ direction }),
+    }),
+  deleteTimelineEvent: (eventId: string) =>
+    request<void>(`/api/timeline/${eventId}`, { method: 'DELETE' }),
   suggestEntries: (projectId: string) =>
     request<SuggestResponse>(`/api/projects/${projectId}/entries/suggest`, { method: 'POST' }),
 
@@ -347,6 +369,18 @@ export interface TermRow {
   type: string
   form: string
   is_primary: boolean
+}
+
+export interface TimelineEvent {
+  id: string
+  project_id: string
+  title: string
+  story_time: string
+  description: string
+  participants: string[]
+  location_id: string | null
+  order_index: number
+  created_at: string
 }
 
 export interface SuggestedEntry {
