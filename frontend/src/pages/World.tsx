@@ -17,7 +17,7 @@ import EntryEditor, {
   type EntryDraft,
 } from '../components/EntryEditor'
 
-function draftOf(entry: SettingEntry): EntryDraft {
+function draftOf(entry: SettingEntry, characterFields: { key: string }[]): EntryDraft {
   return {
     type: entry.type,
     name: entry.name,
@@ -26,7 +26,7 @@ function draftOf(entry: SettingEntry): EntryDraft {
     summary: entry.summary,
     description: entry.description,
     hardness: entry.hardness ?? '',
-    fields: characterFieldsOf(entry),
+    fields: characterFieldsOf(entry, characterFields),
   }
 }
 
@@ -89,7 +89,7 @@ export default function World() {
   function selectEntry(entry: SettingEntry) {
     setSelectedId(entry.id)
     setCreating(false)
-    setDraft(draftOf(entry))
+    setDraft(draftOf(entry, types?.character_fields ?? []))
     setNotice('')
     setRelationDraft({ to_id: '', kind: '' })
   }

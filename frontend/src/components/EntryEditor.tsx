@@ -24,27 +24,16 @@ export const EMPTY_DRAFT: EntryDraft = {
   fields: {},
 }
 
-/** 从一条已存条目里取类型专属字段 —— World 页与候选行共用，避免两份。 */
-export function characterFieldsOf(entry: {
-  appearance?: string | null
-  personality?: string | null
-  desire?: string | null
-  fear?: string | null
-  arc_type?: string | null
-  abilities?: string | null
-  speech_style?: string | null
-  current_state?: string | null
-}): Record<string, string> {
-  return {
-    appearance: entry.appearance ?? '',
-    personality: entry.personality ?? '',
-    desire: entry.desire ?? '',
-    fear: entry.fear ?? '',
-    arc_type: entry.arc_type ?? '',
-    abilities: entry.abilities ?? '',
-    speech_style: entry.speech_style ?? '',
-    current_state: entry.current_state ?? '',
-  }
+/** 从一条已存条目里取类型专属字段 —— World 页与候选行共用，避免两份。
+ *
+ *  键由接口下发的清单决定，不在这里硬编：后端加第九项时，已有条目也能
+ *  带上它的已存值；硬编的话那一项会显示为空，作者编辑不到且没人报错。 */
+export function characterFieldsOf(
+  entry: object,
+  fields: { key: string }[],
+): Record<string, string> {
+  const source = entry as Record<string, unknown>
+  return Object.fromEntries(fields.map((field) => [field.key, String(source[field.key] ?? '')]))
 }
 
 /** 界面上别名与标签用顿号分隔 —— 作者一次输入一串比逐个添加省事。 */
