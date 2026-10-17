@@ -6,7 +6,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import config
-from app.api import agents, architecture, ideas, projects, providers, runs, slots, tools, world
+from app.api import (
+    agents,
+    architecture,
+    ideas,
+    projects,
+    providers,
+    runs,
+    slots,
+    timeline,
+    tools,
+    world,
+)
 from app.db.session import SessionLocal, init_db
 from app.services.seed_service import seed_agents, seed_tools
 
@@ -29,5 +40,16 @@ def health() -> dict:
     return {"status": "ok", "data_dir": str(config.data_dir())}
 
 
-for module in (projects, ideas, architecture, agents, runs, tools, providers, slots, world):
+for module in (
+    projects,
+    ideas,
+    architecture,
+    agents,
+    runs,
+    tools,
+    providers,
+    slots,
+    world,
+    timeline,
+):
     app.include_router(module.router)

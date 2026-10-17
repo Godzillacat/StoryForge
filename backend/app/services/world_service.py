@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import EntryRelation, SettingEntry
+from app.db.models import EntryRelation, SettingEntry, TimelineEvent
 from app.world_types import CHARACTER_FIELDS, normalize_hardness, normalize_type
 
 # 服务层说领域名（aliases / tags），存储层的 *_json 后缀不往上传 ——
@@ -97,6 +97,16 @@ def delete_entry(session: Session, entry_id: str) -> None:
     entry = session.get(SettingEntry, entry_id)
     if entry is None:
         raise ValueError(f"设定条目不存在：{entry_id}")
+    # 时间线的参与者是 JSON 列表，外键管不到 —— 显式剔除。JSON 列必须
+    # **赋新列表**再提交，原地 mutate 不会被 SQLAlchemy 跟踪。
+    # 地点由 FK 的 ON DELETE SET NULL 处理。
+    events = session.scalars(
+        select(TimelineEvent).where(TimelineEvent.project_id == entry.project_id)
+    ).all()
+    for event in events:
+        participants = list(event.participants_json or [])
+        if entry_id in participants:
+            event.participants_json = [pid for pid in participants if pid != entry_id]
     session.delete(entry)
     session.commit()
 
