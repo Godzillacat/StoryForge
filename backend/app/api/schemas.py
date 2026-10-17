@@ -201,3 +201,39 @@ class ChapterUpdate(BaseModel):
 
 class MoveRequest(BaseModel):
     direction: Literal["up", "down"]
+
+
+class SceneCreate(BaseModel):
+    goal: str = ""
+    conflict: str = ""
+    turn: str = ""
+    characters: list[str] = Field(default_factory=list)  # 名称
+    location: str | None = None  # 名称
+    story_time: str = ""
+    pov: str = ""
+    target_words_min: int | None = None
+    target_words_max: int | None = None
+    foreshadow_plants: list[str] = Field(default_factory=list)
+    foreshadow_pays: list[str] = Field(default_factory=list)
+    status: str = "planned"
+
+
+class SceneUpdate(BaseModel):
+    goal: str | None = None
+    conflict: str | None = None
+    turn: str | None = None
+    characters: list[str] | None = None
+    location: str | None = None
+    story_time: str | None = None
+    pov: str | None = None
+    target_words_min: int | None = None
+    target_words_max: int | None = None
+    foreshadow_plants: list[str] | None = None
+    foreshadow_pays: list[str] | None = None
+    status: str | None = None
+
+
+class SceneWrite(BaseModel):
+    mode: Literal["replace", "append"]
+    source_run_id: str | None = None
+    scenes: list[dict[str, Any]] = Field(default_factory=list)

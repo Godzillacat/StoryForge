@@ -3,9 +3,18 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.schemas import ChapterCreate, ChapterUpdate, MoveRequest, VolumeCreate, VolumeUpdate
+from app.api.schemas import (
+    ChapterCreate,
+    ChapterUpdate,
+    MoveRequest,
+    SceneCreate,
+    SceneUpdate,
+    SceneWrite,
+    VolumeCreate,
+    VolumeUpdate,
+)
 from app.db.session import get_session
-from app.services import chapter_service
+from app.services import chapter_service, scene_service
 
 router = APIRouter(prefix="/api", tags=["chapters"])
 
@@ -49,6 +58,15 @@ def _bad_request(exc: ValueError) -> HTTPException:
     return HTTPException(status_code=400, detail=str(exc))
 
 
+# 场景路由的 404 判定必须看消息前缀，不能用「不存在」子串：作者要输入的是
+# 人物 / 地点名，名字本身就可能叫「不存在」，而名称解析失败是 400。
+_MISSING_PREFIXES = ("章不存在", "场景不存在", "卷不存在", "项目不存在")
+
+
+def _is_missing(exc: ValueError) -> bool:
+    return str(exc).startswith(_MISSING_PREFIXES)
+
+
 @router.get("/chapter-types")
 def list_chapter_types() -> dict:
     """状态词表的唯一真相在 app/chapter_types.py；前端不硬编第二份。"""
@@ -86,7 +104,7 @@ def update_volume(
             session, volume_id, **payload.model_dump(exclude_unset=True)
         )
     except ValueError as exc:
-        if "不存在" in str(exc):
+        if _is_missing(exc):
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         raise _bad_request(exc) from exc
     return _volume_out(volume)
@@ -118,7 +136,7 @@ def create_chapter(
     try:
         chapter = chapter_service.create_chapter(session, volume_id, **payload.model_dump())
     except ValueError as exc:
-        if "不存在" in str(exc):
+        if _is_missing(exc):
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         raise _bad_request(exc) from exc
     return _chapter_out(chapter)
@@ -133,7 +151,7 @@ def update_chapter(
             session, chapter_id, **payload.model_dump(exclude_unset=True)
         )
     except ValueError as exc:
-        if "不存在" in str(exc):
+        if _is_missing(exc):
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         raise _bad_request(exc) from exc
     return _chapter_out(chapter)
@@ -156,3 +174,66 @@ def move_chapter(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _chapter_out(chapter)
+
+
+@router.post("/chapters/{chapter_id}/scenes", status_code=201)
+def create_scene(
+    chapter_id: str, payload: SceneCreate, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        scene = scene_service.create_scene(session, chapter_id, **payload.model_dump())
+    except ValueError as exc:
+        if _is_missing(exc):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise _bad_request(exc) from exc
+    return scene_service.scene_payload(session, scene)
+
+
+@router.patch("/scenes/{scene_id}")
+def update_scene(
+    scene_id: str, payload: SceneUpdate, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        scene = scene_service.update_scene(
+            session, scene_id, **payload.model_dump(exclude_unset=True)
+        )
+    except ValueError as exc:
+        if _is_missing(exc):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise _bad_request(exc) from exc
+    return scene_service.scene_payload(session, scene)
+
+
+@router.delete("/scenes/{scene_id}", status_code=204)
+def delete_scene(scene_id: str, session: Session = Depends(get_session)) -> None:
+    try:
+        scene_service.delete_scene(session, scene_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/scenes/{scene_id}/move")
+def move_scene(
+    scene_id: str, payload: MoveRequest, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        scene = scene_service.move_scene(session, scene_id, payload.direction)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return scene_service.scene_payload(session, scene)
+
+
+@router.put("/chapters/{chapter_id}/scenes")
+def write_scenes(
+    chapter_id: str, payload: SceneWrite, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        scene_service.write_scenes(
+            session, chapter_id, payload.scenes, payload.mode, payload.source_run_id
+        )
+    except ValueError as exc:
+        if _is_missing(exc):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise _bad_request(exc) from exc
+    project = chapter_service.get_project_for_chapter(session, chapter_id)
+    return {"volumes": chapter_service.build_tree(session, project.id)}
