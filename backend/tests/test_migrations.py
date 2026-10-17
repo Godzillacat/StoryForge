@@ -1,5 +1,4 @@
 from app.db import migrations
-from app.world_types import CHARACTER_FIELDS
 
 
 def test_the_first_real_migration_adds_the_character_columns():
@@ -10,14 +9,34 @@ def test_the_first_real_migration_adds_the_character_columns():
     assert [m.version for m in migrations.MIGRATIONS] == [1]
 
     step = migrations.MIGRATIONS[0]
-    assert set(CHARACTER_FIELDS) == {
-        statement.split("ADD COLUMN ")[1].split()[0] for statement in step.statements
-    }
     assert all(
         statement.startswith("ALTER TABLE setting_entry ADD COLUMN ")
         for statement in step.statements
     )
     assert migrations.latest_version() == 1
+
+
+def test_the_first_real_migration_is_frozen_history():
+    """v1 的列写死、不从 CHARACTER_FIELDS 派生 —— 迁移是历史记录。
+
+    这条断言把冻结的内容钉成字面量：日后要加人物字段，必须**新开一条迁移**，
+    而不是改这一条、也不是改那份常量。
+
+    刻意**不**与 CHARACTER_FIELDS 对拍：那是对拍一个可变常量，两边同源、一起变，
+    等于同义反复 —— 恰恰是它要防的形状（防的就是「常量长了一项、迁移跟着长」）。
+    列与常量的关系改由 test_migration_runner 的 `set(CHARACTER_FIELDS) <= columns`
+    在**真实迁移后的库上**验，那里才是这条关系真正成立、也真会分叉的地方。"""
+    step = migrations.MIGRATIONS[0]
+    assert step.statements == (
+        "ALTER TABLE setting_entry ADD COLUMN appearance TEXT",
+        "ALTER TABLE setting_entry ADD COLUMN personality TEXT",
+        "ALTER TABLE setting_entry ADD COLUMN desire TEXT",
+        "ALTER TABLE setting_entry ADD COLUMN fear TEXT",
+        "ALTER TABLE setting_entry ADD COLUMN arc_type TEXT",
+        "ALTER TABLE setting_entry ADD COLUMN abilities TEXT",
+        "ALTER TABLE setting_entry ADD COLUMN speech_style TEXT",
+        "ALTER TABLE setting_entry ADD COLUMN current_state TEXT",
+    )
 
 
 def test_schema_migration_baseline_still_zero():

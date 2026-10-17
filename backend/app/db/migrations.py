@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.world_types import CHARACTER_FIELDS
-
 
 @dataclass(frozen=True)
 class Migration:
@@ -22,12 +20,25 @@ class Migration:
 
 # 第一条真实迁移：给 setting_entry 加人物八列。
 # 只加可空列 —— 原地操作，作者的存量数据不受影响。
+#
+# **八条语句写死成字面量，不从 CHARACTER_FIELDS 派生。** 一份迁移是**历史记录**：
+# 它一旦在某个库里跑过，那条路径就再也不会重来（作者的库此刻已盖到 v1）。若从
+# 可变常量派生，日后往 CHARACTER_FIELDS 添一项，已迁移的库永远拿不到那一列、
+# 新装的库却有 —— 静默分叉，而且测试全跑在新库上、会全绿。新增人物字段的正确
+# 做法是**新开一条迁移**，而不是改这一条、也不是改那份常量。
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
         note="setting_entry 加人物八列",
-        statements=tuple(
-            f"ALTER TABLE setting_entry ADD COLUMN {key} TEXT" for key in CHARACTER_FIELDS
+        statements=(
+            "ALTER TABLE setting_entry ADD COLUMN appearance TEXT",
+            "ALTER TABLE setting_entry ADD COLUMN personality TEXT",
+            "ALTER TABLE setting_entry ADD COLUMN desire TEXT",
+            "ALTER TABLE setting_entry ADD COLUMN fear TEXT",
+            "ALTER TABLE setting_entry ADD COLUMN arc_type TEXT",
+            "ALTER TABLE setting_entry ADD COLUMN abilities TEXT",
+            "ALTER TABLE setting_entry ADD COLUMN speech_style TEXT",
+            "ALTER TABLE setting_entry ADD COLUMN current_state TEXT",
         ),
     ),
 )
