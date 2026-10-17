@@ -1,6 +1,6 @@
 import json
 
-from app.world_types import ENTRY_TYPES, HARDNESS_LEVELS
+from app.world_types import CHARACTER_FIELDS, ENTRY_TYPES, HARDNESS_LEVELS
 
 
 def test_entry_types_endpoint_is_the_frontends_only_source(client):
@@ -10,6 +10,17 @@ def test_entry_types_endpoint_is_the_frontends_only_source(client):
     assert {h["key"]: h["label"] for h in payload["hardness"]} == HARDNESS_LEVELS
     # 顺序稳定，前端不必再排一次
     assert [t["key"] for t in payload["types"]] == list(ENTRY_TYPES)
+
+
+def test_entry_types_lists_character_fields(client):
+    payload = client.get("/api/entry-types").json()
+
+    assert [f["key"] for f in payload["character_fields"]] == list(CHARACTER_FIELDS)
+    assert payload["character_fields"][0] == {
+        "key": "appearance",
+        "label": "外貌",
+        "multiline": True,
+    }
 
 
 def test_entry_crud_over_http(client):
@@ -289,3 +300,41 @@ def test_null_open_questions_comes_back_as_an_empty_list(client, monkeypatch):
     assert body["structured"] is True
     assert body["open_questions"] == []
     assert len(body["entries"]) == 3
+
+
+def test_character_fields_round_trip_over_http(client):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+
+    created = client.post(
+        f"/api/projects/{project['id']}/entries",
+        json={"type": "人物", "name": "陈默", "appearance": "瘦高", "arc_type": "幻灭"},
+    ).json()
+
+    assert created["type"] == "character"  # 中文「人物」在边界归一化
+    assert created["appearance"] == "瘦高"
+    assert created["arc_type"] == "幻灭"
+    assert created["personality"] is None  # 没填的就是空
+
+    listed = client.get(f"/api/projects/{project['id']}/entries").json()
+    assert listed[0]["appearance"] == "瘦高"
+
+
+def test_entry_serialization_covers_the_character_field_list(client):
+    """序列化输出必须覆盖 CHARACTER_FIELDS 的每一个键。
+
+    与 Task 1 那条「接口下发覆盖字段清单」同一路数：字段清单是唯一真相，
+    输出从它派生（`_entry_out` 里的 `**{key: getattr(entry, key) ...}`）。
+    将来给清单加第九项、却没有对应的列时，这里当场炸（AttributeError →
+    500），而不是安静地少输出一个键 —— 那时作者会发现字段填了却存不下来。
+    """
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    created = client.post(
+        f"/api/projects/{project['id']}/entries",
+        json={"type": "人物", "name": "陈默", "appearance": "瘦高"},
+    ).json()
+
+    assert set(CHARACTER_FIELDS) <= set(created)
+
+    # 列表路径单独走一遍：它读的是重新从库里取的对象，不是刚写的那个
+    listed = client.get(f"/api/projects/{project['id']}/entries").json()
+    assert set(CHARACTER_FIELDS) <= set(listed[0])

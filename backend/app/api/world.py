@@ -9,6 +9,7 @@ from app.db.session import get_session
 from app.services import agent_service, world_service
 from app.services.runtime_service import RuntimeService
 from app.world_types import (
+    CHARACTER_FIELDS,
     ENTRY_TYPES,
     HARDNESS_LEVELS,
     normalize_hardness,
@@ -25,6 +26,10 @@ def list_entry_types() -> dict:
     return {
         "types": [{"key": k, "label": v} for k, v in ENTRY_TYPES.items()],
         "hardness": [{"key": k, "label": v} for k, v in HARDNESS_LEVELS.items()],
+        "character_fields": [
+            {"key": key, "label": label, "multiline": multiline}
+            for key, (label, multiline) in CHARACTER_FIELDS.items()
+        ],
     }
 
 
@@ -120,6 +125,9 @@ def _entry_out(entry) -> dict:
         "description": entry.description,
         "hardness": entry.hardness,
         "source_run_id": entry.source_run_id,
+        # 人物八项从唯一真相派生（同 world_service 的 _FIELD_TO_COLUMN）：
+        # 手抄第二份清单的话，加第九项会在这里静默漏掉。
+        **{key: getattr(entry, key) for key in CHARACTER_FIELDS},
         "created_at": entry.created_at.isoformat(),
     }
 

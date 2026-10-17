@@ -14,7 +14,22 @@ ENTRY_TYPES: dict[str, str] = {
     "event": "历史事件",
     "item": "物品",
     "concept": "概念",
+    "character": "人物",
     "term": "术语",
+}
+
+# 人物（type == "character"）的类型专属字段：键 → (中文标签, 是否多行)。
+# 定义**一次**：角色卡契约、存储映射（world_service）、接口下发（api/world）
+# 三处都从这里派生。多一份就会漂移 —— 与 ENTRY_TYPES、SLOT_REGISTRY 同一条教训。
+CHARACTER_FIELDS: dict[str, tuple[str, bool]] = {
+    "appearance": ("外貌", True),
+    "personality": ("性格", True),
+    "desire": ("欲望", True),
+    "fear": ("恐惧", True),
+    "arc_type": ("弧光类型", False),
+    "abilities": ("能力边界", True),
+    "speech_style": ("说话风格样本", True),
+    "current_state": ("当前状态", True),
 }
 
 HARDNESS_LEVELS: dict[str, str] = {

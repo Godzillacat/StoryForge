@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import EntryRelation, SettingEntry
-from app.world_types import normalize_hardness, normalize_type
+from app.world_types import CHARACTER_FIELDS, normalize_hardness, normalize_type
 
 # 服务层说领域名（aliases / tags），存储层的 *_json 后缀不往上传 ——
 # 与 idea_service.create_idea(..., tags) 的既有约定一致。
@@ -20,6 +20,9 @@ _FIELD_TO_COLUMN = {
     "description": "description",
     "source_run_id": "source_run_id",
 }
+
+# 人物八项的列名就等于键名 —— 从唯一真相派生，不手抄第二份。
+_FIELD_TO_COLUMN.update({key: key for key in CHARACTER_FIELDS})
 
 
 def _apply_entry_fields(entry: SettingEntry, fields: dict) -> None:

@@ -1,12 +1,46 @@
 from app.db import migrations
 
 
-def test_today_the_list_is_empty_and_that_is_fine():
-    """当下没有需要改的已有表，所以列表是空的 —— 框架的第一次真正使用
-    是 P1b-2 给 setting_entry 加列。空列表不该让它算崩。"""
-    assert migrations.MIGRATIONS == ()
+def test_the_first_real_migration_adds_the_character_columns():
+    """框架自建好以来 MIGRATIONS 一直是空的 —— 这是它的第一条。
+
+    只加可空列：SQLite 的 ALTER TABLE ADD COLUMN 对可空列是原地操作，
+    作者的存量数据不受影响，也不触发改列类型所需的 12 步重建。"""
+    assert [m.version for m in migrations.MIGRATIONS] == [1]
+
+    step = migrations.MIGRATIONS[0]
+    assert all(
+        statement.startswith("ALTER TABLE setting_entry ADD COLUMN ")
+        for statement in step.statements
+    )
+    assert migrations.latest_version() == 1
+
+
+def test_the_first_real_migration_is_frozen_history():
+    """v1 的列写死、不从 CHARACTER_FIELDS 派生 —— 迁移是历史记录。
+
+    这条断言把冻结的内容钉成字面量：日后要加人物字段，必须**新开一条迁移**，
+    而不是改这一条、也不是改那份常量。
+
+    刻意**不**与 CHARACTER_FIELDS 对拍：那是对拍一个可变常量，两边同源、一起变，
+    等于同义反复 —— 恰恰是它要防的形状（防的就是「常量长了一项、迁移跟着长」）。
+    列与常量的关系改由 test_migration_runner 的 `set(CHARACTER_FIELDS) <= columns`
+    在**真实迁移后的库上**验，那里才是这条关系真正成立、也真会分叉的地方。"""
+    step = migrations.MIGRATIONS[0]
+    assert step.statements == (
+        "ALTER TABLE setting_entry ADD COLUMN appearance TEXT",
+        "ALTER TABLE setting_entry ADD COLUMN personality TEXT",
+        "ALTER TABLE setting_entry ADD COLUMN desire TEXT",
+        "ALTER TABLE setting_entry ADD COLUMN fear TEXT",
+        "ALTER TABLE setting_entry ADD COLUMN arc_type TEXT",
+        "ALTER TABLE setting_entry ADD COLUMN abilities TEXT",
+        "ALTER TABLE setting_entry ADD COLUMN speech_style TEXT",
+        "ALTER TABLE setting_entry ADD COLUMN current_state TEXT",
+    )
+
+
+def test_schema_migration_baseline_still_zero():
     assert migrations.BASELINE_VERSION == 0
-    assert migrations.latest_version() == 0
 
 
 def test_versions_are_unique_and_above_the_baseline():

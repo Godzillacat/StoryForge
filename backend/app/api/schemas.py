@@ -107,6 +107,15 @@ class EntryCreate(BaseModel):
     description: str = ""
     hardness: str | None = None
     source_run_id: str | None = None
+    # 人物专属字段（type == "character" 才有意义），其余类型留空
+    appearance: str = ""
+    personality: str = ""
+    desire: str = ""
+    fear: str = ""
+    arc_type: str = ""
+    abilities: str = ""
+    speech_style: str = ""
+    current_state: str = ""
 
 
 class EntryUpdate(BaseModel):
@@ -118,6 +127,15 @@ class EntryUpdate(BaseModel):
     description: str | None = None
     hardness: str | None = None
     source_run_id: str | None = None
+    # 人物专属字段（type == "character" 才有意义），其余类型留空
+    appearance: str | None = None
+    personality: str | None = None
+    desire: str | None = None
+    fear: str | None = None
+    arc_type: str | None = None
+    abilities: str | None = None
+    speech_style: str | None = None
+    current_state: str | None = None
 
 
 class RelationCreate(BaseModel):

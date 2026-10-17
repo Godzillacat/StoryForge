@@ -6,7 +6,7 @@ P1b/P1c 落地时往 DEFAULT_ROSTER 里追加即可，不改任何运行时代�
 
 from __future__ import annotations
 
-from app.world_types import ENTRY_TYPES, HARDNESS_LEVELS
+from app.world_types import CHARACTER_FIELDS, ENTRY_TYPES, HARDNESS_LEVELS
 
 TASK_TYPES = [
     "idea_parse",
@@ -131,6 +131,12 @@ WORLDBUILDER_SCHEMA = {
                         "type": "string",
                         "title": f"规则硬度（只有规则体系才填，可为：{_HARDNESS_TITLE}）",
                     },
+                    # 人物八项**从 world_types 的唯一真相生成**，不手抄 ——
+                    # 中文标签也只写在那里。可选项：非人物候选不填。
+                    **{
+                        key: {"type": "string", "title": f"{label}（只有人物才填）"}
+                        for key, (label, _multiline) in CHARACTER_FIELDS.items()
+                    },
                 },
             },
         },
@@ -159,13 +165,18 @@ WORLDBUILDER_PROMPT = """你是长篇小说世界观构建师，服务对象是�
 3. 规则体系类的候选必须标注硬度：硬规则是体系根基、不可违反，软规则需大体一致，氛围只为质感。其余类别的硬度留空；
 4. 别名与称呼把所有叫法都列上（简称、旧称、别称、敌对方的贬称），后面查一致性靠它；
 5. 你没把握的一律写进「你拿不准、需要作者确认的问题」，**不许编造设定填空**；
-6. 不要替作者决定故事的走向，也不要在候选里写正文。"""
+6. 不要替作者决定故事的走向，也不要在候选里写正文；
+7. 只有当材料支持时才给人物候选，不要为了凑数编造人；给了人物，就要把__CHARACTER_FIELD_LIST__里适用于这个人物的项写满——不适用的可以省；人物的全部称呼方式写进别名那一项。"""
 
-# 八类清单由词表派生，不在提示词里手抄第二份 —— 手抄的那份会在改词表时
-# 静默过期，而护栏只查英文键、查不出中文值的漂移。
+# 类型清单与人物字段清单都由词表派生，不在提示词里手抄第二份 —— 手抄的那份
+# 会在改词表时静默过期，而护栏只查英文键、查不出中文值的漂移。
 # 用 replace 而不是 f-string：提示词里有 {{ parsed_idea }} 这类模板变量，
 # f-string 会把双花括号吃掉。
 WORLDBUILDER_PROMPT = WORLDBUILDER_PROMPT.replace("__TYPE_LIST__", _TYPE_TITLE)
+WORLDBUILDER_PROMPT = WORLDBUILDER_PROMPT.replace(
+    "__CHARACTER_FIELD_LIST__",
+    "、".join(label for label, _multiline in CHARACTER_FIELDS.values()),
+)
 
 IDEA_PARSER_PROMPT = """你是长篇小说灵感解析师，服务对象是作者。你的产出是结构化的解析卡，不是改写。
 

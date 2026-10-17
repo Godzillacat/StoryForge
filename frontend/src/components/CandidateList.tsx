@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import type { EntryTypesResponse, SettingEntry, SuggestedEntry } from '../api/client'
-import EntryEditor, { joinList, type EntryDraft } from './EntryEditor'
+import EntryEditor, { characterFieldsOf, joinList, type EntryDraft } from './EntryEditor'
 
-function draftOf(candidate: SuggestedEntry): EntryDraft {
+function draftOf(candidate: SuggestedEntry, characterFields: { key: string }[]): EntryDraft {
   return {
     type: candidate.type ?? 'concept',
     name: candidate.name ?? '',
@@ -11,6 +11,7 @@ function draftOf(candidate: SuggestedEntry): EntryDraft {
     summary: candidate.summary ?? '',
     description: candidate.description ?? '',
     hardness: candidate.hardness ?? '',
+    fields: characterFieldsOf(candidate, characterFields),
   }
 }
 
@@ -63,6 +64,7 @@ export default function CandidateList({
   // 候选的 type 是**英文键**（后端在响应里归一过，否则表单的下拉对不上），
   // 而这一格要显示的是中文 —— 不映射就会把 `faction` 这样的键露给作者。
   const typeLabels = new Map((types?.types ?? []).map((t) => [t.key, t.label]))
+  const characterFields = types?.character_fields ?? []
 
   function toggle(key: string, candidate: SuggestedEntry) {
     if (openKey === key) {
@@ -71,7 +73,7 @@ export default function CandidateList({
       return
     }
     setOpenKey(key)
-    setDraft(draftOf(candidate))
+    setDraft(draftOf(candidate, characterFields))
   }
 
   return (
@@ -101,7 +103,7 @@ export default function CandidateList({
                   <button
                     className="text-xs text-emerald-400 disabled:opacity-50"
                     disabled={busy}
-                    onClick={() => onAdopt(draftOf(candidate), key)}
+                    onClick={() => onAdopt(draftOf(candidate, characterFields), key)}
                   >
                     采纳
                   </button>

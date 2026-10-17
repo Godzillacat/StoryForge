@@ -2,6 +2,7 @@ import pytest
 from sqlalchemy import select
 
 from app.db.models import Project, SettingEntry
+from app.db.session import SessionLocal
 from app.services import world_service
 
 
@@ -243,3 +244,62 @@ def test_terms_do_not_leak_across_projects(session):
     world_service.create_entry(session, other.id, type="place", name="别处")
 
     assert world_service.list_terms(session, a.id) == []
+
+
+def test_character_fields_round_trip(session):
+    """八项走一趟真数据库、换个 session 再读回来。
+
+    不能只用 `session` 读：`SessionLocal` 是 `expire_on_commit=False`，同一个
+    session 里 `get_entry` 返回的就是刚写的那个 identity-mapped 对象，读到的
+    仍是内存里的值 —— 此时列名即使拼错（`setattr` 落在一个没有映射的普通属性
+    上，不报错也不落库），断言照样能过。这种「什么都不验」的往返测试比没有测试
+    更危险：它顶着一个会走库的名字，实际上一次库都没查。
+    `expire_all()` 也挡不住 —— 普通属性不在 SQLAlchemy 的映射管理范围内、过期
+    不会清掉它（两种写法都实测过）。只有换一个 session，取值才必须回库里拿。
+    判别力已实测：把任一被断言的列名改错，这条测试就变红（task-3-report §4）。
+    """
+    project = _project(session)
+
+    entry = world_service.create_entry(
+        session,
+        project.id,
+        type="人物",  # 中文名，顺便验归一化
+        name="陈默",
+        aliases=["阿默", "老陈"],
+        appearance="瘦高，左眉有疤",
+        personality="寡言，认死理",
+        desire="找回被抹去的记忆",
+        fear="想起自己做过的事",
+        arc_type="幻灭",
+        abilities="能读取他人记忆，但每读一次忘掉自己一件事",
+        speech_style="「你先说。」「不必。」",
+        current_state="暂居南滨，身份未暴露",
+    )
+
+    assert entry.type == "character"
+    with SessionLocal() as fresh:
+        again = world_service.get_entry(fresh, entry.id)
+        assert again.appearance == "瘦高，左眉有疤"
+        assert again.arc_type == "幻灭"
+        assert again.speech_style == "「你先说。」「不必。」"
+        assert again.current_state == "暂居南滨，身份未暴露"
+
+
+def test_character_fields_survive_a_type_change_but_hardness_does_not(session):
+    """人物八项在类型改变时**保留**（长文本误删太重）；hardness 仍按老规矩清空。"""
+    project = _project(session)
+
+    character = world_service.create_entry(
+        session, project.id, type="人物", name="陈默", appearance="瘦高"
+    )
+    updated = world_service.update_entry(session, character.id, type="势力")
+
+    assert updated.type == "faction"
+    assert updated.appearance == "瘦高"
+
+    rule = world_service.create_entry(
+        session, project.id, type="规则体系", name="记忆不可复活", hardness="硬规则"
+    )
+    changed = world_service.update_entry(session, rule.id, type="势力")
+
+    assert changed.hardness is None
