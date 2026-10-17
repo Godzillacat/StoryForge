@@ -338,3 +338,79 @@ def test_entry_serialization_covers_the_character_field_list(client):
     # 列表路径单独走一遍：它读的是重新从库里取的对象，不是刚写的那个
     listed = client.get(f"/api/projects/{project['id']}/entries").json()
     assert set(CHARACTER_FIELDS) <= set(listed[0])
+
+
+def test_relation_strength_and_reverse_over_http(client):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    a = client.post(
+        f"/api/projects/{project['id']}/entries", json={"type": "人物", "name": "陈默"}
+    ).json()
+    b = client.post(
+        f"/api/projects/{project['id']}/entries", json={"type": "人物", "name": "林晚"}
+    ).json()
+
+    created = client.post(
+        f"/api/projects/{project['id']}/relations",
+        json={
+            "from_id": a["id"],
+            "to_id": b["id"],
+            "kind": "挚友",
+            "strength": 4,
+            "create_reverse": True,
+        },
+    ).json()
+    assert created["strength"] == 4
+
+    relations = client.get(f"/api/projects/{project['id']}/relations").json()
+    assert len(relations) == 2
+    reverse = next(r for r in relations if r["from_id"] == b["id"])
+
+    updated = client.patch(
+        f"/api/relations/{reverse['id']}",
+        json={"kind": "陌路", "strength": 1, "note": "渐生忌惮"},
+    ).json()
+    assert updated["kind"] == "陌路"
+    assert updated["strength"] == 1
+    assert updated["note"] == "渐生忌惮"
+
+
+def test_relation_strength_out_of_range_is_422(client):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    a = client.post(
+        f"/api/projects/{project['id']}/entries", json={"type": "人物", "name": "甲"}
+    ).json()
+    b = client.post(
+        f"/api/projects/{project['id']}/entries", json={"type": "人物", "name": "乙"}
+    ).json()
+
+    response = client.post(
+        f"/api/projects/{project['id']}/relations",
+        json={"from_id": a["id"], "to_id": b["id"], "kind": "挚友", "strength": 6},
+    )
+
+    assert response.status_code == 422
+
+
+def test_relation_update_can_clear_strength(client):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    a = client.post(
+        f"/api/projects/{project['id']}/entries", json={"type": "人物", "name": "甲"}
+    ).json()
+    b = client.post(
+        f"/api/projects/{project['id']}/entries", json={"type": "人物", "name": "乙"}
+    ).json()
+    relation = client.post(
+        f"/api/projects/{project['id']}/relations",
+        json={"from_id": a["id"], "to_id": b["id"], "kind": "挚友", "strength": 3},
+    ).json()
+
+    updated = client.patch(
+        f"/api/relations/{relation['id']}", json={"strength": None}
+    ).json()
+
+    assert updated["strength"] is None
+
+
+def test_updating_a_missing_relation_is_404(client):
+    response = client.patch("/api/relations/nope", json={"kind": "挚友"})
+    assert response.status_code == 404

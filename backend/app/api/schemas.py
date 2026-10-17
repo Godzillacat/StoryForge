@@ -142,4 +142,12 @@ class RelationCreate(BaseModel):
     from_id: str
     to_id: str
     kind: str = Field(min_length=1, max_length=60)
+    strength: int | None = Field(default=None, ge=1, le=5)
     note: str = ""
+    create_reverse: bool = False
+
+
+class RelationUpdate(BaseModel):
+    kind: str | None = Field(default=None, min_length=1, max_length=60)
+    strength: int | None = Field(default=None, ge=1, le=5)
+    note: str | None = None

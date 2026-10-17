@@ -111,14 +111,28 @@ def list_relations(session: Session, project_id: str) -> list[EntryRelation]:
     )
 
 
-def create_relation(session: Session, project_id: str, **fields) -> EntryRelation:
-    """收 **fields 而不是显式签名：路由用 model_dump 展开，schema 一加字段
-    显式签名就会变成运行期 TypeError —— 这张表下一切片要复用并加列。"""
-    from_id = fields.get("from_id")
-    to_id = fields.get("to_id")
-    kind = (fields.get("kind") or "").strip()
-    if not kind:
-        raise ValueError("关联必须写明是什么关系")
+def normalize_strength(value: int | None) -> int | None:
+    """关系强度只收 1–5 的整数；None 表示未评。
+
+    服务层再校验一次，不只依赖 Pydantic：服务层是纯逻辑、会被直接调用，
+    而 router 的 422 只保护 HTTP 边界。bool 是 int 的子类，必须显式排除。
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 5:
+        raise ValueError("关系强度必须是 1–5 的整数")
+    return value
+
+
+def get_relation(session: Session, relation_id: str) -> EntryRelation | None:
+    return session.get(EntryRelation, relation_id)
+
+
+def _validate_relation_endpoints(
+    session: Session, project_id: str, from_id: str, to_id: str
+) -> None:
+    if from_id == to_id:
+        raise ValueError("关联的起点与终点不能是同一条目")
     for label, entry_id in (("起点", from_id), ("终点", to_id)):
         entry = session.get(SettingEntry, entry_id)
         if entry is None:
@@ -126,14 +140,60 @@ def create_relation(session: Session, project_id: str, **fields) -> EntryRelatio
         # 跨项目的关联会让「这个项目有哪些关联」失去意义
         if entry.project_id != project_id:
             raise ValueError(f"关联的{label}条目不属于这个项目：{entry_id}")
+
+
+def create_relation(
+    session: Session, project_id: str, create_reverse: bool = False, **fields
+) -> EntryRelation:
+    """收 **fields 而不是显式签名：路由用 model_dump 展开，schema 一加字段
+    显式签名就会变成运行期 TypeError。create_reverse 是显式参数，不进库。"""
+    from_id = fields.get("from_id")
+    to_id = fields.get("to_id")
+    kind = (fields.get("kind") or "").strip()
+    if not kind:
+        raise ValueError("关联必须写明是什么关系")
+    strength = normalize_strength(fields.get("strength"))
+    note = fields.get("note") or ""
+    _validate_relation_endpoints(session, project_id, from_id, to_id)
+
     relation = EntryRelation(
         project_id=project_id,
         from_id=from_id,
         to_id=to_id,
         kind=kind,
-        note=fields.get("note") or "",
+        strength=strength,
+        note=note,
     )
     session.add(relation)
+    if create_reverse:
+        session.add(
+            EntryRelation(
+                project_id=project_id,
+                from_id=to_id,
+                to_id=from_id,
+                kind=kind,
+                strength=strength,
+                note=note,
+            )
+        )
+    session.commit()
+    return relation
+
+
+def update_relation(session: Session, relation_id: str, **fields) -> EntryRelation:
+    """只改 kind / strength / note；端点不可改（要换端点就删了重建）。"""
+    relation = session.get(EntryRelation, relation_id)
+    if relation is None:
+        raise ValueError(f"关联不存在：{relation_id}")
+    if "kind" in fields:
+        kind = (fields.get("kind") or "").strip()
+        if not kind:
+            raise ValueError("关联必须写明是什么关系")
+        relation.kind = kind
+    if "strength" in fields:
+        relation.strength = normalize_strength(fields.get("strength"))
+    if "note" in fields:
+        relation.note = fields.get("note") or ""
     session.commit()
     return relation
 

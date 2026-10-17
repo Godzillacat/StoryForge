@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api._serializers import _run_out
-from app.api.schemas import EntryCreate, EntryUpdate, RelationCreate
+from app.api.schemas import EntryCreate, EntryUpdate, RelationCreate, RelationUpdate
 from app.db.session import get_session
 from app.services import agent_service, world_service
 from app.services.runtime_service import RuntimeService
@@ -187,6 +187,7 @@ def _relation_out(relation) -> dict:
         "from_id": relation.from_id,
         "to_id": relation.to_id,
         "kind": relation.kind,
+        "strength": relation.strength,
         "note": relation.note,
     }
 
@@ -202,6 +203,21 @@ def create_relation(
 ) -> dict:
     try:
         relation = world_service.create_relation(session, project_id, **payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _relation_out(relation)
+
+
+@router.patch("/relations/{relation_id}")
+def update_relation(
+    relation_id: str, payload: RelationUpdate, session: Session = Depends(get_session)
+) -> dict:
+    if world_service.get_relation(session, relation_id) is None:
+        raise HTTPException(status_code=404, detail=f"关联不存在：{relation_id}")
+    try:
+        relation = world_service.update_relation(
+            session, relation_id, **payload.model_dump(exclude_unset=True)
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _relation_out(relation)

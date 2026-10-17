@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy import select
 
-from app.db.models import Project, SettingEntry
+from app.db.models import EntryRelation, Project, SettingEntry
 from app.db.session import SessionLocal
 from app.services import world_service
 
@@ -303,3 +303,113 @@ def test_character_fields_survive_a_type_change_but_hardness_does_not(session):
     changed = world_service.update_entry(session, rule.id, type="势力")
 
     assert changed.hardness is None
+
+
+def _two_characters(session, project):
+    a = world_service.create_entry(session, project.id, type="character", name="陈默")
+    b = world_service.create_entry(session, project.id, type="character", name="林晚")
+    return a, b
+
+
+def test_relation_strength_round_trip(session):
+    project = _project(session)
+    a, b = _two_characters(session, project)
+
+    relation = world_service.create_relation(
+        session, project.id, from_id=a.id, to_id=b.id, kind="挚友", strength=4
+    )
+
+    assert relation.strength == 4
+    with SessionLocal() as fresh:
+        assert fresh.get(EntryRelation, relation.id).strength == 4
+
+
+def test_relation_rejects_self_loop(session):
+    project = _project(session)
+    a = world_service.create_entry(session, project.id, type="character", name="陈默")
+
+    with pytest.raises(ValueError, match="不能是同一条目"):
+        world_service.create_relation(
+            session, project.id, from_id=a.id, to_id=a.id, kind="自恋"
+        )
+
+
+def test_relation_strength_must_be_one_to_five(session):
+    project = _project(session)
+    a, b = _two_characters(session, project)
+
+    for bad in (0, 6, True):
+        with pytest.raises(ValueError, match="1–5"):
+            world_service.create_relation(
+                session, project.id, from_id=a.id, to_id=b.id, kind="挚友", strength=bad
+            )
+
+
+def test_create_reverse_creates_both_directions(session):
+    project = _project(session)
+    a, b = _two_characters(session, project)
+
+    forward = world_service.create_relation(
+        session,
+        project.id,
+        from_id=a.id,
+        to_id=b.id,
+        kind="挚友",
+        strength=4,
+        create_reverse=True,
+    )
+
+    relations = world_service.list_relations(session, project.id)
+    assert len(relations) == 2
+    reverse = next(r for r in relations if r.from_id == b.id)
+    assert reverse.to_id == a.id
+    assert reverse.kind == "挚友"
+    assert reverse.strength == 4
+
+    world_service.update_relation(session, reverse.id, kind="陌路", strength=1)
+    assert world_service.get_relation(session, forward.id).kind == "挚友"
+    assert world_service.get_relation(session, reverse.id).kind == "陌路"
+    assert world_service.get_relation(session, reverse.id).strength == 1
+
+
+def test_update_relation_and_clear_strength(session):
+    project = _project(session)
+    a, b = _two_characters(session, project)
+    relation = world_service.create_relation(
+        session, project.id, from_id=a.id, to_id=b.id, kind="挚友", strength=3, note="旧"
+    )
+
+    updated = world_service.update_relation(
+        session, relation.id, kind="师徒", strength=None, note="新"
+    )
+
+    assert updated.kind == "师徒"
+    assert updated.strength is None
+    assert updated.note == "新"
+
+
+def test_update_relation_rejects_blank_kind(session):
+    project = _project(session)
+    a, b = _two_characters(session, project)
+    relation = world_service.create_relation(
+        session, project.id, from_id=a.id, to_id=b.id, kind="挚友"
+    )
+
+    with pytest.raises(ValueError):
+        world_service.update_relation(session, relation.id, kind="   ")
+
+
+def test_deleting_one_direction_keeps_the_other(session):
+    project = _project(session)
+    a, b = _two_characters(session, project)
+    forward = world_service.create_relation(
+        session, project.id, from_id=a.id, to_id=b.id, kind="挚友", create_reverse=True
+    )
+    reverse = next(
+        r for r in world_service.list_relations(session, project.id) if r.from_id == b.id
+    )
+
+    world_service.delete_relation(session, forward.id)
+
+    remaining = world_service.list_relations(session, project.id)
+    assert [r.id for r in remaining] == [reverse.id]
