@@ -300,3 +300,20 @@ def test_null_open_questions_comes_back_as_an_empty_list(client, monkeypatch):
     assert body["structured"] is True
     assert body["open_questions"] == []
     assert len(body["entries"]) == 3
+
+
+def test_character_fields_round_trip_over_http(client):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+
+    created = client.post(
+        f"/api/projects/{project['id']}/entries",
+        json={"type": "人物", "name": "陈默", "appearance": "瘦高", "arc_type": "幻灭"},
+    ).json()
+
+    assert created["type"] == "character"  # 中文「人物」在边界归一化
+    assert created["appearance"] == "瘦高"
+    assert created["arc_type"] == "幻灭"
+    assert created["personality"] is None  # 没填的就是空
+
+    listed = client.get(f"/api/projects/{project['id']}/entries").json()
+    assert listed[0]["appearance"] == "瘦高"

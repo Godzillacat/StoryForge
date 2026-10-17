@@ -125,6 +125,14 @@ def _entry_out(entry) -> dict:
         "description": entry.description,
         "hardness": entry.hardness,
         "source_run_id": entry.source_run_id,
+        "appearance": entry.appearance,
+        "personality": entry.personality,
+        "desire": entry.desire,
+        "fear": entry.fear,
+        "arc_type": entry.arc_type,
+        "abilities": entry.abilities,
+        "speech_style": entry.speech_style,
+        "current_state": entry.current_state,
         "created_at": entry.created_at.isoformat(),
     }
 
