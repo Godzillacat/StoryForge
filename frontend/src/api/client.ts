@@ -196,6 +196,23 @@ export const api = {
       body: JSON.stringify({ direction }),
     }),
 
+  planChapters: (projectId: string) =>
+    request<ChapterPlanResponse>(`/api/projects/${projectId}/chapters/plan`, { method: 'POST' }),
+  planScenes: (chapterId: string) =>
+    request<ScenePlanResponse>(`/api/chapters/${chapterId}/scenes/plan`, { method: 'POST' }),
+  writeChapterPlan: (projectId: string, body: Record<string, unknown>) =>
+    request<{ volumes: VolumeNode[] }>(`/api/projects/${projectId}/chapters`, {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  writeScenes: (chapterId: string, body: Record<string, unknown>) =>
+    request<{ volumes: VolumeNode[] }>(`/api/chapters/${chapterId}/scenes`, {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+
   listForeshadows: (projectId: string) =>
     request<Foreshadow[]>(`/api/projects/${projectId}/foreshadows`),
   createForeshadow: (projectId: string, body: Record<string, unknown>) =>
@@ -571,3 +588,61 @@ export interface VolumeNode {
 
 export type VolumeView = Omit<VolumeNode, 'chapters'>
 export type ChapterView = Omit<ChapterNode, 'scenes'>
+
+export interface PlanChapter {
+  title: string
+  pov: string
+  target_words: number | null
+  emotional_tone: string
+  lines: string[]
+  hook: string
+  summary: string
+  conflict_level: number | null
+  dialogue_ratio: number | null
+  hook_strength: number | null
+  status: string
+}
+
+export interface PlanVolume {
+  name: string
+  purpose: string
+  summary: string
+  act_seq: number | null
+  target_words: number | null
+  status: string
+  chapters: PlanChapter[]
+}
+
+export interface ChapterPlanResponse {
+  run: RunView
+  volumes: PlanVolume[]
+  open_questions: string[]
+  warnings: string[]
+  structured: boolean
+  parse_error: string | null
+  raw_text: string
+}
+
+export interface PlanScene {
+  goal: string
+  conflict: string
+  turn: string
+  characters: string[]
+  location: string
+  story_time: string
+  pov: string
+  target_words_min: number | null
+  target_words_max: number | null
+  foreshadow_plants: string[]
+  foreshadow_pays: string[]
+}
+
+export interface ScenePlanResponse {
+  run: RunView
+  scenes: PlanScene[]
+  open_questions: string[]
+  warnings: string[]
+  structured: boolean
+  parse_error: string | null
+  raw_text: string
+}
