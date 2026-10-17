@@ -1,12 +1,27 @@
 from app.db import migrations
+from app.world_types import CHARACTER_FIELDS
 
 
-def test_today_the_list_is_empty_and_that_is_fine():
-    """当下没有需要改的已有表，所以列表是空的 —— 框架的第一次真正使用
-    是 P1b-2 给 setting_entry 加列。空列表不该让它算崩。"""
-    assert migrations.MIGRATIONS == ()
+def test_the_first_real_migration_adds_the_character_columns():
+    """框架自建好以来 MIGRATIONS 一直是空的 —— 这是它的第一条。
+
+    只加可空列：SQLite 的 ALTER TABLE ADD COLUMN 对可空列是原地操作，
+    作者的存量数据不受影响，也不触发改列类型所需的 12 步重建。"""
+    assert [m.version for m in migrations.MIGRATIONS] == [1]
+
+    step = migrations.MIGRATIONS[0]
+    assert set(CHARACTER_FIELDS) == {
+        statement.split("ADD COLUMN ")[1].split()[0] for statement in step.statements
+    }
+    assert all(
+        statement.startswith("ALTER TABLE setting_entry ADD COLUMN ")
+        for statement in step.statements
+    )
+    assert migrations.latest_version() == 1
+
+
+def test_schema_migration_baseline_still_zero():
     assert migrations.BASELINE_VERSION == 0
-    assert migrations.latest_version() == 0
 
 
 def test_versions_are_unique_and_above_the_baseline():

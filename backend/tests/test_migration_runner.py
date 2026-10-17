@@ -6,6 +6,7 @@ from app.db import migrations
 from app.db import models  # noqa: F401  注册模型到 metadata —— 见下方说明
 from app.db import session as db_session
 from app.db.base import Base
+from app.world_types import CHARACTER_FIELDS
 
 
 # 必须显式导入 app.db.models：它在生产代码里是在 init_db() **函数体内**导入的，
@@ -51,6 +52,24 @@ def _step(version: int, note: str, *statements: str) -> migrations.Migration:
     return migrations.Migration(version, note, statements)
 
 
+@pytest.fixture()
+def no_pending_migrations(monkeypatch):
+    """把 MIGRATIONS 暂时清空。
+
+    下面几个用例要的前提是「库已是最新结构、没有步骤可跑」，而
+    `Base.metadata.create_all` 建的正是**当前模型**、也就是最新结构 ——
+    两者本来是自洽的。真实 MIGRATIONS 一非空就不自洽了：在最新结构上重放
+    历史改表步骤必然撞 `duplicate column name`（框架第一条迁移给
+    setting_entry 加列时就是这样）。
+
+    这几个用例关心的是 runner 的机制（盖基线、不碰数据、空跑不备份），
+    不是某一条迁移的内容，所以清空步骤才是它们真正的前提。真实迁移在有
+    旧结构的库上跑不跑得通，由
+    `test_the_character_columns_are_added_to_a_pre_existing_database` 负责。
+    """
+    monkeypatch.setattr(migrations, "MIGRATIONS", ())
+
+
 def test_fresh_database_is_detected(clean_db):
     assert db_session.is_fresh_database(clean_db) is True
 
@@ -70,7 +89,7 @@ def test_migration_table_alone_still_counts_as_fresh(clean_db):
     assert db_session.is_fresh_database(clean_db) is True
 
 
-def test_existing_database_is_stamped_at_the_baseline(clean_db):
+def test_existing_database_is_stamped_at_the_baseline(clean_db, no_pending_migrations):
     Base.metadata.create_all(clean_db)
 
     db_session.run_migrations(clean_db)
@@ -80,7 +99,7 @@ def test_existing_database_is_stamped_at_the_baseline(clean_db):
     assert rows == [(migrations.BASELINE_VERSION, "基线（迁移框架引入时的库结构）")]
 
 
-def test_existing_database_keeps_its_rows(clean_db):
+def test_existing_database_keeps_its_rows(clean_db, no_pending_migrations):
     """盖章不能碰数据 —— 这是整件事的意义所在。"""
     Base.metadata.create_all(clean_db)
     with clean_db.begin() as conn:
@@ -183,7 +202,7 @@ def test_a_pending_step_backs_up_the_database_first(clean_db, monkeypatch):
     assert (made[0] / "storyforge.db").exists()
 
 
-def test_no_pending_step_means_no_backup(clean_db):
+def test_no_pending_step_means_no_backup(clean_db, no_pending_migrations):
     """空跑不该产生垃圾 —— 每次启动都备份会把数据目录塞满。"""
     Base.metadata.create_all(clean_db)
 
@@ -310,3 +329,42 @@ def test_stamping_is_idempotent_when_only_the_migration_table_survives(clean_db)
         assert conn.exec_driver_sql("SELECT version FROM schema_migration").fetchall() == [
             (migrations.latest_version(),)
         ]
+
+
+def test_the_character_columns_are_added_to_a_pre_existing_database(clean_db):
+    """在**旧结构**的库上跑一次 —— 这才是迁移存在的意义。
+
+    用原始 SQL 建一张没有那八列的表（模拟迁移框架引入之前建的库），再走
+    init_db()，断言八列出现、且原有数据一行不少。
+    """
+    with clean_db.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE project (id VARCHAR(36) PRIMARY KEY, name VARCHAR(200) NOT NULL,"
+            " genre VARCHAR(60) NOT NULL DEFAULT '', created_at DATETIME NOT NULL,"
+            " updated_at DATETIME NOT NULL)"
+        )
+        conn.exec_driver_sql(
+            "CREATE TABLE setting_entry (id VARCHAR(36) PRIMARY KEY,"
+            " project_id VARCHAR(36) NOT NULL, type VARCHAR(30) NOT NULL,"
+            " name VARCHAR(200) NOT NULL, aliases_json JSON, tags_json JSON,"
+            " summary TEXT, description TEXT, hardness VARCHAR(20),"
+            " source_run_id VARCHAR(36))"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO setting_entry (id, project_id, type, name, summary)"
+            " VALUES ('e1', 'p1', 'place', '南滨旧城', '小城')"
+        )
+
+    db_session.init_db()
+
+    columns = {column["name"] for column in inspect(clean_db).get_columns("setting_entry")}
+    assert set(CHARACTER_FIELDS) <= columns
+    with clean_db.connect() as conn:
+        rows = conn.exec_driver_sql("SELECT name, summary FROM setting_entry").fetchall()
+        assert rows == [("南滨旧城", "小城")]
+        # 迁移表里记下了这一步。存量库先被盖基线 0，再盖上这一条 v1 ——
+        # 最新版本是 1、不停留在基线，且基线那行没被顶掉。两个版本号都在，
+        # 所以断言整张表而不是只取 MAX。
+        assert conn.exec_driver_sql(
+            "SELECT version FROM schema_migration ORDER BY version"
+        ).fetchall() == [(0,), (1,)]

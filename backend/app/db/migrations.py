@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.world_types import CHARACTER_FIELDS
+
 
 @dataclass(frozen=True)
 class Migration:
@@ -18,8 +20,17 @@ class Migration:
     statements: tuple[str, ...]  # 原始 SQL，按序执行
 
 
-# 今天是空的：当下没有需要改的已有表。第一次真正使用是 P1b-2 给 setting_entry 加列。
-MIGRATIONS: tuple[Migration, ...] = ()
+# 第一条真实迁移：给 setting_entry 加人物八列。
+# 只加可空列 —— 原地操作，作者的存量数据不受影响。
+MIGRATIONS: tuple[Migration, ...] = (
+    Migration(
+        version=1,
+        note="setting_entry 加人物八列",
+        statements=tuple(
+            f"ALTER TABLE setting_entry ADD COLUMN {key} TEXT" for key in CHARACTER_FIELDS
+        ),
+    ),
+)
 
 BASELINE_VERSION = 0
 
