@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Boolean, ForeignKey, JSON, String, Text
+from sqlalchemy import Boolean, ForeignKey, Index, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IdMixin, TimestampMixin
@@ -10,8 +10,11 @@ from app.db.base import Base, IdMixin, TimestampMixin
 
 class Agent(IdMixin, TimestampMixin, Base):
     __tablename__ = "agent"
+    __table_args__ = (Index("uq_agent_preset_key", "preset_key", unique=True),)
 
     name: Mapped[str] = mapped_column(String(120))
+    # 代码里的稳定预置 key。按名字判重会在作者改名后造出重复角色卡。
+    preset_key: Mapped[str | None] = mapped_column(String(60), default=None)
     role_label: Mapped[str] = mapped_column(String(60), default="")
     color: Mapped[str] = mapped_column(String(20), default="#6366f1")
     task_type: Mapped[str] = mapped_column(String(40), index=True)
@@ -35,3 +38,5 @@ class AgentVersion(IdMixin, TimestampMixin, Base):
     skills_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     trigger_mode: Mapped[str] = mapped_column(String(20), default="manual")
     note: Mapped[str] = mapped_column(Text, default="")
+    # 该版本来自哪一份预置内容；作者编辑出的版本永远为 None。
+    preset_fingerprint: Mapped[str | None] = mapped_column(String(64), default=None)

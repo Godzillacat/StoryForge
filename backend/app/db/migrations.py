@@ -26,6 +26,7 @@ class Migration:
 # 可变常量派生，日后往 CHARACTER_FIELDS 添一项，已迁移的库永远拿不到那一列、
 # 新装的库却有 —— 静默分叉，而且测试全跑在新库上、会全绿。新增人物字段的正确
 # 做法是**新开一条迁移**，而不是改这一条、也不是改那份常量。
+# v2 / v3 同样是冻结历史，日后加列只能新开版本。
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -39,6 +40,24 @@ MIGRATIONS: tuple[Migration, ...] = (
             "ALTER TABLE setting_entry ADD COLUMN abilities TEXT",
             "ALTER TABLE setting_entry ADD COLUMN speech_style TEXT",
             "ALTER TABLE setting_entry ADD COLUMN current_state TEXT",
+        ),
+    ),
+    Migration(
+        version=2,
+        note="entry_relation 加关系强度",
+        statements=(
+            "ALTER TABLE entry_relation ADD COLUMN strength INTEGER",
+        ),
+    ),
+    # 预置更新要靠两样东西：稳定的预置身份，以及「这个版本来自哪份预置」的指纹。
+    # 唯一索引允许多个 NULL，只约束真正被认领的预置角色卡。
+    Migration(
+        version=3,
+        note="agent 加预置身份与版本指纹",
+        statements=(
+            "ALTER TABLE agent ADD COLUMN preset_key VARCHAR(60)",
+            "ALTER TABLE agent_version ADD COLUMN preset_fingerprint VARCHAR(64)",
+            "CREATE UNIQUE INDEX uq_agent_preset_key ON agent(preset_key)",
         ),
     ),
 )

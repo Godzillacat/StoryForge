@@ -351,8 +351,36 @@ def test_the_character_columns_are_added_to_a_pre_existing_database(clean_db):
             " source_run_id VARCHAR(36))"
         )
         conn.exec_driver_sql(
+            "CREATE TABLE entry_relation (id VARCHAR(36) PRIMARY KEY,"
+            " project_id VARCHAR(36) NOT NULL, from_id VARCHAR(36) NOT NULL,"
+            " to_id VARCHAR(36) NOT NULL, kind VARCHAR(60) NOT NULL, note TEXT)"
+        )
+        conn.exec_driver_sql(
+            "CREATE TABLE agent (id VARCHAR(36) PRIMARY KEY, name VARCHAR(120) NOT NULL,"
+            " role_label VARCHAR(60), color VARCHAR(20), task_type VARCHAR(40) NOT NULL,"
+            " enabled BOOLEAN, builtin BOOLEAN, current_version_id VARCHAR(36))"
+        )
+        conn.exec_driver_sql(
+            "CREATE TABLE agent_version (id VARCHAR(36) PRIMARY KEY,"
+            " agent_id VARCHAR(36) NOT NULL, version_no INTEGER NOT NULL,"
+            " system_prompt TEXT, model_binding_json JSON, param_profile VARCHAR(30),"
+            " context_slots_json JSON, output_schema_json JSON, skills_json JSON,"
+            " trigger_mode VARCHAR(20), note TEXT)"
+        )
+        conn.exec_driver_sql(
             "INSERT INTO setting_entry (id, project_id, type, name, summary)"
             " VALUES ('e1', 'p1', 'place', '南滨旧城', '小城')"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO entry_relation (id, project_id, from_id, to_id, kind, note)"
+            " VALUES ('r1', 'p1', 'e1', 'e2', '挚友', '旧关系')"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO agent (id, name, task_type, builtin) VALUES ('a1', '旧架构师', 'architecture', 1)"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO agent_version (id, agent_id, version_no, system_prompt)"
+            " VALUES ('v1', 'a1', 1, '旧提示词')"
         )
 
     db_session.init_db()
@@ -367,4 +395,21 @@ def test_the_character_columns_are_added_to_a_pre_existing_database(clean_db):
         # 所以断言整张表而不是只取 MAX。
         assert conn.exec_driver_sql(
             "SELECT version FROM schema_migration ORDER BY version"
-        ).fetchall() == [(0,), (1,)]
+        ).fetchall() == [(0,), (1,), (2,), (3,)]
+
+    relation_columns = {c["name"] for c in inspect(clean_db).get_columns("entry_relation")}
+    agent_columns = {c["name"] for c in inspect(clean_db).get_columns("agent")}
+    version_columns = {c["name"] for c in inspect(clean_db).get_columns("agent_version")}
+    assert "strength" in relation_columns
+    assert "preset_key" in agent_columns
+    assert "preset_fingerprint" in version_columns
+    assert "timeline_event" in inspect(clean_db).get_table_names()
+    indexes = inspect(clean_db).get_indexes("agent")
+    assert any(i["name"] == "uq_agent_preset_key" and i["unique"] for i in indexes)
+    with clean_db.connect() as conn:
+        assert conn.exec_driver_sql(
+            "SELECT kind, strength FROM entry_relation WHERE id = 'r1'"
+        ).fetchall() == [("挚友", None)]
+        assert conn.exec_driver_sql(
+            "SELECT system_prompt FROM agent_version WHERE id = 'v1'"
+        ).fetchall() == [("旧提示词",)]

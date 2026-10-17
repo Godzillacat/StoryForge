@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IdMixin, TimestampMixin
@@ -67,3 +67,5 @@ class EntryRelation(IdMixin, TimestampMixin, Base):
     )
     kind: Mapped[str] = mapped_column(String(60))
     note: Mapped[str] = mapped_column(Text, default="")
+    # 关系强度 1–5；None = 未评。旧行由迁移补成 NULL。
+    strength: Mapped[int | None] = mapped_column(Integer, default=None)

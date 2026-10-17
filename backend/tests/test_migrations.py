@@ -6,14 +6,14 @@ def test_the_first_real_migration_adds_the_character_columns():
 
     只加可空列：SQLite 的 ALTER TABLE ADD COLUMN 对可空列是原地操作，
     作者的存量数据不受影响，也不触发改列类型所需的 12 步重建。"""
-    assert [m.version for m in migrations.MIGRATIONS] == [1]
+    assert [m.version for m in migrations.MIGRATIONS] == [1, 2, 3]
 
     step = migrations.MIGRATIONS[0]
     assert all(
         statement.startswith("ALTER TABLE setting_entry ADD COLUMN ")
         for statement in step.statements
     )
-    assert migrations.latest_version() == 1
+    assert migrations.latest_version() == 3
 
 
 def test_the_first_real_migration_is_frozen_history():
@@ -36,6 +36,22 @@ def test_the_first_real_migration_is_frozen_history():
         "ALTER TABLE setting_entry ADD COLUMN abilities TEXT",
         "ALTER TABLE setting_entry ADD COLUMN speech_style TEXT",
         "ALTER TABLE setting_entry ADD COLUMN current_state TEXT",
+    )
+
+
+def test_v2_adds_the_relation_strength_column():
+    step = migrations.MIGRATIONS[1]
+    assert step.statements == (
+        "ALTER TABLE entry_relation ADD COLUMN strength INTEGER",
+    )
+
+
+def test_v3_adds_preset_identity_and_fingerprint():
+    step = migrations.MIGRATIONS[2]
+    assert step.statements == (
+        "ALTER TABLE agent ADD COLUMN preset_key VARCHAR(60)",
+        "ALTER TABLE agent_version ADD COLUMN preset_fingerprint VARCHAR(64)",
+        "CREATE UNIQUE INDEX uq_agent_preset_key ON agent(preset_key)",
     )
 
 

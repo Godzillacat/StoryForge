@@ -146,3 +146,62 @@ def test_relation_is_directional(session):
     backward = session.scalars(select(EntryRelation).where(EntryRelation.from_id == b.id)).all()
     assert len(forward) == 1
     assert backward == []
+
+
+def test_relation_strength_defaults_to_none(session):
+    from app.db.models import EntryRelation, SettingEntry
+
+    project = Project(name="雾港")
+    session.add(project)
+    session.commit()
+    a = SettingEntry(project_id=project.id, type="character", name="甲")
+    b = SettingEntry(project_id=project.id, type="character", name="乙")
+    session.add_all([a, b])
+    session.commit()
+    relation = EntryRelation(project_id=project.id, from_id=a.id, to_id=b.id, kind="挚友")
+    session.add(relation)
+    session.commit()
+
+    assert session.get(EntryRelation, relation.id).strength is None
+
+
+def test_timeline_event_roundtrip(session):
+    from app.db.models import SettingEntry, TimelineEvent
+
+    project = Project(name="雾港")
+    session.add(project)
+    session.commit()
+    character = SettingEntry(project_id=project.id, type="character", name="陈默")
+    place = SettingEntry(project_id=project.id, type="place", name="南滨")
+    session.add_all([character, place])
+    session.commit()
+
+    event = TimelineEvent(
+        project_id=project.id,
+        title="初遇",
+        story_time="第三年·春",
+        description="陈默在南滨旧城第一次听见那段声音。",
+        participants_json=[character.id],
+        location_id=place.id,
+    )
+    session.add(event)
+    session.commit()
+
+    stored = session.get(TimelineEvent, event.id)
+    assert stored.title == "初遇"
+    assert stored.story_time == "第三年·春"
+    assert stored.participants_json == [character.id]
+    assert stored.location_id == place.id
+    assert stored.order_index == 0
+
+
+def test_agent_preset_fields_default_to_none(session):
+    agent = Agent(name="某智能体", task_type="idea_parse")
+    session.add(agent)
+    session.flush()
+    version = AgentVersion(agent_id=agent.id, version_no=1)
+    session.add(version)
+    session.commit()
+
+    assert agent.preset_key is None
+    assert version.preset_fingerprint is None
