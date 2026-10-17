@@ -163,6 +163,7 @@ export default function Chapters() {
 
   async function writeChapterPlan(volumes: PlanVolume[], mode: 'replace' | 'append') {
     if (!chapterPlan) return
+    const token = runToken.current
     setPlanning(true)
     setNotice('')
     try {
@@ -171,18 +172,20 @@ export default function Chapters() {
         source_run_id: chapterPlan.run.id,
         volumes,
       })
+      if (token !== runToken.current) return
       setVolumes(result.volumes)
       setChapterPlan(null)
       setNotice('章纲已写入')
     } catch (error) {
-      setNotice((error as Error).message)
+      if (token === runToken.current) setNotice((error as Error).message)
     } finally {
-      setPlanning(false)
+      if (token === runToken.current) setPlanning(false)
     }
   }
 
   async function writeScenePlan(scenes: PlanScene[], mode: 'replace' | 'append') {
     if (!scenePlan) return
+    const token = runToken.current
     const { chapterId, chapterTitle } = scenePlan
     // 草稿生成后章可能已被替换或删除。此时保留草稿并说明原因，
     // 绝不退回到「当前选中的章」——那会把场景写进另一章。
@@ -198,14 +201,16 @@ export default function Chapters() {
         source_run_id: scenePlan.data.run.id,
         scenes,
       })
+      if (token !== runToken.current) return
       setVolumes(result.volumes)
       setScenePlan(null)
       await refresh()
+      if (token !== runToken.current) return
       setNotice('场景已写入')
     } catch (error) {
-      setNotice((error as Error).message)
+      if (token === runToken.current) setNotice((error as Error).message)
     } finally {
-      setPlanning(false)
+      if (token === runToken.current) setPlanning(false)
     }
   }
 
@@ -279,6 +284,7 @@ export default function Chapters() {
           <ChapterPlanDraft
             key={chapterPlan.run.id}
             volumes={chapterPlan.volumes}
+            statuses={statuses}
             warnings={chapterPlan.warnings}
             openQuestions={chapterPlan.open_questions}
             busy={planning}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { PlanChapter, PlanVolume } from '../../api/client'
+import type { ChapterStatusOption, PlanChapter, PlanVolume } from '../../api/client'
 
 const EMPTY_CHAPTER: PlanChapter = {
   title: '',
@@ -17,6 +17,7 @@ const EMPTY_CHAPTER: PlanChapter = {
 
 export default function ChapterPlanDraft({
   volumes: initial,
+  statuses,
   warnings,
   openQuestions,
   busy,
@@ -24,6 +25,7 @@ export default function ChapterPlanDraft({
   onClose,
 }: {
   volumes: PlanVolume[]
+  statuses: ChapterStatusOption[]
   warnings: string[]
   openQuestions: string[]
   busy: boolean
@@ -81,6 +83,17 @@ export default function ChapterPlanDraft({
                    onChange={(e) => updateVolume(vIndex, {
                      act_seq: e.target.value.trim() ? Number(e.target.value) : null,
                    })} />
+            <input type="number" className="w-24 rounded border border-slate-700 bg-slate-900 px-2 py-1"
+                   placeholder="目标字数" value={volume.target_words ?? ''}
+                   onChange={(e) => updateVolume(vIndex, {
+                     target_words: e.target.value.trim() ? Number(e.target.value) : null,
+                   })} />
+            <select className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
+                    value={volume.status} onChange={(e) => updateVolume(vIndex, { status: e.target.value })}>
+              {statuses.map((status) => (
+                <option key={status.key} value={status.key}>{status.label}</option>
+              ))}
+            </select>
             <button className="text-xs text-slate-500" onClick={() => setVolumes(volumes.filter((_, i) => i !== vIndex))}>
               删卷
             </button>
@@ -88,6 +101,9 @@ export default function ChapterPlanDraft({
               chapters: [...volume.chapters, { ...EMPTY_CHAPTER, title: '新章' }],
             })}>+章</button>
           </div>
+          <textarea className="h-14 w-full rounded border border-slate-700 bg-slate-900 p-2 text-xs"
+                    placeholder="本卷摘要" value={volume.summary}
+                    onChange={(e) => updateVolume(vIndex, { summary: e.target.value })} />
           {volume.chapters.map((chapter, cIndex) => (
             <div key={cIndex} className="ml-4 space-y-1 rounded border border-slate-800 p-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -118,6 +134,13 @@ export default function ChapterPlanDraft({
                        onChange={(e) => updateChapter(vIndex, cIndex, {
                          hook_strength: e.target.value.trim() ? Number(e.target.value) : null,
                        })} />
+                <select className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
+                        value={chapter.status}
+                        onChange={(e) => updateChapter(vIndex, cIndex, { status: e.target.value })}>
+                  {statuses.map((status) => (
+                    <option key={status.key} value={status.key}>{status.label}</option>
+                  ))}
+                </select>
                 <button className="text-xs text-slate-500"
                         onClick={() => updateVolume(vIndex, {
                           chapters: volume.chapters.filter((_, i) => i !== cIndex),
