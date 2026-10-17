@@ -10,6 +10,7 @@ export default function SceneEditor({
   scene,
   statuses,
   entries,
+  entriesReady,
   foreshadows,
   busy,
   onSave,
@@ -18,6 +19,7 @@ export default function SceneEditor({
   scene: SceneNode
   statuses: ChapterStatusOption[]
   entries: SettingEntry[]
+  entriesReady: boolean
   foreshadows: Foreshadow[]
   busy: boolean
   onSave: (fields: Record<string, unknown>) => Promise<void>
@@ -217,24 +219,34 @@ export default function SceneEditor({
 
       <div className="flex items-center gap-2">
         <button className="rounded bg-indigo-600 px-4 py-2 disabled:opacity-50" disabled={busy}
-                onClick={() => onSave({
-                  goal: draft.goal,
-                  conflict: draft.conflict,
-                  turn: draft.turn,
-                  story_time: draft.storyTime,
-                  pov: draft.pov,
-                  target_words_min: draft.minWords.trim() ? Number(draft.minWords) : null,
-                  target_words_max: draft.maxWords.trim() ? Number(draft.maxWords) : null,
-                  status: draft.status,
-                  // 世界观里已删除的条目只剩一个解析不到名称的 ID；丢弃它，
-                  // 免得一个残影让每次保存都被后端拒绝。
-                  characters: draft.characterIds
-                    .map(resolvedNameOf)
-                    .filter((name): name is string => Boolean(name)),
-                  location: draft.locationId ? resolvedNameOf(draft.locationId) ?? '' : '',
-                  foreshadow_plants: draft.plantNames,
-                  foreshadow_pays: draft.payNames,
-                })}>
+                onClick={() => {
+                  const fields: Record<string, unknown> = {
+                    goal: draft.goal,
+                    conflict: draft.conflict,
+                    turn: draft.turn,
+                    story_time: draft.storyTime,
+                    pov: draft.pov,
+                    target_words_min: draft.minWords.trim() ? Number(draft.minWords) : null,
+                    target_words_max: draft.maxWords.trim() ? Number(draft.maxWords) : null,
+                    status: draft.status,
+                    foreshadow_plants: draft.plantNames,
+                    foreshadow_pays: draft.payNames,
+                  }
+                  // 只有条目确实属于当前项目且已加载时，才敢把 ID 映射成名称。
+                  // 否则整键省略：后端 exclude_unset 会保留库里的原值，而明确
+                  // 发送空值等于静默清空场景的人物与地点。
+                  if (entriesReady) {
+                    // 世界观里已删除的条目只剩一个解析不到名称的 ID；丢弃它，
+                    // 免得一个残影让每次保存都被后端拒绝。
+                    fields.characters = draft.characterIds
+                      .map(resolvedNameOf)
+                      .filter((name): name is string => Boolean(name))
+                    fields.location = draft.locationId
+                      ? resolvedNameOf(draft.locationId) ?? ''
+                      : ''
+                  }
+                  onSave(fields)
+                }}>
           保存
         </button>
         <button className="rounded border border-amber-700 px-4 py-2 text-amber-400" disabled={busy}

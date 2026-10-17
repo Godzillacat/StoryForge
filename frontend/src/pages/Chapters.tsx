@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   api,
   type ChapterStatusOption,
@@ -18,10 +18,15 @@ export default function Chapters() {
   const [statuses, setStatuses] = useState<ChapterStatusOption[]>([])
   const [volumes, setVolumes] = useState<VolumeNode[]>([])
   const [entries, setEntries] = useState<SettingEntry[]>([])
+  // 条目属于哪个项目：entries 是异步加载的，空列表并不等于「这个项目没有条目」。
+  // 只有 entriesProjectId === projectId 时，场景编辑器才敢用 entries 映射名称。
+  const [entriesProjectId, setEntriesProjectId] = useState('')
   const [foreshadows, setForeshadows] = useState<Foreshadow[]>([])
   const [selected, setSelected] = useState<Selection | null>(null)
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  // 每次条目请求自增；迟到的旧项目响应凭 token 失效，不能覆盖当前项目的数据。
+  const entriesRequestRef = useRef(0)
 
   useEffect(() => {
     api.listProjects().then((list) => {
@@ -38,21 +43,36 @@ export default function Chapters() {
     setNotice('')
     setVolumes([])
     setEntries([])
+    setEntriesProjectId('')
     setForeshadows([])
+    const token = ++entriesRequestRef.current
     api.getChapterTree(projectId).then((data) => setVolumes(data.volumes))
       .catch((error) => setNotice((error as Error).message))
-    api.listEntries(projectId).then(setEntries).catch((error) => setNotice((error as Error).message))
+    api.listEntries(projectId).then((list) => {
+      if (entriesRequestRef.current !== token) return
+      setEntries(list)
+      setEntriesProjectId(projectId)
+    }).catch((error) => setNotice((error as Error).message))
     api.listForeshadows(projectId).then(setForeshadows).catch((error) => setNotice((error as Error).message))
+    return () => {
+      // 切项目或卸载时让在途响应过期。
+      entriesRequestRef.current += 1
+    }
   }, [projectId])
 
   async function refresh() {
+    const requestProjectId = projectId
+    const token = ++entriesRequestRef.current
     const [tree, entryList, foreshadowList] = await Promise.all([
-      api.getChapterTree(projectId),
-      api.listEntries(projectId),
-      api.listForeshadows(projectId),
+      api.getChapterTree(requestProjectId),
+      api.listEntries(requestProjectId),
+      api.listForeshadows(requestProjectId),
     ])
+    // 期间切了项目（或又发起了一次刷新）：这批数据属于旧请求，整批丢弃。
+    if (entriesRequestRef.current !== token) return
     setVolumes(tree.volumes)
     setEntries(entryList)
+    setEntriesProjectId(requestProjectId)
     setForeshadows(foreshadowList)
   }
 
@@ -187,6 +207,7 @@ export default function Chapters() {
               scene={scene}
               statuses={statuses}
               entries={entries}
+              entriesReady={entriesProjectId === projectId}
               foreshadows={foreshadows}
               busy={busy}
               onSave={async (fields) => run(async () => {
