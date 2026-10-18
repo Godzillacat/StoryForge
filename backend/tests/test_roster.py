@@ -75,8 +75,8 @@ _KEY_IN_BLOCK = re.compile(r"^\s*- ([A-Za-z_][A-Za-z0-9_]*)", re.MULTILINE)
 
 _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
-# 提示词里正当出现的非字段英文词（故事圣经 v0 的版本号）
-_ALLOWED_LATIN = {"v0"}
+# 提示词里正当出现的非字段英文词（故事圣经 v0 的版本号、正文格式名）
+_ALLOWED_LATIN = {"v0", "Markdown"}
 
 
 def _property_keys(schema: dict) -> set[str]:
@@ -267,6 +267,8 @@ def test_writer_prompt_is_plain_prose_not_json():
     entry = next(e for e in DEFAULT_ROSTER if e["key"] == "writer")
     prompt = entry["system_prompt"]
     assert "场景卡" in prompt
+    assert "目标、冲突、转折、视角、故事内时间与目标字数" in prompt
+    assert "Markdown 正文" in prompt
     assert "不要用代码块" in prompt
     assert "JSON" not in prompt
     assert entry["output_schema"] is None
