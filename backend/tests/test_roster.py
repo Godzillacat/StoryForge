@@ -1,4 +1,5 @@
 from app.agents.roster import DEFAULT_ROSTER, TASK_TYPES
+from app.runtime.context import SLOT_REGISTRY
 from app.world_types import CHARACTER_FIELDS
 
 
@@ -284,3 +285,22 @@ def test_worldbuilder_type_descriptions_match_the_vocabulary():
 
     for label in ENTRY_TYPES.values():
         assert label in described, f"契约说明块没有讲到类型「{label}」"
+
+
+_SLOT_VARIABLE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
+
+
+def test_every_prompt_slot_variable_is_registered():
+    """提示词里的每个 {{ 槽位 }} 都必须是 SLOT_REGISTRY 的键。
+
+    纯文本预置（writer）走 `allow_missing=True`：槽位天然可能为空，渲染层
+    因此把「变量没有对应内容」当成空串而不是错误。拼错的槽位会被静默渲染
+    成空串 —— 作者得不到任何报错，只会在真实调用里发现上下文缺了一段。
+    这条测试就是那道放宽的护栏。
+    """
+    for entry in DEFAULT_ROSTER:
+        used = set(_SLOT_VARIABLE.findall(entry["system_prompt"]))
+        unknown = used - set(SLOT_REGISTRY)
+        assert not unknown, (
+            f"{entry['key']} 的提示词引用了未注册的槽位：{sorted(unknown)}"
+        )

@@ -526,6 +526,39 @@ def test_a_step_whose_required_table_is_missing_is_skipped_and_stamped(clean_db,
         ]
 
 
+def test_a_step_with_partially_missing_required_tables_refuses_to_stamp(clean_db, monkeypatch):
+    """前置表**只缺一部分**时既不能执行、也不能跳过。
+
+    create_all 只建缺失的表、绝不给已存在的表加列：v3 的 requires 是
+    `("agent", "agent_version")`，若 agent 存在而 agent_version 缺失，旧守卫
+    会把整步跳过并盖章 —— agent 永远拿不到 preset_key，schema_migration 却
+    声称 v3 已应用。这是静默结构分叉，应用必须拒绝启动。
+    """
+    Base.metadata.create_all(clean_db)
+    monkeypatch.setattr(
+        migrations,
+        "MIGRATIONS",
+        (
+            migrations.Migration(
+                1,
+                "部分缺表",
+                ("CREATE TABLE _probe (x INTEGER)",),
+                requires=("project", "_missing"),
+            ),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="部分缺失"):
+        db_session.run_migrations(clean_db)
+
+    # 语句没执行：既没有半截结构，也绝不能被盖章。
+    assert "_probe" not in inspect(clean_db).get_table_names()
+    with clean_db.connect() as conn:
+        assert conn.exec_driver_sql(
+            "SELECT MAX(version) FROM schema_migration"
+        ).fetchone() == (0,)
+
+
 def test_a_step_runs_when_all_required_tables_exist(clean_db, monkeypatch):
     """前置表存在时必须照原样执行语句 —— 守卫不能把正常迁移也跳过。"""
     Base.metadata.create_all(clean_db)

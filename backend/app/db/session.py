@@ -109,6 +109,14 @@ def backup_database_before(target_version: int) -> Path | None:
     return target
 
 
+class _PartialTargetsError(RuntimeError):
+    """requires 里只缺一部分表 —— 既不能执行，也不许跳过盖章。
+
+    单独成类，是为了让它带着自己的说明原样上抛，不被外层「迁移 vN 执行失败」
+    的包装再套一遍；SQL 错误的失败行为因此保持原样。
+    """
+
+
 def run_migrations(engine) -> None:
     """存量库的迁移路径：建表 → 盖章 → （有步骤时）备份 → 按序执行。
 
@@ -145,19 +153,33 @@ def run_migrations(engine) -> None:
                 missing = tuple(
                     name for name in step.requires if not _table_exists(conn, name)
                 )
-                if missing:
-                    # 目标表尚未建出：这条迁移无从执行，但 create_all 紧接着会
-                    # 用**当前模型**建出它，而当前模型已含本步要加的列。跳过
-                    # SQL 并盖章为已应用 —— 这正是「所有迁移都已应用」的语义。
+                if not missing:
+                    for sql in step.statements:
+                        conn.exec_driver_sql(sql)
+                    _stamp(conn, step.version, step.note)
+                elif len(missing) == len(step.requires):
+                    # 目标表**全部**尚未建出：这条迁移无从执行，但 create_all
+                    # 紧接着会用**当前模型**建出它们，而当前模型已含本步要加的
+                    # 列。跳过 SQL 并盖章为已应用 —— 这正是「所有迁移都已应用」
+                    # 的语义。
                     _stamp(
                         conn,
                         step.version,
                         f"{step.note}（目标表尚未建出，由 create_all 建出）",
                     )
                 else:
-                    for sql in step.statements:
-                        conn.exec_driver_sql(sql)
-                    _stamp(conn, step.version, step.note)
+                    # 只缺一部分：create_all 只补建缺失的表、绝不给**已存在**的
+                    # 表加列。跳过会让已存在的表永远缺本步的列，而版本表却声称
+                    # 迁移已应用 —— 静默结构分叉。拒绝盖章，让应用起不来。
+                    present = tuple(name for name in step.requires if name not in missing)
+                    raise _PartialTargetsError(
+                        f"迁移 v{step.version}（{step.note}）无法执行：目标表部分缺失"
+                        f"（缺失：{'、'.join(missing)}；已存在：{'、'.join(present)}），"
+                        "拒绝盖章以免结构分叉"
+                    )
+            except _PartialTargetsError:
+                conn.exec_driver_sql("ROLLBACK")
+                raise
             except Exception as exc:
                 conn.exec_driver_sql("ROLLBACK")
                 # 带上版本号与说明：不然作者看到的是一个不带上下文的
