@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app import config
 from app.db import migrations
 from app.db.base import Base
+from app.db.search import ensure_search_index
 
 engine = create_engine(
     f"sqlite:///{config.db_path()}",
@@ -160,11 +161,13 @@ def init_db() -> None:
             _ensure_migration_table(conn)
             _stamp(conn, migrations.latest_version(), "全新库")
         Base.metadata.create_all(engine)
+        ensure_search_index(engine)
         return
 
     # 存量库：先补已有的表，再让模型建新加的表 —— 迁移不建表。
     run_migrations(engine)
     Base.metadata.create_all(engine)
+    ensure_search_index(engine)
 
 
 def get_session() -> Iterator[Session]:

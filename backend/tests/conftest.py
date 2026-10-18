@@ -28,6 +28,10 @@ def session():
     db_session.init_db()
     Base.metadata.drop_all(db_session.engine)
     Base.metadata.create_all(db_session.engine)
+
+    from app.db.search import clear_search_index
+
+    clear_search_index(db_session.engine)
     with db_session.SessionLocal() as s:
         yield s
     # 用例结束同样清表：否则最后一个用例写下的行会留到「不用本 fixture 的
@@ -47,7 +51,11 @@ from app.services.seed_service import seed_agents, seed_tools
 
 @pytest.fixture()
 def client():
+    from app.db import session as db_session
+    from app.db.search import clear_search_index
+
     init_db()
+    clear_search_index(db_session.engine)
     with SessionLocal() as session:
         seed_agents(session)
         seed_tools(session)

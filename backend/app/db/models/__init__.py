@@ -5,6 +5,7 @@ from app.db.models.config_models import Provider, Setting
 from app.db.models.idea import Idea
 from app.db.models.project import Project
 from app.db.models.run import GenerationRun
+from app.db.models.search import SearchIndexState
 from app.db.models.timeline import TimelineEvent
 from app.db.models.tool import ToolTemplate
 from app.db.models.world import EntryRelation, SettingEntry
@@ -22,6 +23,7 @@ __all__ = [
     "Project",
     "Provider",
     "Scene",
+    "SearchIndexState",
     "Setting",
     "SettingEntry",
     "TimelineEvent",
