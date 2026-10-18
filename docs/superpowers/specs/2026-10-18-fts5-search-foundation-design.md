@@ -130,7 +130,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_document USING fts5(
 | `chapter_plan_service` | `write_chapter_plan`（替换与追加） |
 | `project_service` | `delete_project` → `search_service.delete_project`（删文档与状态行，不标脏） |
 
-- 为什么卷与移动也要标：文档标题里含卷名/卷序/章序/场景序，改名或排序会改变可搜文本。
+- 为什么卷与移动也要标：文档标题含卷序/章序/场景序，排序或级联删除会改变可搜文本；**卷名本身不进标题**，卷改名触发一次重建是无害的（保持标记口径简单）。
 - 条目写入会改变场景文档里的出场人物名/地点名，所以条目增删改也要标。
 - 伏笔、时间线、关系、智能体、服务商、设置不进入索引，不标脏。
 - 逐实体增量索引需要覆盖上述全部路径并处理级联；触发器要把字段清单用 SQL 再抄一份。
@@ -206,7 +206,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_document USING fts5(
 }
 ```
 
-- `snippet`：在 `body` 里找第一个词（不区分 ASCII 大小写）的首次出现，取前后约 60 字；
+- `snippet`：在 `title + body` 里找第一个词（不区分 ASCII 大小写）的首次出现，取前后约 60 字；标题命中也因此能出现在片段里；
   找不到则取开头 80 字；折叠空白并加省略号。
 - 回查基表确认实体仍存在；不存在则跳过。
 - 不返回完整正文，不返回 `rank` 数值（排序已生效）。

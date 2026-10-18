@@ -943,7 +943,7 @@ def search(
                 entity_id=entity_id,
                 subtype=row["subtype"] or "",
                 title=row["title"],
-                snippet=_snippet(row["body"], terms),
+                snippet=_snippet(f"{row['title']} {row['body']}", terms),
             )
         )
     return hits
