@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.chapter_types import normalize_status
 from app.db.models import Chapter, Project, Volume
-from app.services import chapter_service, scene_service
+from app.services import chapter_service, scene_service, search_service
 
 
 def _text(value) -> str:
@@ -347,6 +347,7 @@ def write_chapter_plan(
                         source_run_id=source_run_id,
                     )
                 )
+        search_service.mark_dirty(session, project.id)
         session.commit()
     except Exception:
         session.rollback()

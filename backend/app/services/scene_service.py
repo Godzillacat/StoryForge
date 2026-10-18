@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.chapter_types import normalize_status
 from app.db.models import Chapter, Foreshadow, Scene, SettingEntry
-from app.services import chapter_service, foreshadow_service
+from app.services import chapter_service, foreshadow_service, search_service
 
 
 def _chapter(session: Session, chapter_id: str) -> Chapter:
@@ -226,6 +226,7 @@ def create_scene(session: Session, chapter_id: str, **fields) -> Scene:
         _apply_links(
             session, project.id, scene, plant_names, pay_names, fields.get("source_run_id")
         )
+        search_service.mark_dirty(session, project.id)
         session.commit()
     except Exception:
         session.rollback()
@@ -302,6 +303,7 @@ def update_scene(session: Session, scene_id: str, **fields) -> Scene:
                 fields.get("source_run_id"),
                 replaced_scene_ids={scene.id},
             )
+        search_service.mark_dirty(session, project.id)
         session.commit()
     except Exception:
         session.rollback()
@@ -313,7 +315,9 @@ def delete_scene(session: Session, scene_id: str) -> None:
     scene = session.get(Scene, scene_id)
     if scene is None:
         raise ValueError(f"场景不存在：{scene_id}")
+    project = chapter_service.get_project_for_chapter(session, scene.chapter_id)
     session.delete(scene)
+    search_service.mark_dirty(session, project.id)
     session.commit()
 
 
@@ -321,6 +325,7 @@ def move_scene(session: Session, scene_id: str, direction: str) -> Scene:
     scene = session.get(Scene, scene_id)
     if scene is None:
         raise ValueError(f"场景不存在：{scene_id}")
+    project = chapter_service.get_project_for_chapter(session, scene.chapter_id)
     if direction not in ("up", "down"):
         raise ValueError("移动方向只能是 up 或 down")
     ordered = list(
@@ -337,6 +342,7 @@ def move_scene(session: Session, scene_id: str, direction: str) -> Scene:
     ordered.insert(target, ordered.pop(index))
     for position, item in enumerate(ordered):
         item.seq = position
+    search_service.mark_dirty(session, project.id)
     session.commit()
     return scene
 
@@ -425,6 +431,7 @@ def write_scenes(
                 replaced_scene_ids=replaced_ids,
             )
             created.append(scene)
+        search_service.mark_dirty(session, project.id)
         session.commit()
     except Exception:
         session.rollback()

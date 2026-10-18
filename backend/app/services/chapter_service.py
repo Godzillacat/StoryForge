@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.chapter_types import normalize_status
 from app.db.models import Chapter, Foreshadow, Project, Scene, Volume
+from app.services import search_service
 
 
 def _ordered_volumes(session: Session, project_id: str) -> list[Volume]:
@@ -113,6 +114,7 @@ def create_volume(session: Session, project_id: str, **fields) -> Volume:
         source_run_id=fields.get("source_run_id"),
     )
     session.add(volume)
+    search_service.mark_dirty(session, project_id)
     session.commit()
     return volume
 
@@ -138,6 +140,7 @@ def update_volume(session: Session, volume_id: str, **fields) -> Volume:
             volume.status = normalize_status(fields.get("status"))
         if "source_run_id" in fields:
             volume.source_run_id = fields.get("source_run_id")
+        search_service.mark_dirty(session, volume.project_id)
         session.commit()
     except Exception:
         session.rollback()
@@ -155,6 +158,7 @@ def delete_volume(session: Session, volume_id: str) -> None:
     for chapter in _ordered_chapters(session, volume_id):
         session.delete(chapter)
     session.delete(volume)
+    search_service.mark_dirty(session, volume.project_id)
     session.commit()
 
 
@@ -172,6 +176,7 @@ def move_volume(session: Session, volume_id: str, direction: str) -> Volume:
     ordered.insert(target, ordered.pop(index))
     for position, item in enumerate(ordered):
         item.seq = position
+    search_service.mark_dirty(session, volume.project_id)
     session.commit()
     return volume
 
@@ -203,6 +208,7 @@ def create_chapter(session: Session, volume_id: str, **fields) -> Chapter:
         source_run_id=fields.get("source_run_id"),
     )
     session.add(chapter)
+    search_service.mark_dirty(session, volume.project_id)
     session.commit()
     return chapter
 
@@ -211,6 +217,7 @@ def update_chapter(session: Session, chapter_id: str, **fields) -> Chapter:
     chapter = session.get(Chapter, chapter_id)
     if chapter is None:
         raise ValueError(f"章不存在：{chapter_id}")
+    project = get_project_for_chapter(session, chapter_id)
     try:
         if "title" in fields:
             chapter.title = _clean_name(fields.get("title"), "章标题")
@@ -238,6 +245,7 @@ def update_chapter(session: Session, chapter_id: str, **fields) -> Chapter:
             chapter.status = normalize_status(fields.get("status"))
         if "source_run_id" in fields:
             chapter.source_run_id = fields.get("source_run_id")
+        search_service.mark_dirty(session, project.id)
         session.commit()
     except Exception:
         session.rollback()
@@ -249,7 +257,9 @@ def delete_chapter(session: Session, chapter_id: str) -> None:
     chapter = session.get(Chapter, chapter_id)
     if chapter is None:
         raise ValueError(f"章不存在：{chapter_id}")
+    project = get_project_for_chapter(session, chapter_id)
     session.delete(chapter)
+    search_service.mark_dirty(session, project.id)
     session.commit()
 
 
@@ -257,6 +267,7 @@ def move_chapter(session: Session, chapter_id: str, direction: str) -> Chapter:
     chapter = session.get(Chapter, chapter_id)
     if chapter is None:
         raise ValueError(f"章不存在：{chapter_id}")
+    project = get_project_for_chapter(session, chapter_id)
     if direction not in ("up", "down"):
         raise ValueError("移动方向只能是 up 或 down")
     ordered = _ordered_chapters(session, chapter.volume_id)
@@ -267,6 +278,7 @@ def move_chapter(session: Session, chapter_id: str, direction: str) -> Chapter:
     ordered.insert(target, ordered.pop(index))
     for position, item in enumerate(ordered):
         item.seq = position
+    search_service.mark_dirty(session, project.id)
     session.commit()
     return chapter
 
