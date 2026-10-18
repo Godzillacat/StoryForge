@@ -61,6 +61,7 @@ export default function Writing() {
   const [notice, setNotice] = useState('')
   const [revision, setRevision] = useState<RevisionDetail | null>(null)
   const [runInfo, setRunInfo] = useState<RunInfo | null>(null)
+  const [stopCooldown, setStopCooldown] = useState(false)
 
   const treeToken = useRef(0)
   const sceneToken = useRef(0)
@@ -68,6 +69,24 @@ export default function Writing() {
   const abortRef = useRef<AbortController | null>(null)
   const streamTextRef = useRef('')
   const runIdRef = useRef('')
+  const cooldownTimerRef = useRef<number | null>(null)
+
+  const clearStopCooldown = () => {
+    if (cooldownTimerRef.current !== null) {
+      window.clearTimeout(cooldownTimerRef.current)
+      cooldownTimerRef.current = null
+    }
+    setStopCooldown(false)
+  }
+
+  const startStopCooldown = () => {
+    if (cooldownTimerRef.current !== null) window.clearTimeout(cooldownTimerRef.current)
+    setStopCooldown(true)
+    cooldownTimerRef.current = window.setTimeout(() => {
+      cooldownTimerRef.current = null
+      setStopCooldown(false)
+    }, 1000)
+  }
 
   useEffect(() => {
     api
@@ -85,6 +104,10 @@ export default function Writing() {
     () => () => {
       generateToken.current += 1
       abortRef.current?.abort()
+      if (cooldownTimerRef.current !== null) {
+        window.clearTimeout(cooldownTimerRef.current)
+        cooldownTimerRef.current = null
+      }
     },
     [],
   )
@@ -97,11 +120,13 @@ export default function Writing() {
     abortRef.current?.abort()
     runIdRef.current = ''
     streamTextRef.current = ''
+    clearStopCooldown()
     setVolumes([])
     setSelectedSceneId('')
     setText(null)
     setTextLoading(false)
     setPreview(null)
+    setPreviewLoading(false)
     setPreviewError('')
     setBodyDraft('')
     setAiDraft('')
@@ -176,6 +201,7 @@ export default function Writing() {
     if (hasUnsaved && !window.confirm('当前场景有未保存的修改，确定切换吗？')) return
     abortRef.current?.abort()
     generateToken.current += 1
+    clearStopCooldown()
     runIdRef.current = ''
     streamTextRef.current = ''
     // 切换场景必须先清空上一个场景的正文、草稿与修订，否则加载期间
@@ -193,6 +219,20 @@ export default function Writing() {
     setNotice('')
     setSelectedSceneId(sceneId)
     void loadScene(sceneId)
+  }
+
+  // 正文写入后刷新左侧树，让「未写 / 已写」标记跟上；
+  // 不递增 treeToken，切项目时由 effect 递增它来废弃这次刷新。
+  const refreshTree = async () => {
+    if (!projectId) return
+    const token = treeToken.current
+    try {
+      const data = await api.getChapterTree(projectId)
+      if (treeToken.current !== token) return
+      setVolumes(data.volumes)
+    } catch (error) {
+      if (treeToken.current === token) setNotice((error as Error).message)
+    }
   }
 
   const refreshText = async (sceneId: string): Promise<SceneTextState | null> => {
@@ -242,6 +282,7 @@ export default function Writing() {
       setText(state)
       setBodyDraft(state.body ?? '')
       setNotice('正文已保存')
+      void refreshTree()
     } catch (error) {
       if (sceneToken.current === token) setNotice((error as Error).message)
     } finally {
@@ -301,6 +342,7 @@ export default function Writing() {
       setAiDraft('')
       setMode('body')
       setNotice('已采纳，已生成修订快照')
+      void refreshTree()
     } catch (error) {
       if (sceneToken.current === token) setNotice((error as Error).message)
     } finally {
@@ -344,6 +386,7 @@ export default function Writing() {
     const controller = new AbortController()
     abortRef.current = controller
     const token = ++generateToken.current
+    clearStopCooldown()
     runIdRef.current = ''
     streamTextRef.current = ''
     setGenerating(true)
@@ -411,6 +454,9 @@ export default function Writing() {
     } finally {
       if (generateToken.current === token) {
         setGenerating(false)
+        // 停止/生成按钮共用同一位置：生成刚结束时给 1 秒冷却，
+        // 避免作者点击「停止」时按钮已翻回「生成正文」而误发起新请求。
+        startStopCooldown()
         try {
           let state = await refreshText(sceneId)
           if (state && !state.draft && streamTextRef.current) {
@@ -470,6 +516,7 @@ export default function Writing() {
       setMode('body')
       setRevision(null)
       setNotice('已恢复旧版并生成新的修订')
+      void refreshTree()
     } catch (error) {
       if (sceneToken.current === token) setNotice((error as Error).message)
     } finally {
@@ -569,7 +616,8 @@ export default function Writing() {
                         <button
                           type="button"
                           onClick={generate}
-                          disabled={busy}
+                          disabled={busy || stopCooldown}
+                          title={stopCooldown ? '生成刚结束，请稍候' : undefined}
                           className="rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
                         >
                           生成正文
