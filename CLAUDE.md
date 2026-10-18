@@ -563,7 +563,7 @@ pnpm build                                # 产物给后端同源托管
 
 **2026-10-18 · P1c-2 节奏 / 伏笔 / 剧情线视图（实施完成）**
 
-设计 `docs/superpowers/specs/2026-10-18-p1c2-rhythm-foreshadow-design.md`；实施计划 `docs/superpowers/plans/2026-10-18-p1c2-rhythm-foreshadow.md`。纯前端只读视图：不建表、不迁移、不加后端接口、不加图表库、不调用模型。
+设计 `docs/superpowers/specs/2026-10-18-p1c2-rhythm-foreshadow-design.md`；实施计划 `docs/superpowers/plans/2026-10-18-p1c2-rhythm-foreshadow.md`。纯前端只读视图：不建表、不迁移、不加后端接口、不加图表库、不调用模型。在隔离 worktree（`worktree-p1c2-rhythm-foreshadow`）内执行，2026-10-18 以合并提交 `a51fea9` 收口。
 
 产出：`/chapters` 页签（结构设计 / 节奏曲线 / 伏笔账本 / 剧情线）；共享 x 轴的四行节奏小多图（目标字数、冲突、钩子、对话占比），`null` 断线、`0` 保留；伏笔账本把埋设/计划回收解析到卷 / 章 / 场景，缺埋设置顶并可筛选；剧情线按 `chapter.lines` 分组的泳道；点击视图里的位置切回结构设计并选中对应章 / 场景。顺带把树 / 条目 / 伏笔的请求代际统一，视图在数据就绪前显示加载态。
 
