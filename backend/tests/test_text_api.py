@@ -267,3 +267,84 @@ def test_create_run_survives_request_session_teardown(client):
         assert run.provider_id == spec.provider_id
         assert run.model == spec.model
         assert run.rendered_prompt == spec.rendered_prompt
+
+
+def _add_draft(scene_id: str, content: str) -> None:
+    with SessionLocal() as session:
+        session.add(SceneDraft(scene_id=scene_id, content=content))
+        session.commit()
+
+
+def test_text_endpoints_roundtrip_body_and_revisions(client):
+    _project_id, scene_id = _create_scene(client)
+
+    empty = client.get(f"/api/scenes/{scene_id}/text").json()
+    assert empty["body"] is None and empty["draft"] is None
+
+    saved = client.put(
+        f"/api/scenes/{scene_id}/body", json={"content": "第一段。"}
+    ).json()
+    assert saved["body"] == "第一段。"
+    assert saved["has_body"] is True
+    assert saved["revisions"][0]["source"] == "author"
+
+    same = client.put(
+        f"/api/scenes/{scene_id}/body", json={"content": "第一段。"}
+    ).json()
+    assert len(same["revisions"]) == 1
+
+    changed = client.put(
+        f"/api/scenes/{scene_id}/body", json={"content": "第二段。"}
+    ).json()
+    assert len(changed["revisions"]) == 2
+
+    old = next(
+        row for row in changed["revisions"] if row["preview"].startswith("第一段")
+    )
+    detail = client.get(f"/api/scenes/{scene_id}/revisions/{old['id']}").json()
+    assert detail["content"] == "第一段。"
+
+    restored = client.post(
+        f"/api/scenes/{scene_id}/revisions/{old['id']}/restore"
+    ).json()
+    assert restored["body"] == "第一段。"
+    assert restored["revisions"][0]["source"] == "restore"
+
+
+def test_draft_endpoints(client):
+    _project_id, scene_id = _create_scene(client)
+    _add_draft(scene_id, "AI 草稿")
+
+    state = client.get(f"/api/scenes/{scene_id}/text").json()
+    assert state["draft"]["content"] == "AI 草稿"
+
+    edited = client.put(
+        f"/api/scenes/{scene_id}/draft", json={"content": "改过的草稿"}
+    ).json()
+    assert edited["content"] == "改过的草稿"
+
+    adopted = client.post(f"/api/scenes/{scene_id}/adopt").json()
+    assert adopted["body"] == "改过的草稿"
+    assert adopted["draft"] is None
+    assert adopted["revisions"][0]["source"] == "ai"
+
+
+def test_discard_draft(client):
+    _project_id, scene_id = _create_scene(client)
+    _add_draft(scene_id, "待丢弃")
+
+    assert client.delete(f"/api/scenes/{scene_id}/draft").status_code == 200
+    assert client.get(f"/api/scenes/{scene_id}/text").json()["draft"] is None
+
+
+def test_adopt_without_draft_is_409(client):
+    _project_id, scene_id = _create_scene(client)
+    assert client.post(f"/api/scenes/{scene_id}/adopt").status_code == 409
+
+
+def test_missing_scene_and_revision_are_404(client):
+    assert client.get("/api/scenes/nope/text").status_code == 404
+    _project_id, scene_id = _create_scene(client)
+    assert (
+        client.get(f"/api/scenes/{scene_id}/revisions/nope").status_code == 404
+    )

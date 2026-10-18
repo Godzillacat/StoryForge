@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.api.schemas import TextWrite
 from app.db.session import get_session
 from app.runtime.llm import ChatFailure
 from app.runtime.pricing import compute_cost, estimate_tokens
@@ -178,3 +179,82 @@ async def generate_scene(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/scenes/{scene_id}/text")
+def get_text(scene_id: str, session: Session = Depends(get_session)) -> dict:
+    try:
+        return text_service.get_text(session, scene_id)
+    except ValueError as exc:
+        raise _value_error(exc) from exc
+
+
+@router.put("/scenes/{scene_id}/body")
+def save_body(
+    scene_id: str, payload: TextWrite, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        return text_service.save_body(session, scene_id, payload.content)
+    except ValueError as exc:
+        raise _value_error(exc) from exc
+
+
+@router.put("/scenes/{scene_id}/draft")
+def save_draft(
+    scene_id: str, payload: TextWrite, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        return text_service.save_draft(session, scene_id, payload.content)
+    except ValueError as exc:
+        raise _value_error(exc) from exc
+
+
+@router.delete("/scenes/{scene_id}/draft")
+def discard_draft(
+    scene_id: str, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        text_service.discard_draft(session, scene_id)
+    except ValueError as exc:
+        raise _value_error(exc) from exc
+    return {"ok": True}
+
+
+@router.post("/scenes/{scene_id}/adopt")
+def adopt_draft(
+    scene_id: str, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        return text_service.adopt_draft(session, scene_id)
+    except ValueError as exc:
+        raise _value_error(exc) from exc
+
+
+@router.get("/scenes/{scene_id}/revisions")
+def list_revisions(
+    scene_id: str, session: Session = Depends(get_session)
+) -> list[dict]:
+    try:
+        return text_service.list_revisions(session, scene_id)
+    except ValueError as exc:
+        raise _value_error(exc) from exc
+
+
+@router.get("/scenes/{scene_id}/revisions/{revision_id}")
+def get_revision(
+    scene_id: str, revision_id: str, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        return text_service.get_revision(session, scene_id, revision_id)
+    except ValueError as exc:
+        raise _value_error(exc) from exc
+
+
+@router.post("/scenes/{scene_id}/revisions/{revision_id}/restore")
+def restore_revision(
+    scene_id: str, revision_id: str, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        return text_service.restore_revision(session, scene_id, revision_id)
+    except ValueError as exc:
+        raise _value_error(exc) from exc
