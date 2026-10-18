@@ -30,6 +30,19 @@ class GenerationSpec:
     project_id: str
     scene_id: str
     prepared: PreparedExecution
+    # 纯值快照。流生成器在请求会话关闭后才创建运行记录，那时不能再读
+    # prepared.agent / version / provider 这些 ORM 属性（属性一旦过期就会
+    # DetachedInstanceError），所以落库需要的东西在准备阶段就地抄成平值。
+    agent_id: str
+    agent_name: str
+    version_id: str
+    provider_id: str
+    model: str
+    params: dict
+    rendered_prompt: str
+    trimmed: dict
+    prompt_tokens: int
+    prices: dict | None
 
 
 def _scene(session: Session, scene_id: str) -> Scene:
@@ -223,21 +236,35 @@ def prepare_generation(session: Session, scene_id: str) -> GenerationSpec:
     if agent is None:
         raise ValueError("找不到执笔智能体，请检查智能体工作室")
     prepared = RuntimeService(session).prepare(project.id, agent.id, extra)
-    return GenerationSpec(project_id=project.id, scene_id=scene.id, prepared=prepared)
+    # 在会话仍然可用时把所有 ORM 属性读成平值 —— 见 GenerationSpec 的注释。
+    return GenerationSpec(
+        project_id=project.id,
+        scene_id=scene.id,
+        prepared=prepared,
+        agent_id=prepared.agent.id,
+        agent_name=prepared.agent.name,
+        version_id=prepared.version.id,
+        provider_id=prepared.provider.id,
+        model=prepared.model,
+        params=dict(prepared.params),
+        rendered_prompt=prepared.prompt.rendered_prompt,
+        trimmed=dict(prepared.prompt.trimmed),
+        prompt_tokens=prepared.prompt.prompt_tokens,
+        prices=prepared.prices,
+    )
 
 
 def create_run(spec: GenerationSpec) -> str:
-    prepared = spec.prepared
     with SessionLocal() as session:
         run = GenerationRun(
             project_id=spec.project_id,
-            agent_id=prepared.agent.id,
-            agent_version_id=prepared.version.id,
-            provider_id=prepared.provider.id,
-            model=prepared.model,
-            params_json=prepared.params,
-            rendered_prompt=prepared.prompt.rendered_prompt,
-            trimmed_json=prepared.prompt.trimmed,
+            agent_id=spec.agent_id,
+            agent_version_id=spec.version_id,
+            provider_id=spec.provider_id,
+            model=spec.model,
+            params_json=spec.params,
+            rendered_prompt=spec.rendered_prompt,
+            trimmed_json=spec.trimmed,
             status="running",
         )
         session.add(run)
