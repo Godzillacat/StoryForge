@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -138,6 +139,9 @@ class RuntimeService:
     def execute(
         self, project_id: str, agent_id: str, extra: dict | None = None
     ) -> tuple[GenerationRun, RunResult]:
+        # 耗时口径与重构前一致：包含准备阶段（上下文组装与渲染），
+        # 否则模板错误这类不发起模型调用的运行会落库成接近 0 毫秒。
+        started = time.monotonic()
         prepared = self.prepare(project_id, agent_id, extra)
         result = _run_sync(
             execute_prepared,
@@ -146,6 +150,7 @@ class RuntimeService:
             params=prepared.params,
             prices=prepared.prices,
             client=prepared.client,
+            started=started,
         )
         run = self._persist_run(project_id, prepared, result)
         return run, result

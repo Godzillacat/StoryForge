@@ -1,3 +1,5 @@
+import time
+
 import httpx
 import pytest
 
@@ -207,3 +209,27 @@ def test_missing_optional_slot_renders_empty_for_plain_text():
 
     assert prepared.error is None
     assert prepared.rendered_prompt == "人物："
+
+
+def test_execute_duration_covers_preparation_time(session, monkeypatch):
+    """耗时口径与重构前一致：从准备阶段开始计时，而不是只算模型调用。
+
+    调试台的「耗时」此前包含上下文组装与渲染；若计时起点落在 prepare()
+    之后，模板错误这类不发起模型调用的运行会落库成接近 0 毫秒。
+    """
+    project, _provider, agent, _version = _seed(session)
+    service = RuntimeService(
+        session, client=HttpxChatClient(transport=httpx.MockTransport(_ok_handler()))
+    )
+    real_prepare = service.prepare
+
+    def slow_prepare(*args, **kwargs):
+        time.sleep(0.06)
+        return real_prepare(*args, **kwargs)
+
+    monkeypatch.setattr(service, "prepare", slow_prepare)
+
+    run, _result = service.execute(project.id, agent.id)
+
+    assert run.duration_ms >= 50
+
