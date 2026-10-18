@@ -19,6 +19,18 @@ import ChapterTree, { type Selection } from '../components/chapters/ChapterTree'
 import ChapterEditor from '../components/chapters/ChapterEditor'
 import SceneEditor from '../components/chapters/SceneEditor'
 import VolumeEditor from '../components/chapters/VolumeEditor'
+import ForeshadowLedger from '../components/chapters/ForeshadowLedger'
+import RhythmCurve from '../components/chapters/RhythmCurve'
+import Swimlanes from '../components/chapters/Swimlanes'
+
+type ViewTab = 'structure' | 'rhythm' | 'foreshadows' | 'lanes'
+
+const TABS: { key: ViewTab; label: string }[] = [
+  { key: 'structure', label: '结构设计' },
+  { key: 'rhythm', label: '节奏曲线' },
+  { key: 'foreshadows', label: '伏笔账本' },
+  { key: 'lanes', label: '剧情线' },
+]
 
 export default function Chapters() {
   const [projects, setProjects] = useState<Project[]>([])
@@ -42,9 +54,14 @@ export default function Chapters() {
     chapterTitle: string
   } | null>(null)
   const [planning, setPlanning] = useState(false)
+  const [view, setView] = useState<ViewTab>('structure')
+  // 数据属于哪个项目：用它与 projectId 的差异推导加载态，
+  // 避免切项目时先闪一帧上一个项目的数据。
+  const [dataProjectId, setDataProjectId] = useState('')
   const runToken = useRef(0)
-  // 每次条目请求自增；迟到的旧项目响应凭 token 失效，不能覆盖当前项目的数据。
-  const entriesRequestRef = useRef(0)
+  // 每次项目级请求自增；迟到的旧项目响应凭 token 失效，
+  // 不能覆盖当前项目的树、条目或伏笔。
+  const dataRequestRef = useRef(0)
 
   useEffect(() => {
     api.listProjects().then((list) => {
@@ -63,35 +80,58 @@ export default function Chapters() {
     setEntries([])
     setEntriesProjectId('')
     setForeshadows([])
+    setDataProjectId('')
     runToken.current++
     setChapterPlan(null)
     setScenePlan(null)
     setPlanning(false)
-    const token = ++entriesRequestRef.current
-    api.getChapterTree(projectId).then((data) => setVolumes(data.volumes))
-      .catch((error) => setNotice((error as Error).message))
-    api.listEntries(projectId).then((list) => {
-      if (entriesRequestRef.current !== token) return
-      setEntries(list)
-      setEntriesProjectId(projectId)
-    }).catch((error) => setNotice((error as Error).message))
-    api.listForeshadows(projectId).then(setForeshadows).catch((error) => setNotice((error as Error).message))
+    const token = ++dataRequestRef.current
+    Promise.allSettled([
+      api.getChapterTree(projectId),
+      api.listForeshadows(projectId),
+    ]).then(([treeResult, foreshadowResult]) => {
+      if (dataRequestRef.current !== token) return
+      const errors: string[] = []
+      if (treeResult.status === 'fulfilled') {
+        setVolumes(treeResult.value.volumes)
+      } else {
+        errors.push((treeResult.reason as Error).message)
+      }
+      if (foreshadowResult.status === 'fulfilled') {
+        setForeshadows(foreshadowResult.value)
+      } else {
+        errors.push((foreshadowResult.reason as Error).message)
+      }
+      if (errors.length > 0) setNotice(errors.join('；'))
+      // 两份都已有结果就结束加载态：部分失败时显示已有数据 + 页头提示。
+      setDataProjectId(projectId)
+    })
+    api
+      .listEntries(projectId)
+      .then((list) => {
+        if (dataRequestRef.current !== token) return
+        setEntries(list)
+        setEntriesProjectId(projectId)
+      })
+      .catch((error) => {
+        if (dataRequestRef.current === token) setNotice((error as Error).message)
+      })
     return () => {
       // 切项目或卸载时让在途响应过期。
-      entriesRequestRef.current += 1
+      dataRequestRef.current += 1
     }
   }, [projectId])
 
   async function refresh() {
     const requestProjectId = projectId
-    const token = ++entriesRequestRef.current
+    const token = ++dataRequestRef.current
     const [tree, entryList, foreshadowList] = await Promise.all([
       api.getChapterTree(requestProjectId),
       api.listEntries(requestProjectId),
       api.listForeshadows(requestProjectId),
     ])
     // 期间切了项目（或又发起了一次刷新）：这批数据属于旧请求，整批丢弃。
-    if (entriesRequestRef.current !== token) return
+    if (dataRequestRef.current !== token) return
     setVolumes(tree.volumes)
     setEntries(entryList)
     setEntriesProjectId(requestProjectId)
@@ -259,132 +299,229 @@ export default function Chapters() {
     })
   }
 
+  function openInStructure(selection: Selection) {
+    const chapters = volumes.flatMap((volume) => volume.chapters)
+    const found =
+      selection.kind === 'volume'
+        ? volumes.some((volume) => volume.id === selection.id)
+        : selection.kind === 'chapter'
+          ? chapters.some((chapter) => chapter.id === selection.id)
+          : chapters.some((chapter) =>
+              chapter.scenes.some((scene) => scene.id === selection.id),
+            )
+    if (!found) {
+      setNotice('这一项已不在当前结构里。')
+      return
+    }
+    setSelected(selection)
+    setView('structure')
+  }
+
+  const viewsLoading = Boolean(projectId) && dataProjectId !== projectId
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-xl font-semibold">章节设计</h2>
-        <select className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-                value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+        <select
+          className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
+          value={projectId}
+          onChange={(e) => {
+            setDataProjectId('')
+            setProjectId(e.target.value)
+          }}
+        >
           {projects.map((project) => (
-            <option key={project.id} value={project.id}>{project.name}</option>
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
           ))}
         </select>
-        <button
-          className="rounded bg-indigo-600 px-4 py-2 text-sm disabled:opacity-50"
-          disabled={!projectId || planning}
-          onClick={runChapterPlan}
-        >
-          {planning ? '生成中…' : 'AI 排卷章'}
-        </button>
+        {view === 'structure' && (
+          <button
+            className="rounded bg-indigo-600 px-4 py-2 text-sm disabled:opacity-50"
+            disabled={!projectId || planning}
+            onClick={runChapterPlan}
+          >
+            {planning ? '生成中…' : 'AI 排卷章'}
+          </button>
+        )}
         {notice && <span className="text-sm text-slate-400">{notice}</span>}
       </div>
 
-      {chapterPlan && (
-        <>
-          <ChapterPlanDraft
-            key={chapterPlan.run.id}
-            volumes={chapterPlan.volumes}
-            statuses={statuses}
-            warnings={chapterPlan.warnings}
-            openQuestions={chapterPlan.open_questions}
-            busy={planning}
-            onWrite={writeChapterPlan}
-            onClose={() => setChapterPlan(null)}
-          />
-          <RunTrace run={chapterPlan.run} />
-        </>
-      )}
-      {scenePlan && (
-        <>
-          <ScenePlanDraft
-            key={scenePlan.data.run.id}
-            chapterTitle={scenePlan.chapterTitle}
-            scenes={scenePlan.data.scenes}
-            warnings={scenePlan.data.warnings}
-            openQuestions={scenePlan.data.open_questions}
-            busy={planning}
-            onWrite={writeScenePlan}
-            onClose={() => setScenePlan(null)}
-          />
-          <RunTrace run={scenePlan.data.run} />
-        </>
-      )}
-
-      <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
-        <ChapterTree
-          volumes={volumes}
-          selected={selected}
-          onSelect={setSelected}
-          onAddVolume={addVolume}
-          onAddChapter={addChapter}
-          onAddScene={addScene}
-          onMove={move}
-        />
-
-        <div className="space-y-4">
-          {activeChapter && (
-            <div className="flex justify-end">
-              <button
-                className="rounded border border-emerald-700 px-3 py-1.5 text-sm text-emerald-300 disabled:opacity-50"
-                disabled={planning}
-                onClick={() => runScenePlan(activeChapter)}
-              >
-                AI 写场景卡
-              </button>
-            </div>
-          )}
-          {!selected && (
-            <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
-              从左边选一卷、一章或一个场景开始编辑；也可以先手工建卷。
-            </p>
-          )}
-          {volume && (
-            <VolumeEditor
-              key={volume.id}
-              volume={volume}
-              statuses={statuses}
-              busy={busy}
-              onSave={async (fields) => run(async () => {
-                await api.updateVolume(volume.id, fields)
-                await refresh()
-                setNotice('已保存')
-              })}
-              onDelete={deleteSelected}
-            />
-          )}
-          {chapter && (
-            <ChapterEditor
-              key={chapter.id}
-              chapter={chapter}
-              statuses={statuses}
-              busy={busy}
-              onSave={async (fields) => run(async () => {
-                await api.updateChapter(chapter.id, fields)
-                await refresh()
-                setNotice('已保存')
-              })}
-              onDelete={deleteSelected}
-            />
-          )}
-          {scene && (
-            <SceneEditor
-              key={scene.id}
-              scene={scene}
-              statuses={statuses}
-              entries={entries}
-              entriesReady={entriesProjectId === projectId}
-              foreshadows={foreshadows}
-              busy={busy}
-              onSave={async (fields) => run(async () => {
-                await api.updateScene(scene.id, fields)
-                await refresh()
-                setNotice('已保存')
-              })}
-              onDelete={deleteSelected}
-            />
-          )}
-        </div>
+      <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-2">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            className={`rounded px-3 py-1.5 text-sm ${
+              view === tab.key
+                ? 'bg-slate-800 text-white'
+                : 'text-slate-400 hover:bg-slate-900'
+            }`}
+            onClick={() => setView(tab.key)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
+
+      {view === 'structure' && (
+        <>
+          {chapterPlan && (
+            <>
+              <ChapterPlanDraft
+                key={chapterPlan.run.id}
+                volumes={chapterPlan.volumes}
+                statuses={statuses}
+                warnings={chapterPlan.warnings}
+                openQuestions={chapterPlan.open_questions}
+                busy={planning}
+                onWrite={writeChapterPlan}
+                onClose={() => setChapterPlan(null)}
+              />
+              <RunTrace run={chapterPlan.run} />
+            </>
+          )}
+          {scenePlan && (
+            <>
+              <ScenePlanDraft
+                key={scenePlan.data.run.id}
+                chapterTitle={scenePlan.chapterTitle}
+                scenes={scenePlan.data.scenes}
+                warnings={scenePlan.data.warnings}
+                openQuestions={scenePlan.data.open_questions}
+                busy={planning}
+                onWrite={writeScenePlan}
+                onClose={() => setScenePlan(null)}
+              />
+              <RunTrace run={scenePlan.data.run} />
+            </>
+          )}
+
+          <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
+            <ChapterTree
+              volumes={volumes}
+              selected={selected}
+              onSelect={setSelected}
+              onAddVolume={addVolume}
+              onAddChapter={addChapter}
+              onAddScene={addScene}
+              onMove={move}
+            />
+
+            <div className="space-y-4">
+              {activeChapter && (
+                <div className="flex justify-end">
+                  <button
+                    className="rounded border border-emerald-700 px-3 py-1.5 text-sm text-emerald-300 disabled:opacity-50"
+                    disabled={planning}
+                    onClick={() => runScenePlan(activeChapter)}
+                  >
+                    AI 写场景卡
+                  </button>
+                </div>
+              )}
+              {!selected && (
+                <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+                  从左边选一卷、一章或一个场景开始编辑；也可以先手工建卷。
+                </p>
+              )}
+              {volume && (
+                <VolumeEditor
+                  key={volume.id}
+                  volume={volume}
+                  statuses={statuses}
+                  busy={busy}
+                  onSave={async (fields) =>
+                    run(async () => {
+                      await api.updateVolume(volume.id, fields)
+                      await refresh()
+                      setNotice('已保存')
+                    })
+                  }
+                  onDelete={deleteSelected}
+                />
+              )}
+              {chapter && (
+                <ChapterEditor
+                  key={chapter.id}
+                  chapter={chapter}
+                  statuses={statuses}
+                  busy={busy}
+                  onSave={async (fields) =>
+                    run(async () => {
+                      await api.updateChapter(chapter.id, fields)
+                      await refresh()
+                      setNotice('已保存')
+                    })
+                  }
+                  onDelete={deleteSelected}
+                />
+              )}
+              {scene && (
+                <SceneEditor
+                  key={scene.id}
+                  scene={scene}
+                  statuses={statuses}
+                  entries={entries}
+                  entriesReady={entriesProjectId === projectId}
+                  foreshadows={foreshadows}
+                  busy={busy}
+                  onSave={async (fields) =>
+                    run(async () => {
+                      await api.updateScene(scene.id, fields)
+                      await refresh()
+                      setNotice('已保存')
+                    })
+                  }
+                  onDelete={deleteSelected}
+                />
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {view !== 'structure' && (
+        <section className="space-y-4">
+          {!projectId ? (
+            <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+              先选一个项目。
+            </p>
+          ) : viewsLoading ? (
+            <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+              正在读取章节结构…
+            </p>
+          ) : (
+            <>
+              {view === 'rhythm' && (
+                <RhythmCurve
+                  volumes={volumes}
+                  onSelectChapter={(id) =>
+                    openInStructure({ kind: 'chapter', id })
+                  }
+                />
+              )}
+              {view === 'foreshadows' && (
+                <ForeshadowLedger
+                  volumes={volumes}
+                  foreshadows={foreshadows}
+                  statuses={statuses}
+                  onSelectScene={(id) => openInStructure({ kind: 'scene', id })}
+                />
+              )}
+              {view === 'lanes' && (
+                <Swimlanes
+                  volumes={volumes}
+                  onSelectChapter={(id) =>
+                    openInStructure({ kind: 'chapter', id })
+                  }
+                />
+              )}
+            </>
+          )}
+        </section>
+      )}
     </div>
   )
 }
