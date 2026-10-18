@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import config
 from app.db.models import (
     Chapter,
     GenerationRun,
@@ -17,6 +18,8 @@ from app.db.models import (
     Volume,
 )
 from app.db.session import SessionLocal
+from app.runtime.context import SLOT_REGISTRY
+from app.runtime.pricing import estimate_tokens
 from app.services import agent_service, chapter_service, search_service
 from app.services.runtime_service import PreparedExecution, RuntimeService
 from app.services.slot_source import scene_search_query
@@ -226,6 +229,49 @@ def _scene_extra(session: Session, scene: Scene) -> tuple[Project, dict]:
         "chapter_id": chapter.id,
         "volume_id": volume.id,
         "search_query": scene_search_query(session, project.id, scene),
+    }
+
+
+def context_preview(session: Session, scene_id: str) -> dict:
+    scene = _scene(session, scene_id)
+    project, extra = _scene_extra(session, scene)
+    agent = agent_service.find_by_task_type(session, "write")
+    if agent is None:
+        raise ValueError("找不到执笔智能体，请检查智能体工作室")
+
+    agent, version, prompt = RuntimeService(session).prepare_context(
+        project.id, agent.id, extra
+    )
+    if prompt.error:
+        raise ValueError(prompt.error["message"])
+
+    slots: list[dict] = []
+    for key in version.context_slots_json or []:
+        spec = SLOT_REGISTRY.get(key)
+        text = prompt.contents.get(key)
+        slots.append(
+            {
+                "key": key,
+                "label": spec.label if spec else key,
+                "priority": spec.priority if spec else 0,
+                "over_budget": spec.over_budget if spec else "drop",
+                "text": text,
+                "estimated_tokens": estimate_tokens(text) if text else 0,
+            }
+        )
+
+    settings = config.load_settings()
+    return {
+        "agent": {
+            "id": agent.id,
+            "name": agent.name,
+            "version_no": version.version_no,
+        },
+        "token_budget": int(settings.get("context_token_budget", 8000)),
+        "estimated_tokens": sum(slot["estimated_tokens"] for slot in slots),
+        "over_budget": prompt.over_budget,
+        "slots": slots,
+        "trimmed": prompt.trimmed,
     }
 
 

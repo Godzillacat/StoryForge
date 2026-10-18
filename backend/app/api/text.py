@@ -189,6 +189,16 @@ def get_text(scene_id: str, session: Session = Depends(get_session)) -> dict:
         raise _value_error(exc) from exc
 
 
+@router.get("/scenes/{scene_id}/context-preview")
+def context_preview(
+    scene_id: str, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        return text_service.context_preview(session, scene_id)
+    except ValueError as exc:
+        raise _value_error(exc) from exc
+
+
 @router.put("/scenes/{scene_id}/body")
 def save_body(
     scene_id: str, payload: TextWrite, session: Session = Depends(get_session)

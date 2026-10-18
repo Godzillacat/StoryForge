@@ -348,3 +348,38 @@ def test_missing_scene_and_revision_are_404(client):
     assert (
         client.get(f"/api/scenes/{scene_id}/revisions/nope").status_code == 404
     )
+
+
+def test_context_preview_lists_slots_without_calling_the_model(client, monkeypatch):
+    _project_id, scene_id = _create_scene(client)
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("预览不允许调用模型")
+
+    monkeypatch.setattr(
+        RuntimeService, "_resolve_client", lambda self, timeout: boom()
+    )
+
+    payload = client.get(f"/api/scenes/{scene_id}/context-preview").json()
+
+    assert payload["agent"]["name"] == "执笔"
+    assert payload["token_budget"] > 0
+    keys = {slot["key"] for slot in payload["slots"]}
+    assert {"scene_card", "scene_characters", "recent_text"} <= keys
+    card = next(slot for slot in payload["slots"] if slot["key"] == "scene_card")
+    assert "找到录音带" in card["text"]
+
+
+def test_context_preview_without_writer_is_400(client):
+    _project_id, _scene_id = _create_scene(client)
+    with SessionLocal() as session:
+        from app.db.models import Agent
+
+        writer = session.query(Agent).filter_by(task_type="write").one()
+        writer.enabled = False
+        session.commit()
+
+    _project_id, scene_id = _create_scene(client)
+    assert (
+        client.get(f"/api/scenes/{scene_id}/context-preview").status_code == 400
+    )
