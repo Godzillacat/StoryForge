@@ -34,7 +34,7 @@ export default function ContextPreview({ data, loading, error }: Props) {
             )}
           </summary>
           <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-slate-400">
-            {slot.text ?? '（已丢弃）'}
+            {slot.text ?? (data.trimmed[slot.key] ? '（已丢弃）' : '（本槽位暂无内容）')}
           </pre>
         </details>
       ))}
