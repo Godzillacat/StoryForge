@@ -50,6 +50,17 @@ def _applied_version(conn) -> int | None:
     return row[0] if row and row[0] is not None else None
 
 
+def _table_exists(conn, name: str) -> bool:
+    """迁移的目标表是否已存在。只认真正的表 —— 不把视图 / 索引当成前置条件。
+
+    参数化查询：表名来自迁移声明（写死的元组），但这里没有拼 SQL 的理由。
+    """
+    row = conn.exec_driver_sql(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)
+    ).fetchone()
+    return row is not None
+
+
 def _stamp(conn, version: int, note: str) -> None:
     """幂等盖章 —— 同一版本盖第二次只是把备注与时间刷新一遍。
 
@@ -131,9 +142,22 @@ def run_migrations(engine) -> None:
         with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             conn.exec_driver_sql("BEGIN")
             try:
-                for sql in step.statements:
-                    conn.exec_driver_sql(sql)
-                _stamp(conn, step.version, step.note)
+                missing = tuple(
+                    name for name in step.requires if not _table_exists(conn, name)
+                )
+                if missing:
+                    # 目标表尚未建出：这条迁移无从执行，但 create_all 紧接着会
+                    # 用**当前模型**建出它，而当前模型已含本步要加的列。跳过
+                    # SQL 并盖章为已应用 —— 这正是「所有迁移都已应用」的语义。
+                    _stamp(
+                        conn,
+                        step.version,
+                        f"{step.note}（目标表尚未建出，由 create_all 建出）",
+                    )
+                else:
+                    for sql in step.statements:
+                        conn.exec_driver_sql(sql)
+                    _stamp(conn, step.version, step.note)
             except Exception as exc:
                 conn.exec_driver_sql("ROLLBACK")
                 # 带上版本号与说明：不然作者看到的是一个不带上下文的
