@@ -7,7 +7,7 @@ search_index_state 仍由模型负责。
 
 from __future__ import annotations
 
-SEARCH_INDEX_VERSION = 1
+SEARCH_INDEX_VERSION = 2
 
 SEARCH_DDL = """
 CREATE VIRTUAL TABLE IF NOT EXISTS search_document USING fts5(

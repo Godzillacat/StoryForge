@@ -70,3 +70,25 @@ def test_search_types_filter(client):
 
     assert entries["results"]
     assert chapters["results"] == []
+
+
+def test_adopted_scene_body_is_searchable(client):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    volume = client.post(
+        f"/api/projects/{project['id']}/volumes", json={"name": "第一卷"}
+    ).json()
+    chapter = client.post(
+        f"/api/volumes/{volume['id']}/chapters", json={"title": "第一章"}
+    ).json()
+    scene = client.post(
+        f"/api/chapters/{chapter['id']}/scenes", json={"goal": "找到录音带"}
+    ).json()
+    client.put(
+        f"/api/scenes/{scene['id']}/body",
+        json={"content": "灯塔下的密信被雨水泡开。"},
+    )
+
+    results = client.get(
+        f"/api/projects/{project['id']}/search", params={"q": "灯塔下的密信"}
+    ).json()["results"]
+    assert any(row["entity_type"] == "scene" for row in results)

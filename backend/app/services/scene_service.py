@@ -458,6 +458,7 @@ def scene_payload(session: Session, scene: Scene) -> dict:
         "target_words_max": scene.target_words_max,
         "status": scene.status,
         "source_run_id": scene.source_run_id,
+        "has_body": bool((scene.body or "").strip()),
         "foreshadows": {
             "plants": [
                 {"id": row.id, "name": row.name}
