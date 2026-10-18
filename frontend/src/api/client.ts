@@ -57,6 +57,8 @@ export const api = {
     }),
   rollback: (agentId: string, versionId: string) =>
     request<Agent>(`/api/agents/${agentId}/rollback/${versionId}`, { method: 'POST' }),
+  applyPreset: (agentId: string) =>
+    request<Agent>(`/api/agents/${agentId}/apply-preset`, { method: 'POST' }),
 
   listRuns: (projectId?: string) =>
     request<RunView[]>(`/api/runs${projectId ? `?project_id=${projectId}` : ''}`),
@@ -97,12 +99,136 @@ export const api = {
       headers: JSON_HEADERS,
       body: JSON.stringify(body),
     }),
+  updateRelation: (relationId: string, body: Record<string, unknown>) =>
+    request<EntryRelation>(`/api/relations/${relationId}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
   deleteRelation: (relationId: string) =>
     request<void>(`/api/relations/${relationId}`, { method: 'DELETE' }),
 
   listTerms: (projectId: string) => request<TermRow[]>(`/api/projects/${projectId}/terms`),
+  listTimeline: (projectId: string) =>
+    request<TimelineEvent[]>(`/api/projects/${projectId}/timeline`),
+  createTimelineEvent: (projectId: string, body: Record<string, unknown>) =>
+    request<TimelineEvent>(`/api/projects/${projectId}/timeline`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  updateTimelineEvent: (eventId: string, body: Record<string, unknown>) =>
+    request<TimelineEvent>(`/api/timeline/${eventId}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  moveTimelineEvent: (eventId: string, direction: 'up' | 'down') =>
+    request<TimelineEvent>(`/api/timeline/${eventId}/move`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ direction }),
+    }),
+  deleteTimelineEvent: (eventId: string) =>
+    request<void>(`/api/timeline/${eventId}`, { method: 'DELETE' }),
   suggestEntries: (projectId: string) =>
     request<SuggestResponse>(`/api/projects/${projectId}/entries/suggest`, { method: 'POST' }),
+
+  listChapterTypes: () => request<ChapterTypesResponse>('/api/chapter-types'),
+  getChapterTree: (projectId: string) =>
+    request<{ volumes: VolumeNode[] }>(`/api/projects/${projectId}/chapters/tree`),
+  createVolume: (projectId: string, body: Record<string, unknown>) =>
+    request<VolumeView>(`/api/projects/${projectId}/volumes`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  updateVolume: (volumeId: string, body: Record<string, unknown>) =>
+    request<VolumeView>(`/api/volumes/${volumeId}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  deleteVolume: (volumeId: string) => request<void>(`/api/volumes/${volumeId}`, { method: 'DELETE' }),
+  moveVolume: (volumeId: string, direction: 'up' | 'down') =>
+    request<VolumeView>(`/api/volumes/${volumeId}/move`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ direction }),
+    }),
+  createChapter: (volumeId: string, body: Record<string, unknown>) =>
+    request<ChapterView>(`/api/volumes/${volumeId}/chapters`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  updateChapter: (chapterId: string, body: Record<string, unknown>) =>
+    request<ChapterView>(`/api/chapters/${chapterId}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  deleteChapter: (chapterId: string) =>
+    request<void>(`/api/chapters/${chapterId}`, { method: 'DELETE' }),
+  moveChapter: (chapterId: string, direction: 'up' | 'down') =>
+    request<ChapterView>(`/api/chapters/${chapterId}/move`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ direction }),
+    }),
+  createScene: (chapterId: string, body: Record<string, unknown>) =>
+    request<SceneNode>(`/api/chapters/${chapterId}/scenes`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  updateScene: (sceneId: string, body: Record<string, unknown>) =>
+    request<SceneNode>(`/api/scenes/${sceneId}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  deleteScene: (sceneId: string) => request<void>(`/api/scenes/${sceneId}`, { method: 'DELETE' }),
+  moveScene: (sceneId: string, direction: 'up' | 'down') =>
+    request<SceneNode>(`/api/scenes/${sceneId}/move`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ direction }),
+    }),
+
+  planChapters: (projectId: string) =>
+    request<ChapterPlanResponse>(`/api/projects/${projectId}/chapters/plan`, { method: 'POST' }),
+  planScenes: (chapterId: string) =>
+    request<ScenePlanResponse>(`/api/chapters/${chapterId}/scenes/plan`, { method: 'POST' }),
+  writeChapterPlan: (projectId: string, body: Record<string, unknown>) =>
+    request<{ volumes: VolumeNode[] }>(`/api/projects/${projectId}/chapters`, {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  writeScenes: (chapterId: string, body: Record<string, unknown>) =>
+    request<{ volumes: VolumeNode[] }>(`/api/chapters/${chapterId}/scenes`, {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+
+  listForeshadows: (projectId: string) =>
+    request<Foreshadow[]>(`/api/projects/${projectId}/foreshadows`),
+  createForeshadow: (projectId: string, body: Record<string, unknown>) =>
+    request<Foreshadow>(`/api/projects/${projectId}/foreshadows`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  updateForeshadow: (foreshadowId: string, body: Record<string, unknown>) =>
+    request<Foreshadow>(`/api/foreshadows/${foreshadowId}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  deleteForeshadow: (foreshadowId: string) =>
+    request<void>(`/api/foreshadows/${foreshadowId}`, { method: 'DELETE' }),
 
   listProviders: () => request<ProviderView[]>('/api/providers'),
   createProvider: (body: Record<string, unknown>) =>
@@ -239,6 +365,13 @@ export interface AgentVersion {
   note: string
 }
 
+export interface AgentPresetStatus {
+  key: string | null
+  update_available: boolean
+  can_restore: boolean
+  up_to_date: boolean
+}
+
 export interface Agent {
   id: string
   name: string
@@ -247,6 +380,7 @@ export interface Agent {
   task_type: string
   enabled: boolean
   builtin: boolean
+  preset: AgentPresetStatus
   current_version: AgentVersion | null
 }
 
@@ -300,6 +434,7 @@ export interface EntryTypeOption {
 export interface EntryTypesResponse {
   types: EntryTypeOption[]
   hardness: EntryTypeOption[]
+  character_fields: { key: string; label: string; multiline: boolean }[]
 }
 
 export interface SettingEntry {
@@ -313,6 +448,14 @@ export interface SettingEntry {
   description: string
   hardness: string | null
   source_run_id: string | null
+  appearance: string | null
+  personality: string | null
+  desire: string | null
+  fear: string | null
+  arc_type: string | null
+  abilities: string | null
+  speech_style: string | null
+  current_state: string | null
   created_at: string
 }
 
@@ -322,6 +465,7 @@ export interface EntryRelation {
   from_id: string
   to_id: string
   kind: string
+  strength: number | null
   note: string
 }
 
@@ -333,6 +477,18 @@ export interface TermRow {
   is_primary: boolean
 }
 
+export interface TimelineEvent {
+  id: string
+  project_id: string
+  title: string
+  story_time: string
+  description: string
+  participants: string[]
+  location_id: string | null
+  order_index: number
+  created_at: string
+}
+
 export interface SuggestedEntry {
   type?: string
   name?: string
@@ -340,12 +496,152 @@ export interface SuggestedEntry {
   summary?: string
   description?: string
   hardness?: string | null
+  appearance?: string | null
+  personality?: string | null
+  desire?: string | null
+  fear?: string | null
+  arc_type?: string | null
+  abilities?: string | null
+  speech_style?: string | null
+  current_state?: string | null
 }
 
 export interface SuggestResponse {
   run: RunView
   entries: SuggestedEntry[]
   open_questions: string[]
+  structured: boolean
+  parse_error: string | null
+  raw_text: string
+}
+
+export interface ChapterStatusOption {
+  key: string
+  label: string
+}
+
+export interface ChapterTypesResponse {
+  statuses: ChapterStatusOption[]
+}
+
+export interface SceneNode {
+  id: string
+  chapter_id: string
+  seq: number
+  goal: string
+  conflict: string
+  turn: string
+  characters: string[]
+  location_id: string | null
+  story_time: string
+  pov: string
+  target_words_min: number | null
+  target_words_max: number | null
+  status: string
+  source_run_id: string | null
+  foreshadows: { plants: { id: string; name: string }[]; pays: { id: string; name: string }[] }
+}
+
+export interface Foreshadow {
+  id: string
+  project_id: string
+  name: string
+  note: string
+  plant_scene_id: string | null
+  plan_pay_scene_id: string | null
+  status: string
+  source_run_id: string | null
+}
+
+export interface ChapterNode {
+  id: string
+  volume_id: string
+  seq: number
+  title: string
+  pov: string
+  target_words: number | null
+  emotional_tone: string
+  lines: string[]
+  hook: string
+  summary: string
+  conflict_level: number | null
+  dialogue_ratio: number | null
+  hook_strength: number | null
+  status: string
+  source_run_id: string | null
+  scenes: SceneNode[]
+}
+
+export interface VolumeNode {
+  id: string
+  project_id: string
+  seq: number
+  name: string
+  purpose: string
+  summary: string
+  act_seq: number | null
+  target_words: number | null
+  status: string
+  source_run_id: string | null
+  chapters: ChapterNode[]
+}
+
+export type VolumeView = Omit<VolumeNode, 'chapters'>
+export type ChapterView = Omit<ChapterNode, 'scenes'>
+
+export interface PlanChapter {
+  title: string
+  pov: string
+  target_words: number | null
+  emotional_tone: string
+  lines: string[]
+  hook: string
+  summary: string
+  conflict_level: number | null
+  dialogue_ratio: number | null
+  hook_strength: number | null
+  status: string
+}
+
+export interface PlanVolume {
+  name: string
+  purpose: string
+  summary: string
+  act_seq: number | null
+  target_words: number | null
+  status: string
+  chapters: PlanChapter[]
+}
+
+export interface ChapterPlanResponse {
+  run: RunView
+  volumes: PlanVolume[]
+  open_questions: string[]
+  warnings: string[]
+  structured: boolean
+  parse_error: string | null
+  raw_text: string
+}
+
+export interface PlanScene {
+  goal: string
+  conflict: string
+  turn: string
+  characters: string[]
+  location: string
+  story_time: string
+  pov: string
+  target_words_min: number | null
+  target_words_max: number | null
+  foreshadow_plants: string[]
+  foreshadow_pays: string[]
+}
+
+export interface ScenePlanResponse {
+  run: RunView
+  scenes: PlanScene[]
+  open_questions: string[]
+  warnings: string[]
   structured: boolean
   parse_error: string | null
   raw_text: string

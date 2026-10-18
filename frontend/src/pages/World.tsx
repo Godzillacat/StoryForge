@@ -11,12 +11,13 @@ import CandidateList, { type CandidateRow } from '../components/CandidateList'
 import RunTrace from '../components/RunTrace'
 import EntryEditor, {
   EMPTY_DRAFT,
+  characterFieldsOf,
   joinList,
   splitList,
   type EntryDraft,
 } from '../components/EntryEditor'
 
-function draftOf(entry: SettingEntry): EntryDraft {
+function draftOf(entry: SettingEntry, characterFields: { key: string }[]): EntryDraft {
   return {
     type: entry.type,
     name: entry.name,
@@ -25,6 +26,7 @@ function draftOf(entry: SettingEntry): EntryDraft {
     summary: entry.summary,
     description: entry.description,
     hardness: entry.hardness ?? '',
+    fields: characterFieldsOf(entry, characterFields),
   }
 }
 
@@ -38,7 +40,7 @@ export default function World() {
   const [draft, setDraft] = useState<EntryDraft>(EMPTY_DRAFT)
   const [creating, setCreating] = useState(false)
   const [notice, setNotice] = useState('')
-  const [relationDraft, setRelationDraft] = useState({ to_id: '', kind: '' })
+  const [relationDraft, setRelationDraft] = useState({ to_id: '', kind: '', strength: '' })
   const [candidates, setCandidates] = useState<CandidateRow[]>([])
   const [openQuestions, setOpenQuestions] = useState<string[]>([])
   const [suggesting, setSuggesting] = useState(false)
@@ -87,9 +89,9 @@ export default function World() {
   function selectEntry(entry: SettingEntry) {
     setSelectedId(entry.id)
     setCreating(false)
-    setDraft(draftOf(entry))
+    setDraft(draftOf(entry, types?.character_fields ?? []))
     setNotice('')
-    setRelationDraft({ to_id: '', kind: '' })
+    setRelationDraft({ to_id: '', kind: '', strength: '' })
   }
 
   function startCreating() {
@@ -108,6 +110,9 @@ export default function World() {
       summary: next.summary,
       description: next.description,
       hardness: next.hardness || null,
+      // 人物八项只对人物类条目有意义；非人物条目若原样带上这些键，
+      // 会把脏值写成空串（或把隐藏草稿里的旧值带过去）。
+      ...(next.type === 'character' ? next.fields : {}),
     }
   }
 
@@ -153,6 +158,7 @@ export default function World() {
         summary: next.summary,
         description: next.description,
         hardness: next.hardness || null,
+        ...(next.type === 'character' ? next.fields : {}),
         source_run_id: lastRun?.id ?? null,
       })
       await refresh()
@@ -216,8 +222,9 @@ export default function World() {
         from_id: selectedId,
         to_id: relationDraft.to_id,
         kind: relationDraft.kind.trim(),
+        strength: relationDraft.strength ? Number(relationDraft.strength) : null,
       })
-      setRelationDraft({ to_id: '', kind: '' })
+      setRelationDraft({ to_id: '', kind: '', strength: '' })
       await refresh()
       setNotice('已建立关联')
     } catch (error) {
@@ -371,6 +378,9 @@ export default function World() {
                 {outgoing.map((relation) => (
                   <li key={relation.id} className="flex items-center gap-3">
                     <span className="text-slate-400">{relation.kind}</span>
+                    <span className="text-xs text-slate-500">
+                      强度 {relation.strength ?? '未评'}
+                    </span>
                     <span>{nameOf(relation.to_id)}</span>
                     <button
                       className="text-xs text-amber-400"
@@ -391,6 +401,18 @@ export default function World() {
                   value={relationDraft.kind}
                   onChange={(e) => setRelationDraft({ ...relationDraft, kind: e.target.value })}
                 />
+                <select
+                  className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
+                  value={relationDraft.strength}
+                  onChange={(e) => setRelationDraft({ ...relationDraft, strength: e.target.value })}
+                >
+                  <option value="">未评</option>
+                  {[1, 2, 3, 4, 5].map((value) => (
+                    <option key={value} value={value}>
+                      强度 {value}
+                    </option>
+                  ))}
+                </select>
                 <select
                   className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
                   value={relationDraft.to_id}

@@ -166,6 +166,21 @@ export default function Studio() {
     }
   }
 
+  async function applyPreset() {
+    if (!selected) return
+    const message = selected.preset?.update_available
+      ? '应用预置更新会新建一版并设为当前。旧版本保留，可回退。继续？'
+      : '恢复预置会用当前预置新建一版并设为当前。旧版本保留，可回退。继续？'
+    if (!window.confirm(message)) return
+    try {
+      await api.applyPreset(selected.id)
+      await refreshAgents(selected.id)
+      setNotice('已应用预置')
+    } catch (error) {
+      setNotice((error as Error).message)
+    }
+  }
+
   async function runOnce() {
     if (!selected || !projectId) return
     try {
@@ -225,6 +240,32 @@ export default function Studio() {
             <div className="text-sm text-slate-400">
               任务类型：{selected.task_type} · 当前版本 v{currentVersionNo}
             </div>
+
+            {selected.preset?.update_available && (
+              <section className="flex flex-wrap items-center gap-3 rounded border border-amber-700 bg-amber-950/30 p-3 text-sm">
+                <span className="text-amber-300">预置有更新。</span>
+                <span className="text-xs text-amber-200/70">
+                  应用会新建一版并设为当前；旧版本保留，可回退。
+                </span>
+                <button
+                  className="rounded bg-amber-600 px-3 py-1.5 text-sm"
+                  onClick={applyPreset}
+                >
+                  应用预置更新
+                </button>
+              </section>
+            )}
+            {!selected.preset?.update_available && selected.preset?.can_restore && (
+              <section className="flex flex-wrap items-center gap-3 rounded border border-slate-700 p-3 text-sm">
+                <span className="text-slate-300">当前版本不是最新预置。</span>
+                <button
+                  className="rounded border border-slate-600 px-3 py-1.5 text-sm"
+                  onClick={applyPreset}
+                >
+                  恢复预置
+                </button>
+              </section>
+            )}
 
             <section className="space-y-3 rounded border border-slate-800 p-4">
               <h3 className="text-sm font-medium text-slate-300">角色卡</h3>

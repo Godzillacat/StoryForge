@@ -1,4 +1,5 @@
 from app.agents.roster import DEFAULT_ROSTER, TASK_TYPES
+from app.world_types import CHARACTER_FIELDS
 
 
 def test_task_types_cover_documented_roster():
@@ -7,6 +8,7 @@ def test_task_types_cover_documented_roster():
         "architecture",
         "worldbuilding",
         "chapter_plan",
+        "scene_plan",
         "write",
         "polish",
         "continuity",
@@ -175,13 +177,70 @@ def test_worldbuilder_schema_has_entries_and_open_questions():
         "summary",
         "description",
         "hardness",
-    }
+    } | set(CHARACTER_FIELDS)
     assert item["required"] == ["type", "name", "summary"]
 
 
+def test_worldbuilder_character_fields_are_optional_and_generated_from_the_vocabulary():
+    """人物八项**从唯一真相生成**：键与中文标签都必须与 CHARACTER_FIELDS 一致。
+
+    它们是可选的 —— 非人物候选不填；契约校验器放过的「可选字段为 null」
+    正好兜住这类省略。
+    """
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "worldbuilder")
+    item = entry["output_schema"]["properties"]["entries"]["items"]
+
+    for key, (label, _multiline) in CHARACTER_FIELDS.items():
+        assert key not in item["required"]
+        assert item["properties"][key]["title"] == f"{label}（只有人物才填）"
+        assert item["properties"][key]["type"] == "string"
+
+
+def test_chapter_planner_is_in_the_default_roster():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "chapter_planner")
+    assert entry["task_type"] == "chapter_plan"
+    assert entry["context_slots"] == [
+        "project_core",
+        "story_bible",
+        "architecture",
+        "parsed_idea",
+        "world_context",
+        "tool_library",
+    ]
+    props = entry["output_schema"]["properties"]
+    assert set(props) == {"volumes", "open_questions"}
+    chapter = props["volumes"]["items"]["properties"]["chapters"]["items"]
+    assert {"title", "pov", "target_words", "conflict_level", "dialogue_ratio", "hook_strength"} <= set(
+        chapter["properties"]
+    )
+    assert "编造" in entry["system_prompt"]
+
+
+def test_scene_planner_is_in_the_default_roster():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "scene_planner")
+    assert entry["task_type"] == "scene_plan"
+    assert entry["context_slots"] == [
+        "project_core",
+        "story_bible",
+        "architecture",
+        "world_context",
+        "timeline",
+        "volume_outline",
+        "chapter_outline",
+        "tool_library",
+    ]
+    props = entry["output_schema"]["properties"]
+    assert set(props) == {"scenes", "open_questions"}
+    scene = props["scenes"]["items"]
+    assert {"goal", "conflict", "turn", "characters", "location", "foreshadow_plants", "foreshadow_pays"} <= set(
+        scene["properties"]
+    )
+    assert "编造" in entry["system_prompt"]
+
+
 def test_worldbuilder_type_descriptions_match_the_vocabulary():
-    """契约里的字段说明必须把八类都讲到 —— 提示词里不许写英文键（护栏会拦），
-    所以模型只可能从契约说明块里知道有哪些类型。"""
+    """契约里的字段说明必须把类型词表里的每一类都讲到 —— 提示词里不许写
+    英文键（护栏会拦），所以模型只可能从契约说明块里知道有哪些类型。"""
     from app.world_types import ENTRY_TYPES
 
     entry = next(e for e in DEFAULT_ROSTER if e["key"] == "worldbuilder")

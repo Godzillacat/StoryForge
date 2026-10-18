@@ -18,8 +18,49 @@ class Migration:
     statements: tuple[str, ...]  # 原始 SQL，按序执行
 
 
-# 今天是空的：当下没有需要改的已有表。第一次真正使用是 P1b-2 给 setting_entry 加列。
-MIGRATIONS: tuple[Migration, ...] = ()
+# 第一条真实迁移：给 setting_entry 加人物八列。
+# 只加可空列 —— 原地操作，作者的存量数据不受影响。
+#
+# **八条语句写死成字面量，不从 CHARACTER_FIELDS 派生。** 一份迁移是**历史记录**：
+# 它一旦在某个库里跑过，那条路径就再也不会重来（作者的库此刻已盖到 v1）。若从
+# 可变常量派生，日后往 CHARACTER_FIELDS 添一项，已迁移的库永远拿不到那一列、
+# 新装的库却有 —— 静默分叉，而且测试全跑在新库上、会全绿。新增人物字段的正确
+# 做法是**新开一条迁移**，而不是改这一条、也不是改那份常量。
+# v2 / v3 同样是冻结历史，日后加列只能新开版本。
+MIGRATIONS: tuple[Migration, ...] = (
+    Migration(
+        version=1,
+        note="setting_entry 加人物八列",
+        statements=(
+            "ALTER TABLE setting_entry ADD COLUMN appearance TEXT",
+            "ALTER TABLE setting_entry ADD COLUMN personality TEXT",
+            "ALTER TABLE setting_entry ADD COLUMN desire TEXT",
+            "ALTER TABLE setting_entry ADD COLUMN fear TEXT",
+            "ALTER TABLE setting_entry ADD COLUMN arc_type TEXT",
+            "ALTER TABLE setting_entry ADD COLUMN abilities TEXT",
+            "ALTER TABLE setting_entry ADD COLUMN speech_style TEXT",
+            "ALTER TABLE setting_entry ADD COLUMN current_state TEXT",
+        ),
+    ),
+    Migration(
+        version=2,
+        note="entry_relation 加关系强度",
+        statements=(
+            "ALTER TABLE entry_relation ADD COLUMN strength INTEGER",
+        ),
+    ),
+    # 预置更新要靠两样东西：稳定的预置身份，以及「这个版本来自哪份预置」的指纹。
+    # 唯一索引允许多个 NULL，只约束真正被认领的预置角色卡。
+    Migration(
+        version=3,
+        note="agent 加预置身份与版本指纹",
+        statements=(
+            "ALTER TABLE agent ADD COLUMN preset_key VARCHAR(60)",
+            "ALTER TABLE agent_version ADD COLUMN preset_fingerprint VARCHAR(64)",
+            "CREATE UNIQUE INDEX uq_agent_preset_key ON agent(preset_key)",
+        ),
+    ),
+)
 
 BASELINE_VERSION = 0
 

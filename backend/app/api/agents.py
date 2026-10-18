@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import AgentUpdate, VersionCreate
 from app.db.session import get_session
-from app.services import agent_service
+from app.services import agent_service, preset_service
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
@@ -37,6 +37,7 @@ def _agent_out(agent, version) -> dict:
         "task_type": agent.task_type,
         "enabled": agent.enabled,
         "builtin": agent.builtin,
+        "preset": preset_service.status_for(agent, version),
         "current_version": _version_out(version),
     }
 
@@ -82,6 +83,23 @@ def create_version(agent_id: str, payload: VersionCreate, session: Session = Dep
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _version_out(version)
+
+
+@router.post("/{agent_id}/apply-preset")
+def apply_preset(agent_id: str, session: Session = Depends(get_session)) -> dict:
+    agent = agent_service.get_agent(session, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"智能体不存在：{agent_id}")
+    try:
+        preset_service.apply_preset(session, agent)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    version = (
+        agent_service.get_version(session, agent.current_version_id)
+        if agent.current_version_id
+        else None
+    )
+    return _agent_out(agent, version)
 
 
 @router.post("/{agent_id}/rollback/{version_id}")

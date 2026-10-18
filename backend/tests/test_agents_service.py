@@ -52,6 +52,23 @@ def test_explicit_fields_still_win_over_inheritance(session):
     assert v2.model_binding_json == {"model": "m1"}  # 未显式给的字段仍继承
 
 
+def test_create_version_never_inherits_preset_fingerprint(session):
+    agent = Agent(name="预置智能体", task_type="idea_parse")
+    session.add(agent)
+    session.flush()
+    version = AgentVersion(
+        agent_id=agent.id, version_no=1, system_prompt="预置", preset_fingerprint="abc"
+    )
+    session.add(version)
+    session.flush()
+    agent.current_version_id = version.id
+    session.commit()
+
+    new = agent_service.create_version(session, agent.id, system_prompt="作者改过")
+
+    assert new.preset_fingerprint is None
+
+
 def test_first_version_of_an_empty_agent(session):
     agent = Agent(name="空智能体", task_type="idea_parse")
     session.add(agent)

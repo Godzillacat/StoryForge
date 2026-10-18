@@ -1,6 +1,7 @@
 import pytest
 
 from app.world_types import (
+    CHARACTER_FIELDS,
     ENTRY_TYPES,
     HARDNESS_LEVELS,
     normalize_hardness,
@@ -18,9 +19,33 @@ def test_type_vocabulary_matches_the_spec():
         "item",
         "concept",
         "term",
+        "character",
     }
     assert ENTRY_TYPES["rule"] == "规则体系"
+    assert ENTRY_TYPES["character"] == "人物"
     assert set(HARDNESS_LEVELS) == {"hard", "soft", "atmosphere"}
+
+
+def test_character_fields_are_the_eight_documented_ones():
+    """八项来自上位文档 §4.4：姓名走 name、称呼走 aliases，其余八项在这里。"""
+    assert list(CHARACTER_FIELDS) == [
+        "appearance",
+        "personality",
+        "desire",
+        "fear",
+        "arc_type",
+        "abilities",
+        "speech_style",
+        "current_state",
+    ]
+    assert CHARACTER_FIELDS["appearance"] == ("外貌", True)
+    assert CHARACTER_FIELDS["arc_type"] == ("弧光类型", False)
+
+
+def test_character_is_normalized_from_its_chinese_label():
+    """归一化查的就是 ENTRY_TYPES —— 新增一类不需要动归一化函数本身。"""
+    assert normalize_type("人物") == "character"
+    assert normalize_type("character") == "character"
 
 
 def test_normalize_type_accepts_both_the_key_and_the_chinese_label():

@@ -146,3 +146,96 @@ def test_relation_is_directional(session):
     backward = session.scalars(select(EntryRelation).where(EntryRelation.from_id == b.id)).all()
     assert len(forward) == 1
     assert backward == []
+
+
+def test_relation_strength_defaults_to_none(session):
+    from app.db.models import EntryRelation, SettingEntry
+
+    project = Project(name="雾港")
+    session.add(project)
+    session.commit()
+    a = SettingEntry(project_id=project.id, type="character", name="甲")
+    b = SettingEntry(project_id=project.id, type="character", name="乙")
+    session.add_all([a, b])
+    session.commit()
+    relation = EntryRelation(project_id=project.id, from_id=a.id, to_id=b.id, kind="挚友")
+    session.add(relation)
+    session.commit()
+
+    assert session.get(EntryRelation, relation.id).strength is None
+
+
+def test_timeline_event_roundtrip(session):
+    from app.db.models import SettingEntry, TimelineEvent
+
+    project = Project(name="雾港")
+    session.add(project)
+    session.commit()
+    character = SettingEntry(project_id=project.id, type="character", name="陈默")
+    place = SettingEntry(project_id=project.id, type="place", name="南滨")
+    session.add_all([character, place])
+    session.commit()
+
+    event = TimelineEvent(
+        project_id=project.id,
+        title="初遇",
+        story_time="第三年·春",
+        description="陈默在南滨旧城第一次听见那段声音。",
+        participants_json=[character.id],
+        location_id=place.id,
+    )
+    session.add(event)
+    session.commit()
+
+    stored = session.get(TimelineEvent, event.id)
+    assert stored.title == "初遇"
+    assert stored.story_time == "第三年·春"
+    assert stored.participants_json == [character.id]
+    assert stored.location_id == place.id
+    assert stored.order_index == 0
+
+
+def test_agent_preset_key_unique_index_exists_in_fresh_database(session):
+    """新鲜库由 create_all 建表，唯一索引必须来自 Agent.__table_args__。
+
+    迁移路径上的同一条索引由 migrations v3 建出；这里单独钉住模型侧，
+    否则「迁移路径有测试、新鲜库路径没有」会让两条路径悄悄分叉。
+    """
+    from sqlalchemy import inspect
+    from sqlalchemy.exc import IntegrityError
+
+    indexes = inspect(session.get_bind()).get_indexes("agent")
+    preset = next(i for i in indexes if i["name"] == "uq_agent_preset_key")
+    # SQLite 反射回来的是 1/0，不是 True/False。
+    assert preset["unique"]
+
+    # SQLite 的唯一索引允许多个 NULL：没被预置认领的角色卡不受约束。
+    session.add_all(
+        [
+            Agent(name="甲", task_type="idea_parse"),
+            Agent(name="乙", task_type="idea_parse"),
+        ]
+    )
+    session.commit()
+
+    session.add_all(
+        [
+            Agent(name="架构师", task_type="architecture", preset_key="architect"),
+            Agent(name="另一个架构师", task_type="architecture", preset_key="architect"),
+        ]
+    )
+    with pytest.raises(IntegrityError):
+        session.commit()
+    session.rollback()
+
+
+def test_agent_preset_fields_default_to_none(session):
+    agent = Agent(name="某智能体", task_type="idea_parse")
+    session.add(agent)
+    session.flush()
+    version = AgentVersion(agent_id=agent.id, version_no=1)
+    session.add(version)
+    session.commit()
+
+    assert agent.preset_key is None
+    assert version.preset_fingerprint is None

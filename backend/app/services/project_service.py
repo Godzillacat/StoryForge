@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Project
+from app.services import search_service
 
 
 def list_projects(session: Session) -> list[Project]:
@@ -36,5 +37,6 @@ def delete_project(session: Session, project_id: str) -> None:
     project = session.get(Project, project_id)
     if project is None:
         raise ValueError(f"项目不存在：{project_id}")
+    search_service.delete_project(session, project_id)
     session.delete(project)
     session.commit()

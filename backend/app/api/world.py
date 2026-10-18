@@ -4,11 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api._serializers import _run_out
-from app.api.schemas import EntryCreate, EntryUpdate, RelationCreate
+from app.api.schemas import EntryCreate, EntryUpdate, RelationCreate, RelationUpdate
 from app.db.session import get_session
 from app.services import agent_service, world_service
 from app.services.runtime_service import RuntimeService
 from app.world_types import (
+    CHARACTER_FIELDS,
     ENTRY_TYPES,
     HARDNESS_LEVELS,
     normalize_hardness,
@@ -25,6 +26,10 @@ def list_entry_types() -> dict:
     return {
         "types": [{"key": k, "label": v} for k, v in ENTRY_TYPES.items()],
         "hardness": [{"key": k, "label": v} for k, v in HARDNESS_LEVELS.items()],
+        "character_fields": [
+            {"key": key, "label": label, "multiline": multiline}
+            for key, (label, multiline) in CHARACTER_FIELDS.items()
+        ],
     }
 
 
@@ -120,6 +125,9 @@ def _entry_out(entry) -> dict:
         "description": entry.description,
         "hardness": entry.hardness,
         "source_run_id": entry.source_run_id,
+        # 人物八项从唯一真相派生（同 world_service 的 _FIELD_TO_COLUMN）：
+        # 手抄第二份清单的话，加第九项会在这里静默漏掉。
+        **{key: getattr(entry, key) for key in CHARACTER_FIELDS},
         "created_at": entry.created_at.isoformat(),
     }
 
@@ -179,6 +187,7 @@ def _relation_out(relation) -> dict:
         "from_id": relation.from_id,
         "to_id": relation.to_id,
         "kind": relation.kind,
+        "strength": relation.strength,
         "note": relation.note,
     }
 
@@ -194,6 +203,21 @@ def create_relation(
 ) -> dict:
     try:
         relation = world_service.create_relation(session, project_id, **payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _relation_out(relation)
+
+
+@router.patch("/relations/{relation_id}")
+def update_relation(
+    relation_id: str, payload: RelationUpdate, session: Session = Depends(get_session)
+) -> dict:
+    if world_service.get_relation(session, relation_id) is None:
+        raise HTTPException(status_code=404, detail=f"关联不存在：{relation_id}")
+    try:
+        relation = world_service.update_relation(
+            session, relation_id, **payload.model_dump(exclude_unset=True)
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _relation_out(relation)

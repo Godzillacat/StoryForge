@@ -1,10 +1,13 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import Architecture from './pages/Architecture'
+import Chapters from './pages/Chapters'
 import Dashboard from './pages/Dashboard'
 import Idea from './pages/Idea'
 import Models from './pages/Models'
+import Relations from './pages/Relations'
 import Studio from './pages/Studio'
 import Terms from './pages/Terms'
+import Timeline from './pages/Timeline'
 import World from './pages/World'
 
 const NAV = [
@@ -12,7 +15,10 @@ const NAV = [
   { to: '/idea', label: '灵感与解析' },
   { to: '/architecture', label: '架构推荐' },
   { to: '/world', label: '世界观' },
+  { to: '/relations', label: '关系网' },
+  { to: '/timeline', label: '时间线' },
   { to: '/terms', label: '术语表' },
+  { to: '/chapters', label: '章节设计' },
   { to: '/studio', label: '智能体工作室' },
   { to: '/models', label: '模型与费用' },
 ]
@@ -45,7 +51,10 @@ export default function App() {
           <Route path="/idea" element={<Idea />} />
           <Route path="/architecture" element={<Architecture />} />
           <Route path="/world" element={<World />} />
+          <Route path="/relations" element={<Relations />} />
+          <Route path="/timeline" element={<Timeline />} />
           <Route path="/terms" element={<Terms />} />
+          <Route path="/chapters" element={<Chapters />} />
           <Route path="/studio" element={<Studio />} />
           <Route path="/models" element={<Models />} />
         </Routes>

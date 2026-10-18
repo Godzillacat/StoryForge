@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IdMixin, TimestampMixin
@@ -33,6 +33,18 @@ class SettingEntry(IdMixin, TimestampMixin, Base):
     # 从哪次运行采纳来的；手工新建的为 None（D-03 可追溯）
     source_run_id: Mapped[str | None] = mapped_column(String(36), default=None)
 
+    # 人物（type == "character"）的类型专属字段，其余类型一律 NULL。
+    # 刻意**不**像 hardness 那样在类型改变时清空：这些是作者手写的长文本，
+    # 误点一次类型就静默丢掉太重。代价是表里可能留下不显示的隐形数据。
+    appearance: Mapped[str | None] = mapped_column(Text, default=None)
+    personality: Mapped[str | None] = mapped_column(Text, default=None)
+    desire: Mapped[str | None] = mapped_column(Text, default=None)
+    fear: Mapped[str | None] = mapped_column(Text, default=None)
+    arc_type: Mapped[str | None] = mapped_column(Text, default=None)
+    abilities: Mapped[str | None] = mapped_column(Text, default=None)
+    speech_style: Mapped[str | None] = mapped_column(Text, default=None)
+    current_state: Mapped[str | None] = mapped_column(Text, default=None)
+
 
 class EntryRelation(IdMixin, TimestampMixin, Base):
     """条目之间的有向关联。
@@ -55,3 +67,5 @@ class EntryRelation(IdMixin, TimestampMixin, Base):
     )
     kind: Mapped[str] = mapped_column(String(60))
     note: Mapped[str] = mapped_column(Text, default="")
+    # 关系强度 1–5；None = 未评。旧行由迁移补成 NULL。
+    strength: Mapped[int | None] = mapped_column(Integer, default=None)

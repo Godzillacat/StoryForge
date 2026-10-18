@@ -1,6 +1,6 @@
 import json
 
-from app.world_types import ENTRY_TYPES, HARDNESS_LEVELS
+from app.world_types import CHARACTER_FIELDS, ENTRY_TYPES, HARDNESS_LEVELS
 
 
 def test_entry_types_endpoint_is_the_frontends_only_source(client):
@@ -10,6 +10,17 @@ def test_entry_types_endpoint_is_the_frontends_only_source(client):
     assert {h["key"]: h["label"] for h in payload["hardness"]} == HARDNESS_LEVELS
     # 顺序稳定，前端不必再排一次
     assert [t["key"] for t in payload["types"]] == list(ENTRY_TYPES)
+
+
+def test_entry_types_lists_character_fields(client):
+    payload = client.get("/api/entry-types").json()
+
+    assert [f["key"] for f in payload["character_fields"]] == list(CHARACTER_FIELDS)
+    assert payload["character_fields"][0] == {
+        "key": "appearance",
+        "label": "外貌",
+        "multiline": True,
+    }
 
 
 def test_entry_crud_over_http(client):
@@ -289,3 +300,135 @@ def test_null_open_questions_comes_back_as_an_empty_list(client, monkeypatch):
     assert body["structured"] is True
     assert body["open_questions"] == []
     assert len(body["entries"]) == 3
+
+
+def test_character_fields_round_trip_over_http(client):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+
+    created = client.post(
+        f"/api/projects/{project['id']}/entries",
+        json={"type": "人物", "name": "陈默", "appearance": "瘦高", "arc_type": "幻灭"},
+    ).json()
+
+    assert created["type"] == "character"  # 中文「人物」在边界归一化
+    assert created["appearance"] == "瘦高"
+    assert created["arc_type"] == "幻灭"
+    assert created["personality"] is None  # 没填的就是空
+
+    listed = client.get(f"/api/projects/{project['id']}/entries").json()
+    assert listed[0]["appearance"] == "瘦高"
+
+
+def test_entry_serialization_covers_the_character_field_list(client):
+    """序列化输出必须覆盖 CHARACTER_FIELDS 的每一个键。
+
+    与 Task 1 那条「接口下发覆盖字段清单」同一路数：字段清单是唯一真相，
+    输出从它派生（`_entry_out` 里的 `**{key: getattr(entry, key) ...}`）。
+    将来给清单加第九项、却没有对应的列时，这里当场炸（AttributeError →
+    500），而不是安静地少输出一个键 —— 那时作者会发现字段填了却存不下来。
+    """
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    created = client.post(
+        f"/api/projects/{project['id']}/entries",
+        json={"type": "人物", "name": "陈默", "appearance": "瘦高"},
+    ).json()
+
+    assert set(CHARACTER_FIELDS) <= set(created)
+
+    # 列表路径单独走一遍：它读的是重新从库里取的对象，不是刚写的那个
+    listed = client.get(f"/api/projects/{project['id']}/entries").json()
+    assert set(CHARACTER_FIELDS) <= set(listed[0])
+
+
+def test_relation_strength_and_reverse_over_http(client):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    a = client.post(
+        f"/api/projects/{project['id']}/entries", json={"type": "人物", "name": "陈默"}
+    ).json()
+    b = client.post(
+        f"/api/projects/{project['id']}/entries", json={"type": "人物", "name": "林晚"}
+    ).json()
+
+    created = client.post(
+        f"/api/projects/{project['id']}/relations",
+        json={
+            "from_id": a["id"],
+            "to_id": b["id"],
+            "kind": "挚友",
+            "strength": 4,
+            "create_reverse": True,
+        },
+    ).json()
+    assert created["strength"] == 4
+
+    relations = client.get(f"/api/projects/{project['id']}/relations").json()
+    assert len(relations) == 2
+    reverse = next(r for r in relations if r["from_id"] == b["id"])
+
+    updated = client.patch(
+        f"/api/relations/{reverse['id']}",
+        json={"kind": "陌路", "strength": 1, "note": "渐生忌惮"},
+    ).json()
+    assert updated["kind"] == "陌路"
+    assert updated["strength"] == 1
+    assert updated["note"] == "渐生忌惮"
+
+
+def test_relation_strength_out_of_range_is_422(client):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    a = client.post(
+        f"/api/projects/{project['id']}/entries", json={"type": "人物", "name": "甲"}
+    ).json()
+    b = client.post(
+        f"/api/projects/{project['id']}/entries", json={"type": "人物", "name": "乙"}
+    ).json()
+
+    response = client.post(
+        f"/api/projects/{project['id']}/relations",
+        json={"from_id": a["id"], "to_id": b["id"], "kind": "挚友", "strength": 6},
+    )
+
+    assert response.status_code == 422
+
+
+def test_relation_update_can_clear_strength(client):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    a = client.post(
+        f"/api/projects/{project['id']}/entries", json={"type": "人物", "name": "甲"}
+    ).json()
+    b = client.post(
+        f"/api/projects/{project['id']}/entries", json={"type": "人物", "name": "乙"}
+    ).json()
+    relation = client.post(
+        f"/api/projects/{project['id']}/relations",
+        json={"from_id": a["id"], "to_id": b["id"], "kind": "挚友", "strength": 3},
+    ).json()
+
+    updated = client.patch(
+        f"/api/relations/{relation['id']}", json={"strength": None}
+    ).json()
+
+    assert updated["strength"] is None
+
+
+def test_updating_a_missing_relation_is_404(client):
+    response = client.patch("/api/relations/nope", json={"kind": "挚友"})
+    assert response.status_code == 404
+
+
+def test_updating_an_entry_without_character_fields_keeps_them(client):
+    """前端守卫依赖这条契约：省略八个键 = 不改，而不是清空。
+
+    这正是「把人物改成势力再保存」时八项能保住的原因。
+    """
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    created = client.post(
+        f"/api/projects/{project['id']}/entries",
+        json={"type": "人物", "name": "陈默", "appearance": "瘦高", "desire": "找回记忆"},
+    ).json()
+
+    updated = client.patch(f"/api/entries/{created['id']}", json={"type": "势力"}).json()
+
+    assert updated["type"] == "faction"
+    assert updated["appearance"] == "瘦高"
+    assert updated["desire"] == "找回记忆"
