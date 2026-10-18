@@ -536,7 +536,7 @@ export function buildForeshadowLedger(
       plant,
       pay,
       missingPlant: plant === null,
-      missingPay: pay === null,
+      missingPay: plant === null || pay === null,
       sameScene: plant !== null && pay !== null && plant.sceneId === pay.sceneId,
     }
   })
