@@ -174,3 +174,11 @@ def test_related_settings_slot_registered():
     assert spec.label == "相关设定条目（检索）"
     assert spec.priority == P_MID
     assert spec.over_budget == "summarize"
+
+
+def test_new_writing_slots_are_registered():
+    from app.runtime.context import SLOT_REGISTRY
+
+    assert SLOT_REGISTRY["scene_card"].over_budget == "never"
+    assert SLOT_REGISTRY["scene_characters"].over_budget == "never"
+    assert SLOT_REGISTRY["recent_text"].key == "recent_text"

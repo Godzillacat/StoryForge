@@ -25,7 +25,7 @@ from app.db.models import (
     Volume,
 )
 from app.services import search_service
-from app.world_types import ENTRY_TYPES, HARDNESS_LEVELS
+from app.world_types import CHARACTER_FIELDS, ENTRY_TYPES, HARDNESS_LEVELS
 
 _SUMMARY_LIMIT = 120
 # 槽位里每个长文本字段的截断上限：上下文要的是够写场景的骨架，
@@ -295,6 +295,121 @@ class DbSlotSource:
                 lines.append("；".join(parts))
         return "\n".join(lines)
 
+    def _scene_chain(self) -> tuple[Scene, Chapter, Volume] | None:
+        scene_id = self._extra.get("scene_id")
+        if not scene_id:
+            return None
+        scene = self._session.get(Scene, scene_id)
+        if scene is None:
+            return None
+        chapter = self._session.get(Chapter, scene.chapter_id)
+        if chapter is None:
+            return None
+        volume = self._session.get(Volume, chapter.volume_id)
+        if volume is None or volume.project_id != self._project_id:
+            return None
+        return scene, chapter, volume
+
+    def _scene_entries(self) -> dict[str, SettingEntry]:
+        return {
+            entry.id: entry
+            for entry in self._session.scalars(
+                select(SettingEntry).where(SettingEntry.project_id == self._project_id)
+            )
+        }
+
+    def scene_card(self) -> str | None:
+        chain = self._scene_chain()
+        if chain is None:
+            return None
+        scene, chapter, volume = chain
+        entries = self._scene_entries()
+        people = [
+            entries[item].name
+            for item in (scene.characters_json or [])
+            if item in entries
+        ]
+        location = entries.get(scene.location_id).name if scene.location_id in entries else ""
+        foreshadows = self._session.scalars(
+            select(Foreshadow).where(Foreshadow.project_id == self._project_id)
+        ).all()
+        plants = [row.name for row in foreshadows if row.plant_scene_id == scene.id]
+        pays = [row.name for row in foreshadows if row.plan_pay_scene_id == scene.id]
+
+        lines = [
+            f"第{volume.seq + 1}卷 {volume.name} / 第{chapter.seq + 1}章 {chapter.title} / 场景{scene.seq + 1}",
+            f"目标：{scene.goal or '（未写目标）'}",
+        ]
+        if scene.conflict:
+            lines.append(f"冲突：{scene.conflict}")
+        if scene.turn:
+            lines.append(f"转折：{scene.turn}")
+        if people:
+            lines.append("出场人物：" + "、".join(people))
+        if location:
+            lines.append("地点：" + location)
+        if scene.story_time:
+            lines.append("故事内时间：" + scene.story_time)
+        pov = scene.pov or chapter.pov
+        if pov:
+            lines.append("视角：" + pov)
+        if scene.target_words_min is not None or scene.target_words_max is not None:
+            lines.append(
+                f"目标字数：{scene.target_words_min or '?'}–{scene.target_words_max or '?'}"
+            )
+        if plants:
+            lines.append("埋设伏笔：" + "、".join(plants))
+        if pays:
+            lines.append("计划回收伏笔：" + "、".join(pays))
+        return "\n".join(lines)
+
+    def scene_characters(self) -> str | None:
+        chain = self._scene_chain()
+        if chain is None:
+            return None
+        scene, _chapter, _volume = chain
+        entries = self._scene_entries()
+        lines: list[str] = []
+        for item in scene.characters_json or []:
+            entry = entries.get(item)
+            if entry is None or entry.type != "character":
+                continue
+            parts = [f"【人物】{entry.name}"]
+            if entry.aliases_json:
+                parts.append("别名与称呼：" + "、".join(entry.aliases_json))
+            if entry.summary:
+                parts.append("概述：" + entry.summary)
+            if entry.description:
+                parts.append("说明：" + entry.description)
+            for key, (label, _multiline) in CHARACTER_FIELDS.items():
+                value = getattr(entry, key, None)
+                if value:
+                    parts.append(f"{label}：" + str(value))
+            lines.append("；".join(parts))
+        return "\n".join(lines) or None
+
+    def recent_text(self) -> str | None:
+        chain = self._scene_chain()
+        if chain is None:
+            return None
+        scene, chapter, _volume = chain
+        previous = self._session.scalars(
+            select(Scene)
+            .where(Scene.chapter_id == chapter.id, Scene.seq < scene.seq)
+            .order_by(Scene.seq.desc())
+        ).all()
+        chunks = [
+            item.body.strip()
+            for item in previous
+            if item.body and item.body.strip()
+        ][:2]
+        if not chunks:
+            return None
+        text = "\n\n".join(reversed(chunks))
+        if len(text) > 1200:
+            return "……" + text[-1200:]
+        return text
+
     def related_settings(self) -> str | None:
         """检索与本章相关的设定条目（可选槽位）。
 
@@ -332,3 +447,18 @@ class DbSlotSource:
         if len(collapsed) <= _SUMMARY_LIMIT:
             return collapsed
         return collapsed[:_SUMMARY_LIMIT] + "……"
+
+
+def scene_search_query(session: Session, project_id: str, scene: Scene) -> str:
+    """用场景卡里的情节词与实体名拼检索词。"""
+    entries = {
+        entry.id: entry.name
+        for entry in session.scalars(
+            select(SettingEntry).where(SettingEntry.project_id == project_id)
+        )
+    }
+    parts = [scene.goal or "", scene.conflict or "", scene.turn or ""]
+    parts.extend(entries.get(item, "") for item in (scene.characters_json or []))
+    if scene.location_id:
+        parts.append(entries.get(scene.location_id, ""))
+    return " ".join(part.strip() for part in parts if part and part.strip())
