@@ -372,6 +372,46 @@ SCENE_PLANNER_PROMPT = """你是长篇小说场景策划，服务对象是作者
 4. 埋设与回收的伏笔用名称；回收的伏笔必须是前文已埋设或本章埋设的；不确定的写进待确认问题；
 5. 不写正文；返回符合输出契约的结构化结果。"""
 
+WRITER_PROMPT = """你是长篇小说执笔，服务对象是作者。你的任务是把当前场景卡写成可以直接进入小说正文的段落。
+
+【项目信息】
+{{ project_core }}
+
+【故事圣经】
+{{ story_bible }}
+
+【世界观】
+{{ world_context }}
+
+【本卷纲要】
+{{ volume_outline }}
+
+【本章章纲】
+{{ chapter_outline }}
+
+【故事内时间线】
+{{ timeline }}
+
+【当前场景卡】
+{{ scene_card }}
+
+【出场人物】
+{{ scene_characters }}
+
+【相关设定】
+{{ related_settings }}
+
+【前情正文】
+{{ recent_text }}
+
+要求：
+1. 只写这一场，不写章节标题、不写第几章、不写任何解释、提纲或创作说明；
+2. 严格按场景卡的目标、冲突、转折、视角与目标字数写，写到转折落地就停；
+3. 人物、地点与专有名词一律使用材料里的标准名或已有称呼，不新造名词；
+4. 保持章纲与项目的调性，对白与叙述自然，不总结剧情、不评论人物；
+5. 输出纯文本段落，段落之间空一行；不要用代码块包裹整篇正文；
+6. 材料不足时按已有信息写，不要停下来提问；不确定的地方写得保守些。"""
+
 DEFAULT_ROSTER: list[dict] = [
     {
         "key": "idea_parser",
@@ -449,5 +489,29 @@ DEFAULT_ROSTER: list[dict] = [
         "output_schema": SCENE_PLANNER_SCHEMA,
         "param_profile": "balanced",
         "note": "把一章拆成场景卡，只用世界观里已有的人物与地点。",
+    },
+    {
+        "key": "writer",
+        "name": "执笔",
+        "role_label": "正文",
+        "color": "#ec4899",
+        "task_type": "write",
+        "system_prompt": WRITER_PROMPT,
+        "context_slots": [
+            "project_core",
+            "story_bible",
+            "world_context",
+            "volume_outline",
+            "chapter_outline",
+            "timeline",
+            "scene_card",
+            "scene_characters",
+            "related_settings",
+            "recent_text",
+        ],
+        "output_schema": None,
+        "param_profile": "balanced",
+        "trigger_mode": "manual",
+        "note": "按场景卡写正文；只出草稿，采纳才入稿。",
     },
 ]

@@ -100,6 +100,8 @@ def test_contract_block_covers_every_field_of_every_preset_agent():
     要求两者一致，于是键名不一致在真实模型下必败、却全程没被发现。
     """
     for entry in DEFAULT_ROSTER:
+        if not entry["output_schema"]:
+            continue
         schema = entry["output_schema"]
         described = set(_KEY_IN_BLOCK.findall(describe_contract(schema)))
         missing = _property_keys(schema) - described
@@ -117,6 +119,8 @@ def test_every_schema_property_carries_a_chinese_title():
                 walk(sub["items"], f"{path}.{key}[]")
 
     for entry in DEFAULT_ROSTER:
+        if not entry["output_schema"]:
+            continue
         walk(entry["output_schema"], entry["key"])
 
 
@@ -236,6 +240,36 @@ def test_scene_planner_is_in_the_default_roster():
         scene["properties"]
     )
     assert "编造" in entry["system_prompt"]
+
+
+def test_writer_is_in_the_default_roster():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "writer")
+    assert entry["name"] == "执笔"
+    assert entry["task_type"] == "write"
+    assert entry["output_schema"] is None
+    assert entry["param_profile"] == "balanced"
+    assert entry["trigger_mode"] == "manual"
+    assert entry["context_slots"] == [
+        "project_core",
+        "story_bible",
+        "world_context",
+        "volume_outline",
+        "chapter_outline",
+        "timeline",
+        "scene_card",
+        "scene_characters",
+        "related_settings",
+        "recent_text",
+    ]
+
+
+def test_writer_prompt_is_plain_prose_not_json():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "writer")
+    prompt = entry["system_prompt"]
+    assert "场景卡" in prompt
+    assert "不要用代码块" in prompt
+    assert "JSON" not in prompt
+    assert entry["output_schema"] is None
 
 
 def test_worldbuilder_type_descriptions_match_the_vocabulary():
