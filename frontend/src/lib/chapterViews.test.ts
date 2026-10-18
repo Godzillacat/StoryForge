@@ -210,6 +210,7 @@ describe('buildForeshadowLedger', () => {
     const byId = new Map(rows.map((row) => [row.id, row]))
     expect(byId.get('f2')!.missingPlant).toBe(true)
     expect(byId.get('f2')!.plant).toBeNull()
+    expect(byId.get('f2')!.missingPay).toBe(false)
     expect(byId.get('f3')!.missingPay).toBe(true)
     expect(byId.get('f4')!.sameScene).toBe(true)
     expect(byId.get('f5')!.missingPlant).toBe(true)
@@ -226,7 +227,6 @@ describe('buildForeshadowLedger', () => {
     ])
     expect(filterLedger(rows, 'missing_pay').map((row) => row.id)).toEqual([
       'f5',
-      'f2',
       'f3',
     ])
   })

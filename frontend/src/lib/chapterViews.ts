@@ -172,8 +172,7 @@ export function buildForeshadowLedger(
       plant,
       pay,
       missingPlant: plant === null,
-      // 未埋设的伏笔天然也缺计划回收：没有埋设，计划回收无从兑现（设计 §5.2）
-      missingPay: plant === null || pay === null,
+      missingPay: pay === null,
       sameScene: plant !== null && pay !== null && plant.sceneId === pay.sceneId,
     }
   })
