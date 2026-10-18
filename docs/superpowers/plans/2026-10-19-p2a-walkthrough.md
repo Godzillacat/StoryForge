@@ -153,14 +153,16 @@
 - **失败形态**：存量库停在 v1、没有 `scene` 表时，v4 的 `ALTER TABLE scene ADD COLUMN body`
   会撞 `no such table`，`run_migrations` 不吞异常，应用**拒绝启动**。
 - **修法**：`Migration` 新增 `requires`（默认空元组）。runner 在执行一步前查
-  `sqlite_master`，任一前置表不存在则**整步跳过 SQL**、照常盖章为已应用；
-  `create_all` 紧接着用当前模型建出该表，而当前模型已含 `body` —— 语义就是
-  「所有迁移都已应用」。
+  `sqlite_master`：前置表**全部**不存在时**整步跳过 SQL**、照常盖章为已应用
+  （`create_all` 紧接着用当前模型建出该表，而当前模型已含 `body` —— 语义就是
+  「所有迁移都已应用」）；**全部存在**时照常执行；**只缺一部分**时拒绝执行、
+  拒绝盖章并抛错，应用拒绝启动，以免已存在的表永远缺列而版本表声称迁移已应用。
 - **副本实测**：上述 `[0,1] → [0,1,2,3,4]`、v4 备注带「目标表尚未建出，由 create_all 建出」、
   `scene` 建出且含 `body`、数据一条不少、二次启动不重跑 —— 即本守卫在真实存量库副本上的证据。
 - 单元测试：`test_a_step_whose_required_table_is_missing_is_skipped_and_stamped`（用必然报错的
-  ALTER 钉住「不执行 SQL」）与 `test_a_step_runs_when_all_required_tables_exist`
-  （前置表存在时正常执行）。
+  ALTER 钉住「不执行 SQL」）、`test_a_step_runs_when_all_required_tables_exist`
+  （前置表存在时正常执行）与
+  `test_a_step_with_partially_missing_required_tables_refuses_to_stamp`（部分缺表拒绝执行、拒绝盖章）。
 
 ---
 
