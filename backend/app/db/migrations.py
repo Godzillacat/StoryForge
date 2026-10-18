@@ -3,7 +3,18 @@
 **迁移只做 create_all 做不到的事：改已有的表。** 新表仍由模型负责 ——
 create_all 只建缺失的表，本来就够用。两套机制职责不重叠，就不会互相打架。
 
-版本号从 1 开始、严格递增；baseline 记为 0（见 session.init_db 对存量库的盖章）。
+**一步迁移只在它的目标表已经存在时才真正适用**（见 `Migration.requires`）。
+存量库不保证每张表都存在：作者的库可能停在很早的版本，P1c 才加的 scene 表
+从未在它里面建出过。此时 ALTER 会撞 `no such table`，让应用拒绝启动；而那张
+表随后会被 create_all 用**当前模型**建出来，而当前模型已经包含这条迁移要加的
+列。所以 runner 按三种情形处理前置表：
+
+- **全部缺失**：整步跳过（SQL 不执行）、照常盖章为已应用 —— 语义上就是
+  「所有迁移都已应用」，因为结构由当前模型直接建成了最新形态；
+- **全部存在**：照常执行语句并盖章；
+- **只缺一部分**：拒绝执行、拒绝盖章并抛错，应用拒绝启动。create_all 只补建
+  缺失的表、绝不给已存在的表加列，跳过会让已存在的表永远缺本步的列，而版本
+  表却声称迁移已应用 —— 静默结构分叉。
 """
 
 from __future__ import annotations
@@ -16,6 +27,10 @@ class Migration:
     version: int
     note: str
     statements: tuple[str, ...]  # 原始 SQL，按序执行
+    # 目标表前置条件（见模块说明）：全部缺失时整步跳过；全部存在时执行；
+    # 只缺一部分时拒绝执行、拒绝盖章。
+    # 默认空元组，`Migration(version, note, statements)` 的位置构造保持可用。
+    requires: tuple[str, ...] = ()
 
 
 # 第一条真实迁移：给 setting_entry 加人物八列。
@@ -31,6 +46,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
         note="setting_entry 加人物八列",
+        requires=("setting_entry",),
         statements=(
             "ALTER TABLE setting_entry ADD COLUMN appearance TEXT",
             "ALTER TABLE setting_entry ADD COLUMN personality TEXT",
@@ -45,6 +61,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=2,
         note="entry_relation 加关系强度",
+        requires=("entry_relation",),
         statements=(
             "ALTER TABLE entry_relation ADD COLUMN strength INTEGER",
         ),
@@ -54,11 +71,18 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=3,
         note="agent 加预置身份与版本指纹",
+        requires=("agent", "agent_version"),
         statements=(
             "ALTER TABLE agent ADD COLUMN preset_key VARCHAR(60)",
             "ALTER TABLE agent_version ADD COLUMN preset_fingerprint VARCHAR(64)",
             "CREATE UNIQUE INDEX uq_agent_preset_key ON agent(preset_key)",
         ),
+    ),
+    Migration(
+        version=4,
+        note="scene 加已采纳正文列",
+        requires=("scene",),
+        statements=("ALTER TABLE scene ADD COLUMN body TEXT",),
     ),
 )
 

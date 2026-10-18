@@ -304,3 +304,29 @@ def test_scene_plan_returns_candidates_without_writing(client, monkeypatch):
     assert body["warnings"] == []
     tree = client.get(f"/api/projects/{project['id']}/chapters/tree").json()["volumes"]
     assert tree[0]["chapters"][0]["scenes"] == []
+
+
+def _writing_scene(client):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    volume = client.post(
+        f"/api/projects/{project['id']}/volumes", json={"name": "第一卷"}
+    ).json()
+    chapter = client.post(
+        f"/api/volumes/{volume['id']}/chapters", json={"title": "第一章"}
+    ).json()
+    scene = client.post(
+        f"/api/chapters/{chapter['id']}/scenes", json={"goal": "找到录音带"}
+    ).json()
+    return project, scene
+
+
+def test_tree_exposes_has_body_without_the_full_text(client):
+    project, scene = _writing_scene(client)
+    client.put(
+        f"/api/scenes/{scene['id']}/body", json={"content": "灯塔下的密信。"}
+    )
+
+    tree = client.get(f"/api/projects/{project['id']}/chapters/tree").json()
+    node = tree["volumes"][0]["chapters"][0]["scenes"][0]
+    assert node["has_body"] is True
+    assert "body" not in node

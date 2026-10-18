@@ -217,3 +217,122 @@ def test_related_settings_is_project_scoped(session):
 
     assert "旧城甲" in text
     assert "旧城乙" not in text
+
+
+def _scene_fixture(session):
+    from app.db.models import Chapter, Foreshadow, Scene, SettingEntry, Volume
+
+    project = _seed(session)
+    volume = Volume(project_id=project.id, seq=0, name="第一卷")
+    session.add(volume)
+    session.commit()
+    chapter = Chapter(
+        volume_id=volume.id, seq=0, title="第一章", pov="陈默", summary="本章摘要"
+    )
+    session.add(chapter)
+    session.commit()
+    character = SettingEntry(
+        project_id=project.id,
+        type="character",
+        name="陈默",
+        aliases_json=["阿默"],
+        desire="找回记忆",
+        fear="想起真相",
+        current_state="暂居南滨",
+        speech_style="话少",
+    )
+    place = SettingEntry(project_id=project.id, type="place", name="南滨旧城")
+    session.add_all([character, place])
+    session.commit()
+    first = Scene(
+        chapter_id=chapter.id,
+        seq=0,
+        goal="开场",
+        body="第一场的正文，风和雨。",
+    )
+    scene = Scene(
+        chapter_id=chapter.id,
+        seq=1,
+        goal="找到录音带",
+        conflict="档案室有人",
+        turn="录音带里是自己的声音",
+        characters_json=[character.id],
+        location_id=place.id,
+        story_time="第三年·春",
+        pov="陈默",
+        target_words_min=800,
+        target_words_max=1500,
+    )
+    session.add_all([first, scene])
+    session.commit()
+    session.add(
+        Foreshadow(
+            project_id=project.id,
+            name="失忆的录音带",
+            plant_scene_id=scene.id,
+            plan_pay_scene_id=first.id,
+        )
+    )
+    session.commit()
+    return project, scene
+
+
+def test_scene_card_contains_full_card_and_foreshadow_names(session):
+    project, scene = _scene_fixture(session)
+    source = DbSlotSource(session, project.id, extra_slots={"scene_id": scene.id})
+    text = source.scene_card()
+
+    assert "找到录音带" in text
+    assert "档案室有人" in text
+    assert "录音带里是自己的声音" in text
+    assert "陈默" in text and "南滨旧城" in text
+    assert "第三年·春" in text
+    assert "800–1500" in text
+    assert "失忆的录音带" in text
+
+
+def test_scene_characters_returns_full_character_cards_only(session):
+    project, scene = _scene_fixture(session)
+    source = DbSlotSource(session, project.id, extra_slots={"scene_id": scene.id})
+    text = source.scene_characters()
+
+    assert "陈默" in text and "阿默" in text
+    assert "找回记忆" in text
+    assert "想起真相" in text
+    assert "暂居南滨" in text
+    assert "话少" in text
+    assert "南滨旧城" not in text
+
+
+def test_recent_text_keeps_the_tail_of_the_previous_scenes(session):
+    project, scene = _scene_fixture(session)
+    source = DbSlotSource(session, project.id, extra_slots={"scene_id": scene.id})
+    assert "第一场的正文" in source.recent_text()
+
+    # 当前场景之前没有别的正文时返回 None
+    empty = DbSlotSource(session, project.id, extra_slots={"scene_id": scene.id})
+    from app.db.models import Scene
+
+    first = session.query(Scene).filter_by(chapter_id=scene.chapter_id, seq=0).one()
+    first.body = None
+    session.commit()
+    assert empty.recent_text() is None
+
+
+def test_scene_card_and_characters_return_none_without_scene(session):
+    project = _seed(session)
+    source = DbSlotSource(session, project.id)
+    assert source.scene_card() is None
+    assert source.scene_characters() is None
+    assert source.recent_text() is None
+
+
+def test_scene_search_query_uses_goal_conflict_turn_and_names(session):
+    from app.services.slot_source import scene_search_query
+
+    project, scene = _scene_fixture(session)
+    query = scene_search_query(session, project.id, scene)
+    assert "找到录音带" in query
+    assert "档案室有人" in query
+    assert "陈默" in query
+    assert "南滨旧城" in query

@@ -55,6 +55,7 @@ function makeScene(
     target_words_max: null,
     status: 'planned',
     source_run_id: null,
+    has_body: false,
     foreshadows: { plants: [], pays: [] },
     ...overrides,
   }

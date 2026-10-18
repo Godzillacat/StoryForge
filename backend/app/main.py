@@ -17,6 +17,7 @@ from app.api import (
     runs,
     search,
     slots,
+    text,
     timeline,
     tools,
     world,
@@ -57,5 +58,6 @@ for module in (
     timeline,
     chapters,
     foreshadows,
+    text,
 ):
     app.include_router(module.router)

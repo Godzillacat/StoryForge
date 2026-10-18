@@ -9,6 +9,7 @@ import Studio from './pages/Studio'
 import Terms from './pages/Terms'
 import Timeline from './pages/Timeline'
 import World from './pages/World'
+import Writing from './pages/Writing'
 
 const NAV = [
   { to: '/dashboard', label: '故事仪表盘' },
@@ -19,6 +20,7 @@ const NAV = [
   { to: '/timeline', label: '时间线' },
   { to: '/terms', label: '术语表' },
   { to: '/chapters', label: '章节设计' },
+  { to: '/write', label: '写作台' },
   { to: '/studio', label: '智能体工作室' },
   { to: '/models', label: '模型与费用' },
 ]
@@ -55,6 +57,7 @@ export default function App() {
           <Route path="/timeline" element={<Timeline />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/chapters" element={<Chapters />} />
+          <Route path="/write" element={<Writing />} />
           <Route path="/studio" element={<Studio />} />
           <Route path="/models" element={<Models />} />
         </Routes>

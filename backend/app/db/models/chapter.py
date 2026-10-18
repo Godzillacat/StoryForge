@@ -65,6 +65,7 @@ class Scene(IdMixin, TimestampMixin, Base):
     target_words_max: Mapped[int | None] = mapped_column(Integer, default=None)
     status: Mapped[str] = mapped_column(String(20), default="planned")
     source_run_id: Mapped[str | None] = mapped_column(String(36), default=None)
+    body: Mapped[str | None] = mapped_column(Text, default=None)
 
 
 class Foreshadow(IdMixin, TimestampMixin, Base):

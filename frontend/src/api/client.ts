@@ -1,3 +1,5 @@
+import { createSseParser } from '../lib/sse'
+
 const JSON_HEADERS = { 'content-type': 'application/json' }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -212,6 +214,36 @@ export const api = {
       headers: JSON_HEADERS,
       body: JSON.stringify(body),
     }),
+
+  getSceneText: (sceneId: string) =>
+    request<SceneTextState>(`/api/scenes/${sceneId}/text`),
+  saveSceneBody: (sceneId: string, content: string) =>
+    request<SceneTextState>(`/api/scenes/${sceneId}/body`, {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ content }),
+    }),
+  saveSceneDraft: (sceneId: string, content: string) =>
+    request<SceneTextDraft>(`/api/scenes/${sceneId}/draft`, {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ content }),
+    }),
+  discardSceneDraft: (sceneId: string) =>
+    request<{ ok: boolean }>(`/api/scenes/${sceneId}/draft`, { method: 'DELETE' }),
+  adoptSceneDraft: (sceneId: string) =>
+    request<SceneTextState>(`/api/scenes/${sceneId}/adopt`, { method: 'POST' }),
+  listSceneRevisions: (sceneId: string) =>
+    request<RevisionSummary[]>(`/api/scenes/${sceneId}/revisions`),
+  getSceneRevision: (sceneId: string, revisionId: string) =>
+    request<RevisionDetail>(`/api/scenes/${sceneId}/revisions/${revisionId}`),
+  restoreSceneRevision: (sceneId: string, revisionId: string) =>
+    request<SceneTextState>(
+      `/api/scenes/${sceneId}/revisions/${revisionId}/restore`,
+      { method: 'POST' },
+    ),
+  getSceneContextPreview: (sceneId: string) =>
+    request<ContextPreview>(`/api/scenes/${sceneId}/context-preview`),
 
   listForeshadows: (projectId: string) =>
     request<Foreshadow[]>(`/api/projects/${projectId}/foreshadows`),
@@ -539,6 +571,7 @@ export interface SceneNode {
   target_words_max: number | null
   status: string
   source_run_id: string | null
+  has_body: boolean
   foreshadows: { plants: { id: string; name: string }[]; pays: { id: string; name: string }[] }
 }
 
@@ -645,4 +678,137 @@ export interface ScenePlanResponse {
   structured: boolean
   parse_error: string | null
   raw_text: string
+}
+
+export interface SceneTextDraft {
+  id: string
+  content: string
+  run_id: string | null
+  updated_at: string
+}
+
+export interface RevisionSummary {
+  id: string
+  source: string
+  run_id: string | null
+  note: string
+  chars: number
+  created_at: string
+  preview: string
+}
+
+export interface SceneTextState {
+  scene_id: string
+  body: string | null
+  has_body: boolean
+  word_count: number
+  draft: SceneTextDraft | null
+  revisions: RevisionSummary[]
+}
+
+export interface RevisionDetail {
+  id: string
+  source: string
+  run_id: string | null
+  note: string
+  content: string
+  created_at: string
+}
+
+export interface ContextSlotPreview {
+  key: string
+  label: string
+  priority: number
+  over_budget: string
+  text: string | null
+  estimated_tokens: number
+}
+
+export interface ContextPreview {
+  agent: { id: string; name: string; version_no: number }
+  token_budget: number
+  estimated_tokens: number
+  over_budget: boolean
+  slots: ContextSlotPreview[]
+  trimmed: Record<string, string>
+}
+
+export interface GenerationRunEvent {
+  run_id: string
+  model: string
+  agent: string
+  estimated_tokens: number
+  trimmed: Record<string, string>
+}
+
+export interface GenerationDoneEvent {
+  run_id: string
+  status: string
+  prompt_tokens: number
+  completion_tokens: number
+  cost_estimate: number
+  duration_ms: number
+  chars: number
+  draft_id: string | null
+}
+
+export interface GenerationErrorEvent {
+  run_id: string
+  kind: string
+  message: string
+  chars: number
+}
+
+export interface GenerationHandlers {
+  onRun?: (data: GenerationRunEvent) => void
+  onDelta?: (text: string) => void
+  onDone?: (data: GenerationDoneEvent) => void
+  onError?: (data: GenerationErrorEvent) => void
+}
+
+export async function streamSceneGeneration(
+  sceneId: string,
+  handlers: GenerationHandlers,
+  signal: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`/api/scenes/${sceneId}/generate`, {
+    method: 'POST',
+    signal,
+  })
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({ detail: response.statusText }))
+    throw new Error(detail.detail ?? `请求失败：${response.status}`)
+  }
+  if (!response.body) throw new Error('当前环境不支持流式读取')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  const parser = createSseParser()
+
+  const dispatch = (event: string, data: string) => {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(data)
+    } catch {
+      return
+    }
+    if (event === 'run') handlers.onRun?.(parsed as GenerationRunEvent)
+    else if (event === 'delta') {
+      const payload = parsed as { text?: string }
+      if (payload.text) handlers.onDelta?.(payload.text)
+    } else if (event === 'done') handlers.onDone?.(parsed as GenerationDoneEvent)
+    else if (event === 'error') handlers.onError?.(parsed as GenerationErrorEvent)
+  }
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    for (const event of parser.push(decoder.decode(value, { stream: true }))) {
+      dispatch(event.event, event.data)
+    }
+  }
+  const tail = decoder.decode()
+  if (tail) {
+    for (const event of parser.push(tail)) dispatch(event.event, event.data)
+  }
 }

@@ -205,6 +205,8 @@ def _scene_doc(
         parts.append(
             f"字数区间：{scene.target_words_min or '?'}–{scene.target_words_max or '?'}"
         )
+    if scene.body:
+        parts.append("正文：" + scene.body)
     if scene.status:
         parts.append("状态：" + STATUS_LABELS.get(scene.status, scene.status))
     return {

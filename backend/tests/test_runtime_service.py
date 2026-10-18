@@ -1,3 +1,5 @@
+import time
+
 import httpx
 import pytest
 
@@ -159,3 +161,75 @@ def test_unbound_model_fails_with_a_readable_reason(session):
         service.execute(project.id, agent.id)
 
     assert "绑定模型" in str(excinfo.value)
+
+
+def test_prepare_returns_rendered_prompt_and_trimmed(session):
+    project, _provider, agent, _version = _seed(session)
+    prepared = RuntimeService(session).prepare(project.id, agent.id)
+
+    assert "能听见死者遗言的验尸官" in prepared.prompt.rendered_prompt
+    assert prepared.model == "test-model"
+    assert prepared.prompt.messages == [
+        {"role": "user", "content": prepared.prompt.rendered_prompt}
+    ]
+    assert prepared.prompt.trimmed == {}
+
+
+def test_prepare_records_missing_variable_without_raising(session):
+    project, _provider, agent, version = _seed(session)
+    version.system_prompt = "缺少：{{ world_context }}"
+    version.context_slots_json = ["raw_idea"]
+    session.commit()
+
+    prepared = RuntimeService(session).prepare(project.id, agent.id)
+
+    assert prepared.prompt.error["kind"] == "template"
+    assert "world_context" in prepared.prompt.error["message"]
+    assert prepared.prompt.rendered_prompt == ""
+
+
+def test_missing_optional_slot_renders_empty_for_plain_text():
+    from app.runtime.execute import prepare_prompt
+
+    class EmptySource:
+        def scene_characters(self):
+            return None
+
+        def summarize(self, key, text):
+            return text
+
+    prepared = prepare_prompt(
+        system_prompt="人物：{{ scene_characters }}",
+        context_slots=["scene_characters"],
+        output_schema=None,
+        token_budget=8000,
+        source=EmptySource(),
+        allow_missing=True,
+    )
+
+    assert prepared.error is None
+    assert prepared.rendered_prompt == "人物："
+
+
+def test_execute_duration_covers_preparation_time(session, monkeypatch):
+    """耗时口径与重构前一致：从准备阶段开始计时，而不是只算模型调用。
+
+    调试台的「耗时」此前包含上下文组装与渲染；若计时起点落在 prepare()
+    之后，模板错误这类不发起模型调用的运行会落库成接近 0 毫秒。
+    """
+    project, _provider, agent, _version = _seed(session)
+    service = RuntimeService(
+        session, client=HttpxChatClient(transport=httpx.MockTransport(_ok_handler()))
+    )
+    real_prepare = service.prepare
+
+    def slow_prepare(*args, **kwargs):
+        time.sleep(0.06)
+        return real_prepare(*args, **kwargs)
+
+    monkeypatch.setattr(service, "prepare", slow_prepare)
+
+    run, _result = service.execute(project.id, agent.id)
+
+    assert run.duration_ms >= 50
+

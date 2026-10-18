@@ -1,6 +1,9 @@
-"""把运行时接上数据库：组装 ExecuteInput → execute_run → 写 generation_run。"""
+"""把运行时接上数据库：准备执行上下文 → 调用模型 → 写 generation_run。"""
 
 from __future__ import annotations
+
+import time
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -8,9 +11,27 @@ from sqlalchemy.orm import Session
 from app import config
 from app.crypto import dpapi
 from app.db.models import Agent, AgentVersion, GenerationRun, Provider
-from app.runtime.execute import ExecuteInput, RunResult, execute_run
-from app.runtime.llm import ChatClient, HttpxChatClient
+from app.runtime.execute import (
+    PreparedPrompt,
+    RunResult,
+    execute_prepared,
+    prepare_prompt,
+)
+from app.runtime.llm import ChatClient, ChatConfig, HttpxChatClient
 from app.services.slot_source import DbSlotSource
+
+
+@dataclass(frozen=True)
+class PreparedExecution:
+    agent: Agent
+    version: AgentVersion
+    provider: Provider
+    model: str
+    params: dict
+    prices: dict | None
+    config: ChatConfig
+    prompt: PreparedPrompt
+    client: ChatClient
 
 
 class RuntimeService:
@@ -58,19 +79,36 @@ class RuntimeService:
         prices = binding.get("prices") or {}
         return provider, provider.base_url, api_key, prices
 
-    def execute(
+    def prepare_context(
         self, project_id: str, agent_id: str, extra: dict | None = None
-    ) -> tuple[GenerationRun, RunResult]:
+    ) -> tuple[Agent, AgentVersion, PreparedPrompt]:
         agent = self._session.get(Agent, agent_id)
         if agent is None:
             raise ValueError(f"智能体不存在：{agent_id}")
         if not agent.current_version_id:
             raise ValueError(f"智能体「{agent.name}」没有可用版本")
-
         version = self._session.get(AgentVersion, agent.current_version_id)
         if version is None:
             raise ValueError(f"智能体「{agent.name}」的当前版本已丢失")
 
+        settings = config.load_settings()
+        source = DbSlotSource(self._session, project_id, extra_slots=extra)
+        prompt = prepare_prompt(
+            system_prompt=version.system_prompt,
+            context_slots=version.context_slots_json or [],
+            output_schema=version.output_schema_json,
+            token_budget=int(settings.get("context_token_budget", 8000)),
+            source=source,
+            # 没有输出契约的预置是纯文本执笔：首场天然可能没有人物、检索结果
+            # 或前情正文，缺槽位按空串渲染；结构化预置仍严格报缺变量。
+            allow_missing=version.output_schema_json is None,
+        )
+        return agent, version, prompt
+
+    def prepare(
+        self, project_id: str, agent_id: str, extra: dict | None = None
+    ) -> PreparedExecution:
+        agent, version, prompt = self.prepare_context(project_id, agent_id, extra)
         provider, base_url, api_key, prices = self.resolve_provider(version)
         binding = version.model_binding_json or {}
         settings = config.load_settings()
@@ -82,33 +120,51 @@ class RuntimeService:
             raise ValueError(
                 f"智能体「{agent.name}」还没有绑定模型，请先在「智能体工作室」为它指定一个"
             )
-
-        source = DbSlotSource(self._session, project_id, extra_slots=extra)
-        inp = ExecuteInput(
-            project_id=project_id,
-            agent_id=agent.id,
-            version_id=version.id,
-            provider_id=provider.id,
+        params = {
+            **settings.get("default_params", {}),
+            **(binding.get("params") or {}),
+        }
+        return PreparedExecution(
+            agent=agent,
+            version=version,
+            provider=provider,
             model=model,
-            base_url=base_url,
-            api_key=api_key,
-            params={**settings.get("default_params", {}), **(binding.get("params") or {})},
-            system_prompt=version.system_prompt,
-            context_slots=version.context_slots_json or [],
-            output_schema=version.output_schema_json,
-            token_budget=int(settings.get("context_token_budget", 8000)),
+            params=params,
             prices=prices,
+            config=ChatConfig(base_url=base_url, api_key=api_key, model=model),
+            prompt=prompt,
+            client=self._resolve_client(self._resolve_timeout(binding)),
         )
 
-        result = _run_sync(execute_run, inp, source, self._resolve_client(self._resolve_timeout(binding)))
+    def execute(
+        self, project_id: str, agent_id: str, extra: dict | None = None
+    ) -> tuple[GenerationRun, RunResult]:
+        # 耗时口径与重构前一致：包含准备阶段（上下文组装与渲染），
+        # 否则模板错误这类不发起模型调用的运行会落库成接近 0 毫秒。
+        started = time.monotonic()
+        prepared = self.prepare(project_id, agent_id, extra)
+        result = _run_sync(
+            execute_prepared,
+            prepared.prompt,
+            config=prepared.config,
+            params=prepared.params,
+            prices=prepared.prices,
+            client=prepared.client,
+            started=started,
+        )
+        run = self._persist_run(project_id, prepared, result)
+        return run, result
 
+    def _persist_run(
+        self, project_id: str, prepared: PreparedExecution, result: RunResult
+    ) -> GenerationRun:
         run = GenerationRun(
             project_id=project_id,
-            agent_id=agent.id,
-            agent_version_id=version.id,
-            provider_id=provider.id,
-            model=inp.model,
-            params_json=inp.params,
+            agent_id=prepared.agent.id,
+            agent_version_id=prepared.version.id,
+            provider_id=prepared.provider.id,
+            model=prepared.model,
+            params_json=prepared.params,
             rendered_prompt=result.rendered_prompt,
             raw_output=result.raw_output,
             parsed_json=result.parsed,
@@ -125,10 +181,10 @@ class RuntimeService:
         )
         self._session.add(run)
         self._session.commit()
-        return run, result
+        return run
 
 
-def _run_sync(coro_factory, *args):
+def _run_sync(coro_factory, *args, **kwargs):
     """运行 async 运行时。
 
     services 层被 FastAPI 同步路由与 pytest 同步测试同时调用，
@@ -140,7 +196,7 @@ def _run_sync(coro_factory, *args):
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro_factory(*args))
+        return asyncio.run(coro_factory(*args, **kwargs))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro_factory(*args)).result()
+        return pool.submit(asyncio.run, coro_factory(*args, **kwargs)).result()

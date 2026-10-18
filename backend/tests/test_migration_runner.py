@@ -17,39 +17,114 @@ from app.world_types import CHARACTER_FIELDS
 
 @pytest.fixture()
 def clean_db():
-    """给迁移测试一个真空的库。
+    """给迁移测试一个真空的库，**用例结束后也清回真空**。
 
     不能用 conftest 的 session 夹具：它的 drop_all 管不到 schema_migration
     （那不是 ORM 模型），而迁移测试恰恰关心「有没有那张表」。备份目录同理，
     它跨用例留着会让「该不该备份」的断言失真。
+
+    收尾清理不是洁癖：库是**整个进程共享**的，而本文件排在很多服务/接口
+    测试前面。若某个用例停在「当前结构的表齐全、schema_migration 却只有
+    版本 1」，下一个文件的 init_db 会判存量库、把 v2 重放一遍，撞上
+    `duplicate column name` —— 测试污染伪装成产品缺陷。
     """
     import shutil
 
-    # ORM 表先交给 drop_all —— 它按依赖顺序删。**不能只按 sqlite_master 的
-    # 顺序逐个 DROP**：session.py 开着 PRAGMA foreign_keys=ON，而 sqlite_master
-    # 的顺序下 project 先于引用它的 setting_entry 被删，后者当场报
-    # 「no such table: main.project」。
-    Base.metadata.drop_all(db_session.engine)
+    def _clean() -> None:
+        # ORM 表先交给 drop_all —— 它按依赖顺序删。**不能只按 sqlite_master
+        # 的顺序逐个 DROP**：session.py 开着 PRAGMA foreign_keys=ON，而
+        # sqlite_master 的顺序下 project 先于引用它的 setting_entry 被删，
+        # 后者当场报「no such table: main.project」。
+        Base.metadata.drop_all(db_session.engine)
 
-    # 再清 drop_all 管不到的那些：测试探针表（_probe / _a / _b）是**原始 SQL**
-    # 建的、不在 metadata 里，不清掉会泄漏到下一个用例（撞「table _probe
-    # already exists」）；schema_migration 同理（它不是 ORM 模型，而迁移测试
-    # 恰好在乎它在不在）。这两类都没有外键，删除顺序无所谓。
-    with db_session.engine.begin() as conn:
-        rows = conn.exec_driver_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-        ).fetchall()
-        for (name,) in rows:
-            conn.exec_driver_sql(f'DROP TABLE IF EXISTS "{name}"')
+        # 再清 drop_all 管不到的那些：测试探针表（_probe / _a / _b）与 FTS
+        # 虚拟表是**原始 SQL** 建的、不在 metadata 里，不清掉会泄漏到下一个
+        # 用例（撞「table _probe already exists」）；schema_migration 同理
+        # （它不是 ORM 模型，而迁移测试恰好在乎它在不在）。这些都没有外键，
+        # 删除顺序无所谓。
+        with db_session.engine.begin() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+            for (name,) in rows:
+                conn.exec_driver_sql(f'DROP TABLE IF EXISTS "{name}"')
 
-    backups = config.data_dir() / "backups"
-    if backups.exists():
-        shutil.rmtree(backups)
-    return db_session.engine
+        backups = config.data_dir() / "backups"
+        if backups.exists():
+            shutil.rmtree(backups)
+
+    _clean()
+    yield db_session.engine
+    _clean()
 
 
 def _step(version: int, note: str, *statements: str) -> migrations.Migration:
     return migrations.Migration(version, note, statements)
+
+
+def _legacy_database(conn, *, with_scene: bool) -> None:
+    """用原始 SQL 建一个「迁移框架引入之前」的库，并写入几行真实数据。
+
+    `with_scene=True` 是 P1b-2a 时代测过的旧结构（scene 表从 P1c 起就存在）。
+    `with_scene=False` 模拟作者真实库的另一种存量形态：库里停在 v1 附近，
+    **scene 表从未建出过**（原库只升级过副本），而 v4 正要对它 ADD COLUMN。
+    """
+    conn.exec_driver_sql(
+        "CREATE TABLE project (id VARCHAR(36) PRIMARY KEY, name VARCHAR(200) NOT NULL,"
+        " genre VARCHAR(60) NOT NULL DEFAULT '', created_at DATETIME NOT NULL,"
+        " updated_at DATETIME NOT NULL)"
+    )
+    conn.exec_driver_sql(
+        "CREATE TABLE setting_entry (id VARCHAR(36) PRIMARY KEY,"
+        " project_id VARCHAR(36) NOT NULL, type VARCHAR(30) NOT NULL,"
+        " name VARCHAR(200) NOT NULL, aliases_json JSON, tags_json JSON,"
+        " summary TEXT, description TEXT, hardness VARCHAR(20),"
+        " source_run_id VARCHAR(36))"
+    )
+    conn.exec_driver_sql(
+        "CREATE TABLE entry_relation (id VARCHAR(36) PRIMARY KEY,"
+        " project_id VARCHAR(36) NOT NULL, from_id VARCHAR(36) NOT NULL,"
+        " to_id VARCHAR(36) NOT NULL, kind VARCHAR(60) NOT NULL, note TEXT)"
+    )
+    conn.exec_driver_sql(
+        "CREATE TABLE agent (id VARCHAR(36) PRIMARY KEY, name VARCHAR(120) NOT NULL,"
+        " role_label VARCHAR(60), color VARCHAR(20), task_type VARCHAR(40) NOT NULL,"
+        " enabled BOOLEAN, builtin BOOLEAN, current_version_id VARCHAR(36))"
+    )
+    conn.exec_driver_sql(
+        "CREATE TABLE agent_version (id VARCHAR(36) PRIMARY KEY,"
+        " agent_id VARCHAR(36) NOT NULL, version_no INTEGER NOT NULL,"
+        " system_prompt TEXT, model_binding_json JSON, param_profile VARCHAR(30),"
+        " context_slots_json JSON, output_schema_json JSON, skills_json JSON,"
+        " trigger_mode VARCHAR(20), note TEXT)"
+    )
+    if with_scene:
+        conn.exec_driver_sql(
+            "CREATE TABLE scene (id VARCHAR(36) PRIMARY KEY, chapter_id VARCHAR(36) NOT NULL,"
+            " seq INTEGER NOT NULL DEFAULT 0, goal TEXT, conflict TEXT, turn TEXT,"
+            " characters_json JSON, location_id VARCHAR(36), story_time VARCHAR(200),"
+            " pov VARCHAR(100), target_words_min INTEGER, target_words_max INTEGER,"
+            " status VARCHAR(20), source_run_id VARCHAR(36))"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO scene (id, chapter_id, seq, goal)"
+            " VALUES ('s1', 'c1', 0, '找到录音带')"
+        )
+    conn.exec_driver_sql(
+        "INSERT INTO setting_entry (id, project_id, type, name, summary)"
+        " VALUES ('e1', 'p1', 'place', '南滨旧城', '小城')"
+    )
+    conn.exec_driver_sql(
+        "INSERT INTO entry_relation (id, project_id, from_id, to_id, kind, note)"
+        " VALUES ('r1', 'p1', 'e1', 'e2', '挚友', '旧关系')"
+    )
+    conn.exec_driver_sql(
+        "INSERT INTO agent (id, name, task_type, builtin) VALUES ('a1', '旧架构师', 'architecture', 1)"
+    )
+    conn.exec_driver_sql(
+        "INSERT INTO agent_version (id, agent_id, version_no, system_prompt)"
+        " VALUES ('v1', 'a1', 1, '旧提示词')"
+    )
 
 
 @pytest.fixture()
@@ -338,50 +413,7 @@ def test_the_character_columns_are_added_to_a_pre_existing_database(clean_db):
     init_db()，断言八列出现、且原有数据一行不少。
     """
     with clean_db.begin() as conn:
-        conn.exec_driver_sql(
-            "CREATE TABLE project (id VARCHAR(36) PRIMARY KEY, name VARCHAR(200) NOT NULL,"
-            " genre VARCHAR(60) NOT NULL DEFAULT '', created_at DATETIME NOT NULL,"
-            " updated_at DATETIME NOT NULL)"
-        )
-        conn.exec_driver_sql(
-            "CREATE TABLE setting_entry (id VARCHAR(36) PRIMARY KEY,"
-            " project_id VARCHAR(36) NOT NULL, type VARCHAR(30) NOT NULL,"
-            " name VARCHAR(200) NOT NULL, aliases_json JSON, tags_json JSON,"
-            " summary TEXT, description TEXT, hardness VARCHAR(20),"
-            " source_run_id VARCHAR(36))"
-        )
-        conn.exec_driver_sql(
-            "CREATE TABLE entry_relation (id VARCHAR(36) PRIMARY KEY,"
-            " project_id VARCHAR(36) NOT NULL, from_id VARCHAR(36) NOT NULL,"
-            " to_id VARCHAR(36) NOT NULL, kind VARCHAR(60) NOT NULL, note TEXT)"
-        )
-        conn.exec_driver_sql(
-            "CREATE TABLE agent (id VARCHAR(36) PRIMARY KEY, name VARCHAR(120) NOT NULL,"
-            " role_label VARCHAR(60), color VARCHAR(20), task_type VARCHAR(40) NOT NULL,"
-            " enabled BOOLEAN, builtin BOOLEAN, current_version_id VARCHAR(36))"
-        )
-        conn.exec_driver_sql(
-            "CREATE TABLE agent_version (id VARCHAR(36) PRIMARY KEY,"
-            " agent_id VARCHAR(36) NOT NULL, version_no INTEGER NOT NULL,"
-            " system_prompt TEXT, model_binding_json JSON, param_profile VARCHAR(30),"
-            " context_slots_json JSON, output_schema_json JSON, skills_json JSON,"
-            " trigger_mode VARCHAR(20), note TEXT)"
-        )
-        conn.exec_driver_sql(
-            "INSERT INTO setting_entry (id, project_id, type, name, summary)"
-            " VALUES ('e1', 'p1', 'place', '南滨旧城', '小城')"
-        )
-        conn.exec_driver_sql(
-            "INSERT INTO entry_relation (id, project_id, from_id, to_id, kind, note)"
-            " VALUES ('r1', 'p1', 'e1', 'e2', '挚友', '旧关系')"
-        )
-        conn.exec_driver_sql(
-            "INSERT INTO agent (id, name, task_type, builtin) VALUES ('a1', '旧架构师', 'architecture', 1)"
-        )
-        conn.exec_driver_sql(
-            "INSERT INTO agent_version (id, agent_id, version_no, system_prompt)"
-            " VALUES ('v1', 'a1', 1, '旧提示词')"
-        )
+        _legacy_database(conn, with_scene=True)
 
     db_session.init_db()
 
@@ -395,7 +427,14 @@ def test_the_character_columns_are_added_to_a_pre_existing_database(clean_db):
         # 所以断言整张表而不是只取 MAX。
         assert conn.exec_driver_sql(
             "SELECT version FROM schema_migration ORDER BY version"
-        ).fetchall() == [(0,), (1,), (2,), (3,)]
+        ).fetchall() == [(0,), (1,), (2,), (3,), (4,)]
+
+    scene_columns = {c["name"] for c in inspect(clean_db).get_columns("scene")}
+    assert "body" in scene_columns
+    with clean_db.connect() as conn:
+        assert conn.exec_driver_sql("SELECT goal, body FROM scene").fetchall() == [
+            ("找到录音带", None)
+        ]
 
     relation_columns = {c["name"] for c in inspect(clean_db).get_columns("entry_relation")}
     agent_columns = {c["name"] for c in inspect(clean_db).get_columns("agent")}
@@ -413,3 +452,133 @@ def test_the_character_columns_are_added_to_a_pre_existing_database(clean_db):
         assert conn.exec_driver_sql(
             "SELECT system_prompt FROM agent_version WHERE id = 'v1'"
         ).fetchall() == [("旧提示词",)]
+
+
+def test_a_legacy_database_without_the_scene_table_still_starts(clean_db):
+    """作者的真实库停在 v1：有 setting_entry / entry_relation / agent，但
+    **scene 表从未建出过**（P1c 的新表，原库只在副本上升级过）。
+
+    v4 是 `ALTER TABLE scene ADD COLUMN body`，目标表不存在时旧代码报
+    `no such table: scene` 并拒绝启动。迁移必须在目标表缺失时跳过、照常盖章，
+    由紧随其后的 create_all 用**当前模型**建出 scene（已含 body 列）。
+    """
+    with clean_db.begin() as conn:
+        _legacy_database(conn, with_scene=False)
+
+    db_session.init_db()  # 不该抛
+
+    with clean_db.connect() as conn:
+        assert conn.exec_driver_sql(
+            "SELECT version FROM schema_migration ORDER BY version"
+        ).fetchall() == [(0,), (1,), (2,), (3,), (4,)]
+        assert conn.exec_driver_sql(
+            "SELECT note FROM schema_migration WHERE version = 4"
+        ).fetchone() == ("scene 加已采纳正文列（目标表尚未建出，由 create_all 建出）",)
+
+    # create_all 按最新模型建出了 scene，因此 body 列与表本身都在
+    assert "scene" in inspect(clean_db).get_table_names()
+    assert "body" in {c["name"] for c in inspect(clean_db).get_columns("scene")}
+
+    # 其它表的迁移照常执行、原有数据一行不少
+    with clean_db.connect() as conn:
+        assert conn.exec_driver_sql(
+            "SELECT name, summary FROM setting_entry"
+        ).fetchall() == [("南滨旧城", "小城")]
+        assert conn.exec_driver_sql(
+            "SELECT kind, strength FROM entry_relation WHERE id = 'r1'"
+        ).fetchall() == [("挚友", None)]
+        assert conn.exec_driver_sql("SELECT name FROM agent WHERE id = 'a1'").fetchall() == [
+            ("旧架构师",)
+        ]
+        assert conn.exec_driver_sql(
+            "SELECT system_prompt FROM agent_version WHERE id = 'v1'"
+        ).fetchall() == [("旧提示词",)]
+    assert "preset_key" in {c["name"] for c in inspect(clean_db).get_columns("agent")}
+
+
+def test_a_step_whose_required_table_is_missing_is_skipped_and_stamped(clean_db, monkeypatch):
+    """目标表缺失时**不执行 SQL** —— 这里用一句执行必然报错的 ALTER 钉住，
+    同时断言它不会把那张表建出来。步骤照常盖章：create_all 随后会用当前
+    模型建出该表，「所有迁移已应用」正是事实。"""
+    Base.metadata.create_all(clean_db)
+    monkeypatch.setattr(
+        migrations,
+        "MIGRATIONS",
+        (
+            migrations.Migration(
+                1,
+                "改不存在的表",
+                ("ALTER TABLE _missing ADD COLUMN x TEXT",),
+                requires=("_missing",),
+            ),
+        ),
+    )
+
+    db_session.run_migrations(clean_db)  # 若真执行 SQL 会报 no such table
+
+    assert "_missing" not in inspect(clean_db).get_table_names()
+    with clean_db.connect() as conn:
+        assert conn.exec_driver_sql(
+            "SELECT version, note FROM schema_migration ORDER BY version"
+        ).fetchall() == [
+            (0, "基线（迁移框架引入时的库结构）"),
+            (1, "改不存在的表（目标表尚未建出，由 create_all 建出）"),
+        ]
+
+
+def test_a_step_with_partially_missing_required_tables_refuses_to_stamp(clean_db, monkeypatch):
+    """前置表**只缺一部分**时既不能执行、也不能跳过。
+
+    create_all 只建缺失的表、绝不给已存在的表加列：v3 的 requires 是
+    `("agent", "agent_version")`，若 agent 存在而 agent_version 缺失，旧守卫
+    会把整步跳过并盖章 —— agent 永远拿不到 preset_key，schema_migration 却
+    声称 v3 已应用。这是静默结构分叉，应用必须拒绝启动。
+    """
+    Base.metadata.create_all(clean_db)
+    monkeypatch.setattr(
+        migrations,
+        "MIGRATIONS",
+        (
+            migrations.Migration(
+                1,
+                "部分缺表",
+                ("CREATE TABLE _probe (x INTEGER)",),
+                requires=("project", "_missing"),
+            ),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="部分缺失"):
+        db_session.run_migrations(clean_db)
+
+    # 语句没执行：既没有半截结构，也绝不能被盖章。
+    assert "_probe" not in inspect(clean_db).get_table_names()
+    with clean_db.connect() as conn:
+        assert conn.exec_driver_sql(
+            "SELECT MAX(version) FROM schema_migration"
+        ).fetchone() == (0,)
+
+
+def test_a_step_runs_when_all_required_tables_exist(clean_db, monkeypatch):
+    """前置表存在时必须照原样执行语句 —— 守卫不能把正常迁移也跳过。"""
+    Base.metadata.create_all(clean_db)
+    monkeypatch.setattr(
+        migrations,
+        "MIGRATIONS",
+        (
+            migrations.Migration(
+                1,
+                "目标表存在",
+                ("CREATE TABLE _probe (x INTEGER)",),
+                requires=("project",),
+            ),
+        ),
+    )
+
+    db_session.run_migrations(clean_db)
+
+    assert "_probe" in inspect(clean_db).get_table_names()
+    with clean_db.connect() as conn:
+        assert conn.exec_driver_sql(
+            "SELECT note FROM schema_migration WHERE version = 1"
+        ).fetchone() == ("目标表存在",)

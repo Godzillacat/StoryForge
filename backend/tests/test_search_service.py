@@ -157,7 +157,7 @@ def test_rebuild_sets_clean_state(session):
     state = session.get(SearchIndexState, project.id)
     assert state is not None
     assert state.dirty == 0
-    assert state.schema_version == 1
+    assert state.schema_version == 2
     assert state.rebuilt_at
 
 

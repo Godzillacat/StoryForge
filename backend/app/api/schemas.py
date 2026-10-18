@@ -281,3 +281,7 @@ class ForeshadowUpdate(BaseModel):
     note: str | None = None
     plan_pay_scene_id: str | None = None
     status: str | None = None
+
+
+class TextWrite(BaseModel):
+    content: str = ""

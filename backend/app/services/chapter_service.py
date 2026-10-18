@@ -325,6 +325,7 @@ def build_tree(session: Session, project_id: str) -> list[dict]:
                     "target_words_max": scene.target_words_max,
                     "status": scene.status,
                     "source_run_id": scene.source_run_id,
+                    "has_body": bool((scene.body or "").strip()),
                     "foreshadows": _scene_foreshadows(foreshadows, scene.id),
                 }
                 for scene in _ordered_scenes(session, chapter.id)

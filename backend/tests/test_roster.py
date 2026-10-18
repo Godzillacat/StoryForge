@@ -1,4 +1,5 @@
 from app.agents.roster import DEFAULT_ROSTER, TASK_TYPES
+from app.runtime.context import SLOT_REGISTRY
 from app.world_types import CHARACTER_FIELDS
 
 
@@ -75,8 +76,8 @@ _KEY_IN_BLOCK = re.compile(r"^\s*- ([A-Za-z_][A-Za-z0-9_]*)", re.MULTILINE)
 
 _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
-# 提示词里正当出现的非字段英文词（故事圣经 v0 的版本号）
-_ALLOWED_LATIN = {"v0"}
+# 提示词里正当出现的非字段英文词（故事圣经 v0 的版本号、正文格式名）
+_ALLOWED_LATIN = {"v0", "Markdown"}
 
 
 def _property_keys(schema: dict) -> set[str]:
@@ -100,6 +101,8 @@ def test_contract_block_covers_every_field_of_every_preset_agent():
     要求两者一致，于是键名不一致在真实模型下必败、却全程没被发现。
     """
     for entry in DEFAULT_ROSTER:
+        if not entry["output_schema"]:
+            continue
         schema = entry["output_schema"]
         described = set(_KEY_IN_BLOCK.findall(describe_contract(schema)))
         missing = _property_keys(schema) - described
@@ -117,6 +120,8 @@ def test_every_schema_property_carries_a_chinese_title():
                 walk(sub["items"], f"{path}.{key}[]")
 
     for entry in DEFAULT_ROSTER:
+        if not entry["output_schema"]:
+            continue
         walk(entry["output_schema"], entry["key"])
 
 
@@ -238,6 +243,38 @@ def test_scene_planner_is_in_the_default_roster():
     assert "编造" in entry["system_prompt"]
 
 
+def test_writer_is_in_the_default_roster():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "writer")
+    assert entry["name"] == "执笔"
+    assert entry["task_type"] == "write"
+    assert entry["output_schema"] is None
+    assert entry["param_profile"] == "balanced"
+    assert entry["trigger_mode"] == "manual"
+    assert entry["context_slots"] == [
+        "project_core",
+        "story_bible",
+        "world_context",
+        "volume_outline",
+        "chapter_outline",
+        "timeline",
+        "scene_card",
+        "scene_characters",
+        "related_settings",
+        "recent_text",
+    ]
+
+
+def test_writer_prompt_is_plain_prose_not_json():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "writer")
+    prompt = entry["system_prompt"]
+    assert "场景卡" in prompt
+    assert "目标、冲突、转折、视角、故事内时间与目标字数" in prompt
+    assert "Markdown 正文" in prompt
+    assert "不要用代码块" in prompt
+    assert "JSON" not in prompt
+    assert entry["output_schema"] is None
+
+
 def test_worldbuilder_type_descriptions_match_the_vocabulary():
     """契约里的字段说明必须把类型词表里的每一类都讲到 —— 提示词里不许写
     英文键（护栏会拦），所以模型只可能从契约说明块里知道有哪些类型。"""
@@ -248,3 +285,22 @@ def test_worldbuilder_type_descriptions_match_the_vocabulary():
 
     for label in ENTRY_TYPES.values():
         assert label in described, f"契约说明块没有讲到类型「{label}」"
+
+
+_SLOT_VARIABLE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
+
+
+def test_every_prompt_slot_variable_is_registered():
+    """提示词里的每个 {{ 槽位 }} 都必须是 SLOT_REGISTRY 的键。
+
+    纯文本预置（writer）走 `allow_missing=True`：槽位天然可能为空，渲染层
+    因此把「变量没有对应内容」当成空串而不是错误。拼错的槽位会被静默渲染
+    成空串 —— 作者得不到任何报错，只会在真实调用里发现上下文缺了一段。
+    这条测试就是那道放宽的护栏。
+    """
+    for entry in DEFAULT_ROSTER:
+        used = set(_SLOT_VARIABLE.findall(entry["system_prompt"]))
+        unknown = used - set(SLOT_REGISTRY)
+        assert not unknown, (
+            f"{entry['key']} 的提示词引用了未注册的槽位：{sorted(unknown)}"
+        )

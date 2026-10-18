@@ -95,6 +95,15 @@ def test_seed_does_not_create_when_claiming_is_ambiguous(session):
     assert session.query(Agent).filter_by(task_type=preset["task_type"]).count() == 2
 
 
+def test_seed_creates_the_writer_agent(session):
+    seed_agents(session)
+    writer = session.query(Agent).filter_by(task_type="write").one()
+    assert writer.name == "执笔"
+    version = session.get(AgentVersion, writer.current_version_id)
+    assert version.output_schema_json is None
+    assert "scene_card" in version.context_slots_json
+
+
 def test_seed_tools_loads_builtin_library(session):
     count = seed_tools(session)
     assert count > 0
