@@ -60,6 +60,11 @@ MIGRATIONS: tuple[Migration, ...] = (
             "CREATE UNIQUE INDEX uq_agent_preset_key ON agent(preset_key)",
         ),
     ),
+    Migration(
+        version=4,
+        note="scene 加已采纳正文列",
+        statements=("ALTER TABLE scene ADD COLUMN body TEXT",),
+    ),
 )
 
 BASELINE_VERSION = 0

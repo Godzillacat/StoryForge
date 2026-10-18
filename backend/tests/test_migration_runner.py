@@ -368,6 +368,17 @@ def test_the_character_columns_are_added_to_a_pre_existing_database(clean_db):
             " trigger_mode VARCHAR(20), note TEXT)"
         )
         conn.exec_driver_sql(
+            "CREATE TABLE scene (id VARCHAR(36) PRIMARY KEY, chapter_id VARCHAR(36) NOT NULL,"
+            " seq INTEGER NOT NULL DEFAULT 0, goal TEXT, conflict TEXT, turn TEXT,"
+            " characters_json JSON, location_id VARCHAR(36), story_time VARCHAR(200),"
+            " pov VARCHAR(100), target_words_min INTEGER, target_words_max INTEGER,"
+            " status VARCHAR(20), source_run_id VARCHAR(36))"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO scene (id, chapter_id, seq, goal)"
+            " VALUES ('s1', 'c1', 0, '找到录音带')"
+        )
+        conn.exec_driver_sql(
             "INSERT INTO setting_entry (id, project_id, type, name, summary)"
             " VALUES ('e1', 'p1', 'place', '南滨旧城', '小城')"
         )
@@ -395,7 +406,14 @@ def test_the_character_columns_are_added_to_a_pre_existing_database(clean_db):
         # 所以断言整张表而不是只取 MAX。
         assert conn.exec_driver_sql(
             "SELECT version FROM schema_migration ORDER BY version"
-        ).fetchall() == [(0,), (1,), (2,), (3,)]
+        ).fetchall() == [(0,), (1,), (2,), (3,), (4,)]
+
+    scene_columns = {c["name"] for c in inspect(clean_db).get_columns("scene")}
+    assert "body" in scene_columns
+    with clean_db.connect() as conn:
+        assert conn.exec_driver_sql("SELECT goal, body FROM scene").fetchall() == [
+            ("找到录音带", None)
+        ]
 
     relation_columns = {c["name"] for c in inspect(clean_db).get_columns("entry_relation")}
     agent_columns = {c["name"] for c in inspect(clean_db).get_columns("agent")}
