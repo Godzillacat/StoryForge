@@ -47,23 +47,10 @@ async def generate_scene(
         raise HTTPException(status_code=400, detail=prepared.prompt.error["message"])
 
     async def events():
-        # 运行记录在生成器开头创建，而不是在路由里 —— 客户端若在流真正开始
-        # 前就断开，不会留下一条永远停在 running 的孤儿记录。
-        run_id = text_service.create_run(spec)
-        yield _sse(
-            "run",
-            {
-                "run_id": run_id,
-                "model": spec.model,
-                "agent": spec.agent_name,
-                "estimated_tokens": spec.prompt_tokens,
-                "trimmed": spec.trimmed,
-            },
-        )
-
         parts: list[str] = []
         started = time.monotonic()
         finalized = False
+        run_id: str | None = None
 
         def usage(content: str) -> tuple[int, int, float]:
             # 流式不请求服务商 usage（不赌 stream_options 兼容性），
@@ -90,6 +77,25 @@ async def generate_scene(
             return draft_id, duration
 
         try:
+            # 运行记录在生成器开头创建，而不是在路由里 —— 客户端若在流真正开始
+            # 前就断开，不会留下一条永远停在 running 的孤儿记录。
+            #
+            # **`run` 的 yield 必须在这层 try 里面。** Starlette 在发送失败或
+            # 被取消时不保证 aclose 响应体迭代器；生成器最终被 finalizer 关闭
+            # 时，GeneratorExit 会落在这个 yield 上，而不是下面的循环里。若把
+            # 它留在 try 外，收尾永远不执行，运行记录会永久停在 running。
+            run_id = text_service.create_run(spec)
+            yield _sse(
+                "run",
+                {
+                    "run_id": run_id,
+                    "model": spec.model,
+                    "agent": spec.agent_name,
+                    "estimated_tokens": spec.prompt_tokens,
+                    "trimmed": spec.trimmed,
+                },
+            )
+
             async for chunk in prepared.client.stream(
                 prepared.config, prepared.prompt.messages, prepared.params
             ):
@@ -160,7 +166,11 @@ async def generate_scene(
                 },
             )
         finally:
-            if not finalized:
+            # 兜底覆盖「在 run / delta / done 的 yield 上被关闭」「CancelledError
+            # 之外的 BaseException（如 GeneratorExit）」等路径。run_id 为 None
+            # 说明 create_run 自己就失败了，没有可收敛的记录。
+            if not finalized and run_id is not None:
+                finalized = True
                 finish("".join(parts), "cancelled", None)
 
     return StreamingResponse(

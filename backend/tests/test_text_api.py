@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 import pytest
 
@@ -164,6 +166,41 @@ def test_finalize_run_is_idempotent_and_keeps_cancelled_content(client):
         assert stored.raw_output == "半截正文。"
         draft = session.query(SceneDraft).filter_by(scene_id=scene_id).one()
         assert draft.content == "半截正文。"
+
+
+class _FakeRequest:
+    async def is_disconnected(self) -> bool:
+        return False
+
+
+def test_disconnect_right_after_run_event_marks_run_cancelled(client, monkeypatch):
+    """客户端在收到 `run` 事件后立刻断开，运行记录不能永远停在 running。
+
+    Starlette 在断开/取消失败时不一定替我们 aclose 响应体迭代器；生成器最终被
+    finalizer 关闭时，GeneratorExit 会落在 `run` 的 yield 上。因此 `run` 事件
+    本身也必须在 try/finally 之内，否则 finalize_run 永远不会执行。
+    """
+    project_id, scene_id = _create_scene(client)
+    _patch_stream(monkeypatch, FakeStreamClient(["不应开始的正文。"]))
+
+    from app.api import text as text_api
+
+    async def scenario() -> str:
+        with SessionLocal() as session:
+            response = await text_api.generate_scene(scene_id, _FakeRequest(), session)
+        iterator = response.body_iterator
+        first = await iterator.__anext__()
+        await iterator.aclose()
+        return first
+
+    first = asyncio.run(scenario())
+    assert "event: run" in first
+
+    with SessionLocal() as session:
+        run = session.query(GenerationRun).filter_by(project_id=project_id).one()
+        assert run.status == "cancelled"
+        assert run.raw_output == ""
+        assert session.query(SceneDraft).filter_by(scene_id=scene_id).count() == 0
 
 
 def test_generate_survives_dirty_search_index_rebuild(client, monkeypatch):
