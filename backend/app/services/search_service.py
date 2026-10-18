@@ -1,13 +1,15 @@
-"""全文检索：文档构建、按项目重建、脏标记与删除清理。
+"""全文检索：文档构建、按项目重建、脏标记、删除清理与查询入口。
 
-FTS5 表只由本模块写入；查询入口在 Task 3 追加。
+FTS5 表只由本模块写入；查询按脏标记与索引版本决定是否先重建。
 """
 
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import dataclass
 
 from sqlalchemy import select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.chapter_types import STATUS_LABELS
@@ -216,3 +218,167 @@ def _scene_doc(
         ),
         "body": " ".join(parts),
     }
+
+
+@dataclass(frozen=True)
+class SearchHit:
+    entity_type: str
+    entity_id: str
+    subtype: str
+    title: str
+    snippet: str
+
+
+_ALLOWED_TYPES = ("entry", "chapter", "scene")
+_MODEL_BY_TYPE = {
+    "entry": SettingEntry,
+    "chapter": Chapter,
+    "scene": Scene,
+}
+
+
+def search(
+    session: Session,
+    project_id: str,
+    query: str,
+    entity_types: list[str] | None = None,
+    limit: int = 20,
+) -> list[SearchHit]:
+    normalized = " ".join((query or "").split())
+    if not normalized:
+        return []
+
+    types = tuple(entity_types or _ALLOWED_TYPES)
+    invalid = [item for item in types if item not in _ALLOWED_TYPES]
+    if invalid:
+        raise ValueError(f"未知的检索类型：{', '.join(invalid)}")
+    limit = max(1, min(int(limit), 50))
+
+    _ensure_fresh(session, project_id)
+
+    terms = normalized.split()[:8]
+    if all(len(term) >= 3 for term in terms):
+        rows = _fts_rows(session, project_id, terms, types, limit)
+    else:
+        rows = _like_rows(session, project_id, terms, types, limit)
+
+    hits: list[SearchHit] = []
+    for row in rows:
+        doc_id = str(row["doc_id"])
+        if ":" not in doc_id:
+            continue
+        entity_type = row["entity_type"]
+        entity_id = doc_id.split(":", 1)[1]
+        if not _exists(session, entity_type, entity_id):
+            continue
+        hits.append(
+            SearchHit(
+                entity_type=entity_type,
+                entity_id=entity_id,
+                subtype=row["subtype"] or "",
+                title=row["title"],
+                # 命中词可能只出现在标题（如条目名），只取 body 会截不中。
+                snippet=_snippet(f"{row['title']} {row['body']}", terms),
+            )
+        )
+    return hits
+
+
+def _ensure_fresh(session: Session, project_id: str) -> None:
+    state = session.get(SearchIndexState, project_id)
+    if (
+        state is not None
+        and state.dirty == 0
+        and state.schema_version == SEARCH_INDEX_VERSION
+    ):
+        return
+    rebuild_project(session, project_id)
+
+
+def _fts_rows(session, project_id, terms, types, limit):
+    match = " AND ".join(
+        '"' + term.replace('"', '""') + '"' for term in terms
+    )
+    placeholders = ", ".join(f":t{index}" for index in range(len(types)))
+    params = {
+        "match": match,
+        "pid": project_id,
+        "limit": limit,
+        **{f"t{index}": item for index, item in enumerate(types)},
+    }
+    sql = (
+        "SELECT doc_id, entity_type, subtype, title, body "
+        "FROM search_document "
+        "WHERE search_document MATCH :match AND project_id = :pid "
+        f"AND entity_type IN ({placeholders}) "
+        "ORDER BY bm25(search_document) LIMIT :limit"
+    )
+    try:
+        return list(session.execute(text(sql), params).mappings())
+    except OperationalError:
+        # 全是引号/特殊符号时 FTS 语法可能报错；回退 LIKE，不把 500 抛给作者。
+        return _like_rows(session, project_id, terms, types, limit)
+
+
+def _like_rows(session, project_id, terms, types, limit):
+    conditions = []
+    params = {"pid": project_id, "scan": limit * 3}
+    for index, term in enumerate(terms):
+        params[f"p{index}"] = f"%{_escape_like(term)}%"
+        conditions.append(
+            f"(title LIKE :p{index} ESCAPE '\\' OR body LIKE :p{index} ESCAPE '\\')"
+        )
+    placeholders = ", ".join(f":t{index}" for index in range(len(types)))
+    params.update({f"t{index}": item for index, item in enumerate(types)})
+    sql = (
+        "SELECT doc_id, entity_type, subtype, title, body "
+        "FROM search_document "
+        f"WHERE project_id = :pid AND {' AND '.join(conditions)} "
+        f"AND entity_type IN ({placeholders}) LIMIT :scan"
+    )
+    rows = list(session.execute(text(sql), params).mappings())
+    rows.sort(key=lambda row: _like_rank(row, terms))
+    return rows[:limit]
+
+
+def _escape_like(value: str) -> str:
+    return (
+        value.replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+
+
+def _like_rank(row, terms) -> tuple[int, str, str]:
+    title = str(row["title"]).casefold()
+    body = str(row["body"]).casefold()
+    best = 3
+    for term in terms:
+        needle = term.casefold()
+        if title == needle:
+            best = min(best, 0)
+        elif needle in title:
+            best = min(best, 1)
+        elif needle in body:
+            best = min(best, 2)
+    return (best, str(row["entity_type"]), str(row["title"]))
+
+
+def _snippet(body: str, terms: list[str], width: int = 30) -> str:
+    flat = " ".join((body or "").split())
+    folded = flat.casefold()
+    for term in terms:
+        needle = term.casefold()
+        index = folded.find(needle)
+        if index >= 0:
+            start = max(0, index - width)
+            end = min(len(flat), index + len(term) + width)
+            prefix = "…" if start > 0 else ""
+            suffix = "…" if end < len(flat) else ""
+            return prefix + flat[start:end] + suffix
+    return flat[:80] + ("…" if len(flat) > 80 else "")
+
+
+def _exists(session: Session, entity_type: str, entity_id: str) -> bool:
+    model = _MODEL_BY_TYPE.get(entity_type)
+    return model is not None and session.get(model, entity_id) is not None

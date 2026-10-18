@@ -171,3 +171,126 @@ def test_delete_project_removes_docs_and_state(session):
 
     assert _docs(session, project.id) == []
     assert session.get(SearchIndexState, project.id) is None
+
+
+def test_long_chinese_query_returns_ranked_entry(session):
+    project, place, _, _, _, _ = _seed(session)
+
+    hits = search_service.search(session, project.id, "南滨旧城")
+
+    assert any(hit.entity_type == "entry" and hit.entity_id == place.id for hit in hits)
+    assert hits[0].title == "南滨旧城"
+    assert "南滨旧城" in hits[0].snippet
+
+
+def test_short_chinese_name_uses_like_fallback(session):
+    project, _, character, _, _, _ = _seed(session)
+
+    hits = search_service.search(session, project.id, "沈砚")
+
+    assert any(hit.entity_type == "entry" and hit.entity_id == character.id for hit in hits)
+    assert any(hit.entity_type == "scene" for hit in hits)
+
+
+def test_entity_type_filter(session):
+    project, place, _, _, _, _ = _seed(session)
+
+    hits = search_service.search(session, project.id, "南滨旧城", entity_types=["entry"])
+
+    assert hits
+    assert {hit.entity_type for hit in hits} == {"entry"}
+
+
+def test_search_is_project_scoped(session):
+    first, place, _, _, _, _ = _seed(session)
+    second = Project(name="另一个项目")
+    session.add(second)
+    session.commit()
+    other = SettingEntry(project_id=second.id, type="place", name="南滨旧城")
+    session.add(other)
+    session.commit()
+
+    hits = search_service.search(session, first.id, "南滨旧城")
+
+    assert any(hit.entity_id == place.id for hit in hits)
+    assert all(hit.entity_id != other.id for hit in hits)
+
+
+def test_empty_query_returns_empty(session):
+    project, _, _, _, _, _ = _seed(session)
+    assert search_service.search(session, project.id, "   ") == []
+
+
+def test_special_characters_do_not_crash(session):
+    project, _, _, _, _, _ = _seed(session)
+    for query in ('"旧城"', "%", "旧_城", '旧城 AND "信标'):
+        search_service.search(session, project.id, query)
+
+
+def test_limit_is_applied(session):
+    project = Project(name="限额")
+    session.add(project)
+    session.commit()
+    for index in range(5):
+        session.add(
+            SettingEntry(
+                project_id=project.id,
+                type="place",
+                name=f"旧城{index}",
+                summary="旧城",
+            )
+        )
+    session.commit()
+
+    hits = search_service.search(session, project.id, "旧城", limit=2)
+
+    assert len(hits) == 2
+
+
+def test_dirty_state_triggers_rebuild(session):
+    project, place, _, _, _, _ = _seed(session)
+    search_service.rebuild_project(session, project.id)
+
+    place.name = "改名之后的旧城"
+    session.commit()
+    search_service.mark_dirty(session, project.id)
+    session.commit()
+
+    hits = search_service.search(session, project.id, "改名之后的旧城")
+    assert any(hit.entity_id == place.id for hit in hits)
+
+
+def test_schema_version_mismatch_triggers_rebuild(session):
+    project, place, _, _, _, _ = _seed(session)
+    search_service.rebuild_project(session, project.id)
+
+    place.name = "版本之后的名字"
+    session.commit()
+    state = session.get(SearchIndexState, project.id)
+    state.dirty = 0
+    state.schema_version = 0
+    session.commit()
+
+    hits = search_service.search(session, project.id, "版本之后的名字")
+    assert any(hit.entity_id == place.id for hit in hits)
+
+
+def test_stale_document_is_skipped(session):
+    project, place, _, _, _, _ = _seed(session)
+    search_service.rebuild_project(session, project.id)
+    state = session.get(SearchIndexState, project.id)
+    state.dirty = 0
+    session.commit()
+    session.execute(
+        text(
+            "INSERT INTO search_document"
+            "(doc_id, project_id, entity_type, subtype, title, body) "
+            "VALUES ('entry:missing', :p, 'entry', 'place', '幽灵旧城', '幽灵旧城')"
+        ),
+        {"p": project.id},
+    )
+    session.commit()
+
+    hits = search_service.search(session, project.id, "幽灵旧城")
+
+    assert all(hit.entity_id != "missing" for hit in hits)
