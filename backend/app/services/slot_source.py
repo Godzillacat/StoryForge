@@ -24,6 +24,7 @@ from app.db.models import (
     ToolTemplate,
     Volume,
 )
+from app.services import search_service
 from app.world_types import ENTRY_TYPES, HARDNESS_LEVELS
 
 _SUMMARY_LIMIT = 120
@@ -292,6 +293,37 @@ class DbSlotSource:
                 if pays_by_scene.get(scene.id):
                     parts.append(f"回收：{'、'.join(pays_by_scene[scene.id])}")
                 lines.append("；".join(parts))
+        return "\n".join(lines)
+
+    def related_settings(self) -> str | None:
+        """检索与本章相关的设定条目（可选槽位）。
+
+        查询词优先取调用方显式给的 search_query，否则只用本章标题
+        （摘要与钩子不拼进去：它们会把检索带偏到本章的情节词，而不是
+        场景里真正要引用的设定）。检索可能按脏标记重建索引并提交，
+        这是文档化的行为 —— 上下文组装时就地刷新，避免读到旧索引。
+        """
+        query = str(self._extra.get("search_query") or "").strip()
+        if not query:
+            chapter = self._chapter()
+            if chapter is None:
+                return None
+            query = (chapter.title or "").strip()
+        if not query:
+            return None
+        hits = search_service.search(
+            self._session,
+            self._project_id,
+            query,
+            entity_types=["entry"],
+            limit=8,
+        )
+        if not hits:
+            return None
+        lines = []
+        for hit in hits:
+            label = ENTRY_TYPES.get(hit.subtype, hit.subtype) if hit.subtype else "设定"
+            lines.append(f"【{label}】{hit.title} — {_clip(hit.snippet)}")
         return "\n".join(lines)
 
     def summarize(self, slot_key: str, text: str) -> str:

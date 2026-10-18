@@ -142,3 +142,78 @@ def test_volume_and_chapter_outline_are_scoped(session):
     assert "第一章" in chapter_text and "找到录音带" in chapter_text
     assert DbSlotSource(session, project.id).volume_outline() is None
     assert DbSlotSource(session, project.id).chapter_outline() is None
+
+
+from app.services import chapter_service, world_service
+
+
+def _search_project(session, name="旧城"):
+    project = Project(name="检索项目")
+    session.add(project)
+    session.commit()
+    return project
+
+
+def test_related_settings_uses_search_query(session):
+    project = _search_project(session)
+    world_service.create_entry(
+        session,
+        project.id,
+        type="place",
+        name="南滨旧城",
+        summary="记忆清算网络的据点",
+    )
+
+    text = DbSlotSource(
+        session,
+        project.id,
+        extra_slots={"search_query": "南滨旧城"},
+    ).related_settings()
+
+    assert text is not None
+    assert "南滨旧城" in text
+    assert "【地理】" in text
+
+
+def test_related_settings_derives_query_from_chapter(session):
+    project = _search_project(session)
+    world_service.create_entry(
+        session,
+        project.id,
+        type="place",
+        name="旧城信标",
+        summary="雨夜亮起",
+    )
+    volume = chapter_service.create_volume(session, project.id, name="第一卷")
+    chapter = chapter_service.create_chapter(
+        session, volume.id, title="旧城信标", summary="寻找信标"
+    )
+
+    text = DbSlotSource(
+        session,
+        project.id,
+        extra_slots={"chapter_id": chapter.id},
+    ).related_settings()
+
+    assert text is not None
+    assert "旧城信标" in text
+
+
+def test_related_settings_none_without_query_or_chapter(session):
+    project = _search_project(session)
+    world_service.create_entry(session, project.id, type="place", name="甲")
+    assert DbSlotSource(session, project.id).related_settings() is None
+
+
+def test_related_settings_is_project_scoped(session):
+    first = _search_project(session)
+    second = _search_project(session)
+    world_service.create_entry(session, first.id, type="place", name="旧城甲")
+    world_service.create_entry(session, second.id, type="place", name="旧城乙")
+
+    text = DbSlotSource(
+        session, first.id, extra_slots={"search_query": "旧城"}
+    ).related_settings()
+
+    assert "旧城甲" in text
+    assert "旧城乙" not in text

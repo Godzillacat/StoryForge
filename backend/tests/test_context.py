@@ -165,3 +165,12 @@ def test_summarize_returning_empty_marks_slot_as_dropped():
 def test_new_slots_are_registered():
     for key in ("world_context", "timeline", "volume_outline", "chapter_outline"):
         assert key in SLOT_REGISTRY
+
+
+def test_related_settings_slot_registered():
+    from app.runtime.context import P_MID, SLOT_REGISTRY
+
+    spec = SLOT_REGISTRY["related_settings"]
+    assert spec.label == "相关设定条目（检索）"
+    assert spec.priority == P_MID
+    assert spec.over_budget == "summarize"
