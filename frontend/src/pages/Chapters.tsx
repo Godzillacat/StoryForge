@@ -62,11 +62,17 @@ export default function Chapters() {
   // 每次项目级请求自增；迟到的旧项目响应凭 token 失效，
   // 不能覆盖当前项目的树、条目或伏笔。
   const dataRequestRef = useRef(0)
+  // 与 projectId 同步的即时值：保存后的 refresh 是旧渲染的闭包，
+  // 只有它能在切项目后认出「这是旧项目的请求」。
+  const projectIdRef = useRef('')
 
   useEffect(() => {
     api.listProjects().then((list) => {
       setProjects(list)
-      if (list[0]) setProjectId(list[0].id)
+      if (list[0]) {
+        projectIdRef.current = list[0].id
+        setProjectId(list[0].id)
+      }
     }).catch((error) => setNotice((error as Error).message))
     api.listChapterTypes().then((data) => setStatuses(data.statuses))
       .catch((error) => setNotice((error as Error).message))
@@ -74,6 +80,7 @@ export default function Chapters() {
 
   useEffect(() => {
     if (!projectId) return
+    projectIdRef.current = projectId
     setSelected(null)
     setNotice('')
     setVolumes([])
@@ -124,18 +131,33 @@ export default function Chapters() {
 
   async function refresh() {
     const requestProjectId = projectId
+    // 保存动作可能在新项目已经加载后才落回（闭包里还是旧的 projectId）。
+    // 这类旧请求连 token 都不能动，否则会把新项目的装载判为过期，
+    // 让 dataProjectId 永远停在旧值、页签一直卡在加载态。
+    if (projectIdRef.current !== requestProjectId) return
     const token = ++dataRequestRef.current
-    const [tree, entryList, foreshadowList] = await Promise.all([
-      api.getChapterTree(requestProjectId),
-      api.listEntries(requestProjectId),
-      api.listForeshadows(requestProjectId),
-    ])
-    // 期间切了项目（或又发起了一次刷新）：这批数据属于旧请求，整批丢弃。
-    if (dataRequestRef.current !== token) return
-    setVolumes(tree.volumes)
-    setEntries(entryList)
-    setEntriesProjectId(requestProjectId)
-    setForeshadows(foreshadowList)
+    try {
+      const [tree, entryList, foreshadowList] = await Promise.all([
+        api.getChapterTree(requestProjectId),
+        api.listEntries(requestProjectId),
+        api.listForeshadows(requestProjectId),
+      ])
+      // 期间切了项目（或又发起了一次刷新）：这批数据属于旧请求，整批丢弃。
+      if (dataRequestRef.current !== token) return
+      if (projectIdRef.current !== requestProjectId) return
+      setVolumes(tree.volumes)
+      setEntries(entryList)
+      setEntriesProjectId(requestProjectId)
+      setForeshadows(foreshadowList)
+    } finally {
+      // 当前项目的刷新无论成败都要结束加载态；旧项目不发结果，也不许碰它。
+      if (
+        dataRequestRef.current === token &&
+        projectIdRef.current === requestProjectId
+      ) {
+        setDataProjectId(requestProjectId)
+      }
+    }
   }
 
   async function run(action: () => Promise<void>) {
@@ -327,6 +349,7 @@ export default function Chapters() {
           className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
           value={projectId}
           onChange={(e) => {
+            projectIdRef.current = e.target.value
             setDataProjectId('')
             setProjectId(e.target.value)
           }}
