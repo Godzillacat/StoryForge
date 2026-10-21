@@ -592,7 +592,11 @@ export interface SceneNode {
   status: string
   source_run_id: string | null
   has_body: boolean
-  foreshadows: { plants: { id: string; name: string }[]; pays: { id: string; name: string }[] }
+  foreshadows: {
+    plants: { id: string; name: string }[]
+    pays: { id: string; name: string }[]
+    actual_pays: { id: string; name: string }[]
+  }
 }
 
 export interface Foreshadow {
@@ -602,6 +606,7 @@ export interface Foreshadow {
   note: string
   plant_scene_id: string | null
   plan_pay_scene_id: string | null
+  actual_pay_scene_id: string | null
   status: string
   source_run_id: string | null
 }

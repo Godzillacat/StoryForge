@@ -99,6 +99,17 @@ MIGRATIONS: tuple[Migration, ...] = (
             "CREATE INDEX ix_audit_issue_scene_check ON audit_issue(scene_id, check_type, stage, status)",
         ),
     ),
+    # 伏笔实际回收：只记录「在哪个场景被兑现」，不改规划状态。
+    # 与 v5 分开：从 P2a 升级的库可能还没有 audit_issue，合并会触发「部分缺表」。
+    Migration(
+        version=6,
+        note="foreshadow 加实际回收场景",
+        requires=("foreshadow",),
+        statements=(
+            "ALTER TABLE foreshadow ADD COLUMN actual_pay_scene_id VARCHAR(36) REFERENCES scene(id) ON DELETE SET NULL",
+            "CREATE INDEX ix_foreshadow_actual_pay ON foreshadow(actual_pay_scene_id)",
+        ),
+    ),
 )
 
 BASELINE_VERSION = 0

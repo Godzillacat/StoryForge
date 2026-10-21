@@ -81,7 +81,7 @@ export interface LedgerLocation {
   fullLabel: string
 }
 
-export type LedgerFilter = 'all' | 'missing_plant' | 'missing_pay'
+export type LedgerFilter = 'all' | 'missing_plant' | 'missing_pay' | 'unpaid'
 
 export interface LedgerRow {
   id: string
@@ -90,8 +90,10 @@ export interface LedgerRow {
   status: string
   plant: LedgerLocation | null
   pay: LedgerLocation | null
+  actualPay: LedgerLocation | null
   missingPlant: boolean
   missingPay: boolean
+  unpaid: boolean
   sameScene: boolean
 }
 
@@ -164,6 +166,9 @@ export function buildForeshadowLedger(
     const pay = foreshadow.plan_pay_scene_id
       ? index.get(foreshadow.plan_pay_scene_id) ?? null
       : null
+    const actualPay = foreshadow.actual_pay_scene_id
+      ? index.get(foreshadow.actual_pay_scene_id) ?? null
+      : null
     return {
       id: foreshadow.id,
       name: foreshadow.name,
@@ -171,8 +176,11 @@ export function buildForeshadowLedger(
       status: foreshadow.status,
       plant,
       pay,
+      actualPay,
       missingPlant: plant === null,
       missingPay: pay === null,
+      // 未回收：还没有实际回收场景。完全没安排的伏笔也计入 —— 它同样没回收。
+      unpaid: actualPay === null,
       sameScene: plant !== null && pay !== null && plant.sceneId === pay.sceneId,
     }
   })
@@ -182,6 +190,7 @@ export function buildForeshadowLedger(
 export function filterLedger(rows: LedgerRow[], filter: LedgerFilter): LedgerRow[] {
   if (filter === 'missing_plant') return rows.filter((row) => row.missingPlant)
   if (filter === 'missing_pay') return rows.filter((row) => row.missingPay)
+  if (filter === 'unpaid') return rows.filter((row) => row.unpaid)
   return rows
 }
 

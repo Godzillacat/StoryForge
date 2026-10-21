@@ -56,7 +56,7 @@ function makeScene(
     status: 'planned',
     source_run_id: null,
     has_body: false,
-    foreshadows: { plants: [], pays: [] },
+    foreshadows: { plants: [], pays: [], actual_pays: [] },
     ...overrides,
   }
 }
@@ -94,6 +94,7 @@ function makeForeshadow(
     note: '',
     plant_scene_id: null,
     plan_pay_scene_id: null,
+    actual_pay_scene_id: null,
     status: 'planned',
     source_run_id: null,
     ...overrides,
@@ -182,15 +183,17 @@ function ledgerVolumes(): VolumeNode[] {
 
 function ledgerForeshadows(): Foreshadow[] {
   return [
-    makeForeshadow('f1', '跨卷伏笔', {
-      plant_scene_id: 's3',
-      plan_pay_scene_id: 's4',
-    }),
     makeForeshadow('f2', '缺埋设乙', { plan_pay_scene_id: 's1' }),
     makeForeshadow('f3', '缺回收甲', { plant_scene_id: 's1' }),
     makeForeshadow('f4', '同场丙', {
       plant_scene_id: 's2',
       plan_pay_scene_id: 's2',
+      actual_pay_scene_id: 's2',
+    }),
+    makeForeshadow('f1', '跨卷伏笔', {
+      plant_scene_id: 's3',
+      plan_pay_scene_id: 's4',
+      actual_pay_scene_id: 's4',
     }),
     makeForeshadow('f5', '坏外键丁', { plant_scene_id: 'gone' }),
   ]
@@ -214,6 +217,9 @@ describe('buildForeshadowLedger', () => {
     expect(byId.get('f2')!.missingPay).toBe(false)
     expect(byId.get('f3')!.missingPay).toBe(true)
     expect(byId.get('f4')!.sameScene).toBe(true)
+    expect(byId.get('f4')!.actualPay?.shortLabel).toBe('第1卷·第1章·场景2')
+    expect(byId.get('f2')!.unpaid).toBe(true)
+    expect(byId.get('f4')!.unpaid).toBe(false)
     expect(byId.get('f5')!.missingPlant).toBe(true)
     expect(byId.get('f1')!.missingPlant).toBe(false)
     expect(byId.get('f1')!.missingPay).toBe(false)
@@ -228,6 +234,11 @@ describe('buildForeshadowLedger', () => {
     ])
     expect(filterLedger(rows, 'missing_pay').map((row) => row.id)).toEqual([
       'f5',
+      'f3',
+    ])
+    expect(filterLedger(rows, 'unpaid').map((row) => row.id)).toEqual([
+      'f5',
+      'f2',
       'f3',
     ])
   })
