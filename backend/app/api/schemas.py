@@ -296,3 +296,18 @@ class AuditResolve(BaseModel):
 class LogicCheckRequest(BaseModel):
     # 同上：非法时机由服务层报错并映射 400。
     stage: str = "text"
+
+
+class WritebackCharacterUpdate(BaseModel):
+    entry_id: str = ""
+    current_state: str = ""
+
+
+class WritebackForeshadowPay(BaseModel):
+    foreshadow_id: str = ""
+
+
+class WritebackApply(BaseModel):
+    chapter_summary: str | None = None
+    character_updates: list[WritebackCharacterUpdate] = Field(default_factory=list)
+    foreshadow_pays: list[WritebackForeshadowPay] = Field(default_factory=list)

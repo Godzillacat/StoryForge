@@ -23,6 +23,7 @@ from app.api import (
     timeline,
     tools,
     world,
+    writeback,
 )
 from app.db.session import SessionLocal, init_db
 from app.services.seed_service import seed_agents, seed_tools
@@ -57,11 +58,13 @@ for module in (
     search,
     slots,
     world,
+    writeback,
     timeline,
     chapters,
     foreshadows,
     text,
     audit,
     logic,
+    writeback,
 ):
     app.include_router(module.router)

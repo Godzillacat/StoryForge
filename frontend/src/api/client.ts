@@ -258,6 +258,16 @@ export const api = {
     request<LogicCheckView>(
       `/api/scenes/${sceneId}/logic-check?stage=${encodeURIComponent(stage)}`,
     ),
+  runSceneWriteback: (sceneId: string) =>
+    request<WritebackSuggestion>(`/api/scenes/${sceneId}/writeback`, {
+      method: 'POST',
+    }),
+  applySceneWriteback: (sceneId: string, payload: WritebackApplyPayload) =>
+    request<WritebackApplyResult>(`/api/scenes/${sceneId}/writeback/apply`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(payload),
+    }),
   resolveAuditIssue: (issueId: string, resolution: AuditResolution) =>
     request<AuditIssue>(`/api/audit/issues/${issueId}`, {
       method: 'PATCH',
@@ -812,6 +822,46 @@ export interface LogicCheckView {
   stage: string
   issues: AuditIssue[]
   last_checked_at: string | null
+}
+
+export interface WritebackCharacterCandidate {
+  entry_id: string
+  name: string
+  current_state: string
+  evidence: string
+}
+
+export interface WritebackForeshadowCandidate {
+  foreshadow_id: string
+  name: string
+  evidence: string
+}
+
+export interface WritebackSuggestion {
+  run_id: string | null
+  llm_status: 'ok' | 'skipped' | 'unstructured' | 'error'
+  warning: string
+  chapter_summary: string
+  character_updates: WritebackCharacterCandidate[]
+  foreshadow_pays: WritebackForeshadowCandidate[]
+  open_questions: string[]
+  warnings: string[]
+}
+
+export interface WritebackApplyPayload {
+  chapter_summary?: string
+  character_updates: { entry_id: string; current_state: string }[]
+  foreshadow_pays: { foreshadow_id: string }[]
+}
+
+export interface WritebackApplyResult {
+  chapter_summary: string
+  character_updates: { entry_id: string; name: string; current_state: string }[]
+  foreshadow_pays: {
+    foreshadow_id: string
+    name: string
+    actual_pay_scene_id: string
+  }[]
 }
 
 export interface GenerationRunEvent {

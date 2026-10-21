@@ -11,6 +11,8 @@ import {
   type RevisionDetail,
   type SceneTextState,
   type VolumeNode,
+  type WritebackApplyPayload,
+  type WritebackSuggestion,
 } from '../api/client'
 import AuditPanel from '../components/writing/AuditPanel'
 import ContextPreview from '../components/writing/ContextPreview'
@@ -19,6 +21,7 @@ import GenerationStream from '../components/writing/GenerationStream'
 import LogicPanel from '../components/writing/LogicPanel'
 import RevisionHistory from '../components/writing/RevisionHistory'
 import SceneTextView from '../components/writing/SceneTextView'
+import WritebackPanel from '../components/writing/WritebackPanel'
 import WritingTree from '../components/writing/WritingTree'
 
 interface RunInfo {
@@ -78,6 +81,11 @@ export default function Writing() {
   const [logicLastAt, setLogicLastAt] = useState<string | null>(null)
   const [logicLoading, setLogicLoading] = useState(false)
   const [logicWarning, setLogicWarning] = useState('')
+  const [writeback, setWriteback] = useState<WritebackSuggestion | null>(null)
+  const [writebackLoading, setWritebackLoading] = useState(false)
+  const [writebackApplying, setWritebackApplying] = useState(false)
+
+  const writebackBusy = writebackLoading || writebackApplying
 
   const treeToken = useRef(0)
   const sceneToken = useRef(0)
@@ -162,6 +170,9 @@ export default function Writing() {
     setLogicLastAt(null)
     setLogicWarning('')
     setLogicLoading(false)
+    setWriteback(null)
+    setWritebackLoading(false)
+    setWritebackApplying(false)
 
     setTreeLoading(true)
     api
@@ -279,6 +290,9 @@ export default function Writing() {
     // 那份响应不会再清 loading，必须在这里收掉。
     setAuditLoading(false)
     setLogicLoading(false)
+    setWriteback(null)
+    setWritebackLoading(false)
+    setWritebackApplying(false)
     setSelectedSceneId(sceneId)
     void loadScene(sceneId)
   }
@@ -458,7 +472,8 @@ export default function Writing() {
       generating ||
       busy ||
       auditLoading ||
-      logicLoading
+      logicLoading ||
+      writebackBusy
     ) {
       return
     }
@@ -487,7 +502,7 @@ export default function Writing() {
   }
 
   const runLogic = async () => {
-    if (!selectedSceneId || generating || busy || auditLoading || logicLoading) return
+    if (!selectedSceneId || generating || busy || auditLoading || logicLoading || writebackBusy) return
     if (logicStage === 'text' && !text?.has_body) return
     const token = sceneToken.current
     const sceneId = selectedSceneId
@@ -548,7 +563,7 @@ export default function Writing() {
     resolution: AuditResolution,
     removeIssue: (id: string) => void,
   ) => {
-    if (busy || auditLoading || logicLoading) return
+    if (busy || auditLoading || logicLoading || writebackBusy) return
     const token = sceneToken.current
     setBusy(true)
     setNotice('')
@@ -583,8 +598,81 @@ export default function Writing() {
       setLogicIssues((current) => current.filter((item) => item.id !== id)),
     )
 
+  const runWriteback = async () => {
+    if (
+      !selectedSceneId ||
+      !text?.has_body ||
+      generating ||
+      busy ||
+      auditLoading ||
+      logicLoading ||
+      writebackBusy
+    ) {
+      return
+    }
+    const token = sceneToken.current
+    const sceneId = selectedSceneId
+    setWritebackLoading(true)
+    setNotice('')
+    try {
+      const result = await api.runSceneWriteback(sceneId)
+      if (sceneToken.current !== token) return
+      setWriteback(result)
+      if (result.llm_status === 'ok') {
+        setNotice('回写建议已生成，请在右栏逐项确认后应用')
+      } else {
+        setNotice(result.warning || '回写建议未生成')
+      }
+    } catch (error) {
+      if (sceneToken.current === token) setNotice((error as Error).message)
+    } finally {
+      if (sceneToken.current === token) setWritebackLoading(false)
+    }
+  }
+
+  const applyWriteback = async (payload: WritebackApplyPayload) => {
+    if (
+      !selectedSceneId ||
+      busy ||
+      generating ||
+      auditLoading ||
+      logicLoading ||
+      writebackApplying
+    ) {
+      return
+    }
+    const token = sceneToken.current
+    const sceneId = selectedSceneId
+    setWritebackApplying(true)
+    setNotice('')
+    try {
+      const result = await api.applySceneWriteback(sceneId, payload)
+      if (sceneToken.current !== token) return
+      setWriteback(null)
+      setNotice(
+        `已写回：章节摘要${result.chapter_summary ? '已更新' : '未改'}，` +
+          `${result.character_updates.length} 个人物状态、` +
+          `${result.foreshadow_pays.length} 条伏笔回收`,
+      )
+      void refreshTree()
+    } catch (error) {
+      if (sceneToken.current === token) setNotice((error as Error).message)
+    } finally {
+      if (sceneToken.current === token) setWritebackApplying(false)
+    }
+  }
+
   const generate = async () => {
-    if (!selectedSceneId || generating || textLoading || auditLoading || logicLoading) return
+    if (
+      !selectedSceneId ||
+      generating ||
+      textLoading ||
+      auditLoading ||
+      logicLoading ||
+      writebackBusy
+    ) {
+      return
+    }
     if (
       hasUnsaved &&
       !window.confirm('生成完成后会刷新场景内容，当前未保存的修改将被覆盖。继续？')
@@ -837,7 +925,7 @@ export default function Writing() {
                         <button
                           type="button"
                           onClick={generate}
-                          disabled={busy || stopCooldown || auditLoading || logicLoading}
+                          disabled={busy || stopCooldown || auditLoading || logicLoading || writebackBusy}
                           title={stopCooldown ? '生成刚结束，请稍候' : undefined}
                           className="rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
                         >
@@ -847,7 +935,7 @@ export default function Writing() {
                       <button
                         type="button"
                         onClick={runAudit}
-                        disabled={busy || generating || auditLoading || logicLoading || !text.has_body}
+                        disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.has_body}
                         title={text.has_body ? undefined : '采纳正文后才能审校'}
                         className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
                       >
@@ -861,6 +949,7 @@ export default function Writing() {
                           generating ||
                           auditLoading ||
                           logicLoading ||
+                          writebackBusy ||
                           (logicStage === 'text' && !text.has_body)
                         }
                         title={
@@ -874,12 +963,29 @@ export default function Writing() {
                       </button>
                       <button
                         type="button"
+                        onClick={runWriteback}
+                        disabled={
+                          busy ||
+                          generating ||
+                          auditLoading ||
+                          logicLoading ||
+                          writebackBusy ||
+                          !text.has_body
+                        }
+                        title={text.has_body ? undefined : '采纳正文后才能生成回写建议'}
+                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
+                      >
+                        {writebackLoading ? '生成中…' : '回写建议'}
+                      </button>
+                      <button
+                        type="button"
                         onClick={saveBody}
                         disabled={
                           busy ||
                           generating ||
                           auditLoading ||
                           logicLoading ||
+                          writebackBusy ||
                           mode !== 'body' ||
                           bodyDraft === (text.body ?? '')
                         }
@@ -895,6 +1001,7 @@ export default function Writing() {
                           generating ||
                           auditLoading ||
                           logicLoading ||
+                          writebackBusy ||
                           mode !== 'body' ||
                           bodyDraft === (text.body ?? '')
                         }
@@ -905,7 +1012,7 @@ export default function Writing() {
                       <button
                         type="button"
                         onClick={saveDraft}
-                        disabled={busy || generating || auditLoading || logicLoading || !text.draft || mode !== 'draft'}
+                        disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.draft || mode !== 'draft'}
                         className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
                       >
                         保存草稿
@@ -913,7 +1020,7 @@ export default function Writing() {
                       <button
                         type="button"
                         onClick={adopt}
-                        disabled={busy || generating || auditLoading || logicLoading || !text.draft}
+                        disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.draft}
                         className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
                       >
                         采纳为正文
@@ -921,7 +1028,7 @@ export default function Writing() {
                       <button
                         type="button"
                         onClick={discard}
-                        disabled={busy || generating || auditLoading || logicLoading || !text.draft}
+                        disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.draft}
                         className="rounded border border-amber-800 px-3 py-1.5 text-sm text-amber-300 hover:text-amber-200 disabled:opacity-50"
                       >
                         丢弃草稿
@@ -988,9 +1095,9 @@ export default function Writing() {
             <AuditPanel
               issues={auditIssues}
               lastAuditedAt={auditLastAt}
-              running={auditLoading || busy}
+              running={auditLoading || busy || writebackBusy}
               warning={auditWarning}
-              canRun={Boolean(text?.has_body) && !generating && !busy && !auditLoading && !logicLoading}
+              canRun={Boolean(text?.has_body) && !generating && !busy && !auditLoading && !logicLoading && !writebackBusy}
               hasBody={Boolean(text?.has_body)}
               onRun={runAudit}
               onResolve={resolveIssue}
@@ -999,19 +1106,36 @@ export default function Writing() {
               stage={logicStage}
               issues={logicIssues}
               lastCheckedAt={logicLastAt}
-              running={logicLoading || busy}
+              running={logicLoading || busy || writebackBusy}
               warning={logicWarning}
               canRun={
                 Boolean(selectedSceneId) &&
                 !generating &&
                 !busy &&
                 !auditLoading &&
-                !logicLoading
+                !logicLoading &&
+                !writebackBusy
               }
               hasBody={Boolean(text?.has_body)}
               onStageChange={changeLogicStage}
               onRun={runLogic}
               onResolve={resolveLogicIssue}
+            />
+            <WritebackPanel
+              suggestion={writeback}
+              loading={writebackLoading}
+              applying={writebackApplying}
+              canRun={
+                Boolean(selectedSceneId) &&
+                !generating &&
+                !busy &&
+                !auditLoading &&
+                !logicLoading &&
+                !writebackBusy
+              }
+              hasBody={Boolean(text?.has_body)}
+              onRun={runWriteback}
+              onApply={applyWriteback}
             />
             {runInfo && (
               <section className="space-y-1 rounded border border-slate-800 p-3 text-xs text-slate-400">
@@ -1070,7 +1194,7 @@ export default function Writing() {
                 </pre>
                 <button
                   type="button"
-                  disabled={busy || auditLoading || logicLoading}
+                  disabled={busy || auditLoading || logicLoading || writebackBusy}
                   onClick={() => restoreRevision(revision.id)}
                   className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:text-white disabled:opacity-50"
                 >
