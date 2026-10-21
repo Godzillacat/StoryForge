@@ -285,3 +285,9 @@ class ForeshadowUpdate(BaseModel):
 
 class TextWrite(BaseModel):
     content: str = ""
+
+
+class AuditResolve(BaseModel):
+    # 用普通字符串而非 Literal：非法值要由服务层报中文原因、映射成 400，
+    # 而不是 Pydantic 校验失败的 422（先例：处理方式是作者显式动作）。
+    resolution: str = ""
