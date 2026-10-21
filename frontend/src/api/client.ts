@@ -244,6 +244,16 @@ export const api = {
     ),
   getSceneContextPreview: (sceneId: string) =>
     request<ContextPreview>(`/api/scenes/${sceneId}/context-preview`),
+  runSceneAudit: (sceneId: string) =>
+    request<AuditResult>(`/api/scenes/${sceneId}/audit`, { method: 'POST' }),
+  getSceneAudit: (sceneId: string) =>
+    request<AuditView>(`/api/scenes/${sceneId}/audit`),
+  resolveAuditIssue: (issueId: string, resolution: AuditResolution) =>
+    request<AuditIssue>(`/api/audit/issues/${issueId}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ resolution }),
+    }),
 
   listForeshadows: (projectId: string) =>
     request<Foreshadow[]>(`/api/projects/${projectId}/foreshadows`),
@@ -731,6 +741,41 @@ export interface ContextPreview {
   over_budget: boolean
   slots: ContextSlotPreview[]
   trimmed: Record<string, string>
+}
+
+export type AuditResolution = 'story' | 'setting' | 'character' | 'exception'
+
+export interface AuditIssue {
+  id: string
+  source: string
+  source_label: string
+  kind: string
+  kind_label: string
+  severity: string
+  severity_label: string
+  quote: string
+  rule_ref: string
+  explanation: string
+  reader_impact: string
+  options: string[]
+  target_entry_id: string | null
+  target_entry_name: string | null
+  status: string
+  resolution: string | null
+  created_at: string
+}
+
+export interface AuditResult {
+  run_id: string | null
+  issues: AuditIssue[]
+  suppressed: number
+  llm_status: 'ok' | 'skipped' | 'unstructured' | 'error'
+  warning: string
+}
+
+export interface AuditView {
+  issues: AuditIssue[]
+  last_audited_at: string | null
 }
 
 export interface GenerationRunEvent {
