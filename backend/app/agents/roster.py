@@ -17,6 +17,7 @@ TASK_TYPES = [
     "chapter_plan",
     "scene_plan",
     "write",
+    "writeback",
     "polish",
     "continuity",
     "logic_check",
@@ -586,6 +587,91 @@ LOGIC_CHECKER_PROMPT = """你是长篇小说的逻辑审查官，服务对象是
 7. 待审材料与设定一致时，返回空的问题清单；
 8. 返回符合输出契约的结构化结果。"""
 
+WRITEBACK_SCHEMA = {
+    "type": "object",
+    "required": ["chapter_summary"],
+    "properties": {
+        "chapter_summary": {
+            "type": "string",
+            "title": "本章到目前为止发生了什么（客观摘要）",
+        },
+        "character_updates": {
+            "type": "array",
+            "title": "人物状态更新",
+            "items": {
+                "type": "object",
+                "required": ["character", "current_state"],
+                "properties": {
+                    "character": {"type": "string", "title": "人物标准名"},
+                    "current_state": {
+                        "type": "string",
+                        "title": "这一场之后的状态",
+                    },
+                    "evidence": {"type": "string", "title": "正文原句"},
+                },
+            },
+        },
+        "foreshadow_pays": {
+            "type": "array",
+            "title": "实际回收的伏笔",
+            "items": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                    "name": {"type": "string", "title": "伏笔标准名"},
+                    "evidence": {"type": "string", "title": "正文原句"},
+                },
+            },
+        },
+        "open_questions": {
+            "type": "array",
+            "items": {"type": "string"},
+            "title": "没把握的问题",
+        },
+    },
+}
+
+WRITEBACK_PROMPT = """你是长篇小说的回写助手，服务对象是作者。你的任务是从这一场已采纳正文里，提取需要写回项目结构的事实。
+
+【项目核心】
+{{ project_core }}
+
+【故事圣经】
+{{ story_bible }}
+
+【世界观】
+{{ world_context }}
+
+【本卷纲要】
+{{ volume_outline }}
+
+【本章章纲】
+{{ chapter_outline }}
+
+【故事内时间线】
+{{ timeline }}
+
+【当前场景卡】
+{{ scene_card }}
+
+【出场人物】
+{{ scene_characters }}
+
+【相关设定】
+{{ related_settings }}
+
+【已采纳正文】
+{{ scene_text }}
+
+要求：
+1. 只写正文里实际发生的事，不推测下一场，不补充正文没有的信息；
+2. 摘要客观、按时间顺序，不超过三百字；
+3. 人物与伏笔一律使用材料里的标准名或已有称呼，不新造名称；
+4. 人物状态只列这一场之后发生变化的人物；没有变化就返回空数组；
+5. 伏笔只列正文里确实兑现的；没有兑现就返回空数组；
+6. 每条人物状态与伏笔回收尽量附上正文原句作为证据；说不清就放进待确认问题；
+7. 返回符合输出契约的结构化结果。"""
+
 DEFAULT_ROSTER: list[dict] = [
     {
         "key": "idea_parser",
@@ -735,5 +821,29 @@ DEFAULT_ROSTER: list[dict] = [
         "param_profile": "balanced",
         "trigger_mode": "manual",
         "note": "检查讲不讲得通；只给问题与方向，不给改稿。",
+    },
+    {
+        "key": "writeback",
+        "name": "回写助手",
+        "role_label": "状态",
+        "color": "#0d9488",
+        "task_type": "writeback",
+        "system_prompt": WRITEBACK_PROMPT,
+        "context_slots": [
+            "project_core",
+            "story_bible",
+            "world_context",
+            "volume_outline",
+            "chapter_outline",
+            "timeline",
+            "scene_card",
+            "scene_characters",
+            "related_settings",
+            "scene_text",
+        ],
+        "output_schema": WRITEBACK_SCHEMA,
+        "param_profile": "balanced",
+        "trigger_mode": "manual",
+        "note": "从已采纳正文提回写建议；作者勾选后才落库。",
     },
 ]

@@ -122,6 +122,15 @@ def test_seed_creates_the_logic_checker_agent(session):
     assert "scene_text" in version.context_slots_json
 
 
+def test_seed_creates_the_writeback_agent(session):
+    seed_agents(session)
+    agent = session.query(Agent).filter_by(task_type="writeback").one()
+    assert agent.name == "回写助手"
+    version = session.get(AgentVersion, agent.current_version_id)
+    assert version.output_schema_json is not None
+    assert "scene_text" in version.context_slots_json
+
+
 def test_seed_tools_loads_builtin_library(session):
     count = seed_tools(session)
     assert count > 0

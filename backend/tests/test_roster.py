@@ -364,6 +364,33 @@ def test_logic_checker_prompt_covers_the_five_layers():
     assert "{{ scene_text }}" in prompt
 
 
+def test_writeback_is_in_the_default_roster():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "writeback")
+    assert entry["task_type"] == "writeback"
+    assert "writeback" in TASK_TYPES
+    props = entry["output_schema"]["properties"]
+    assert set(props) == {
+        "chapter_summary",
+        "character_updates",
+        "foreshadow_pays",
+        "open_questions",
+    }
+    assert entry["output_schema"]["required"] == ["chapter_summary"]
+    character = props["character_updates"]["items"]
+    assert set(character["required"]) == {"character", "current_state"}
+    assert "标准名" in character["properties"]["character"]["title"]
+    assert "标准名" in props["foreshadow_pays"]["items"]["properties"]["name"]["title"]
+
+
+def test_writeback_prompt_stays_grounded_in_the_text():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "writeback")
+    prompt = entry["system_prompt"]
+    assert "只写正文里实际发生的事" in prompt
+    assert "不新造名称" in prompt
+    assert "没有变化就返回空数组" in prompt
+    assert "{{ scene_text }}" in prompt
+
+
 _SLOT_VARIABLE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 
 
