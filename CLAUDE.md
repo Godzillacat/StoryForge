@@ -651,7 +651,7 @@ pnpm build                                # 产物给后端同源托管
 
 **2026-10-21 · P2b 一致性审计（实施完成并通过真实模型复验）**
 
-设计 `docs/superpowers/specs/2026-10-21-p2b-consistency-audit-design.md`；实施计划 `docs/superpowers/plans/2026-10-21-p2b-consistency-audit.md`；走查与复验记录 `docs/superpowers/plans/2026-10-21-p2b-walkthrough.md`。在隔离 worktree（`worktree-p2b-consistency-audit`）内执行，初版提交 `1ad2284..d9ea335`，复验修复 `511c10c`。
+设计 `docs/superpowers/specs/2026-10-21-p2b-consistency-audit-design.md`；实施计划 `docs/superpowers/plans/2026-10-21-p2b-consistency-audit.md`；走查与复验记录 `docs/superpowers/plans/2026-10-21-p2b-walkthrough.md`。在隔离 worktree（`worktree-p2b-consistency-audit`）内执行，初版提交 `1ad2284..d9ea335`，复验与复查修复 `511c10c` / `cefbf46` / `52cee0f` / `a835818`。
 
 **产出：**
 
@@ -660,17 +660,19 @@ pnpm build                                # 产物给后端同源托管
 - **LLM 层**：新槽位 `scene_text`（当前已采纳正文，永不裁剪）；新预置「审校」（`task_type=continuity`、结构化输出、手动触发）。服务层归一化中文 kind / severity、丢弃无 quote 或无解释的问题、按严重度取前 30 条、名称精确匹配目标条目。**模型缺失 / 未绑 / 失败 / 未结构化都只降级为警告，规则层结果照常返回。**
 - **问题生命周期**：新一次审校把旧 `open` 标为 `superseded`；`exception` 按指纹抑制后续重复上报；`resolved` 记录处理方式（改故事 / 改设定 / 改人物），`exception` 单独记状态。**只记录状态并跳转，不自动改稿。**
 - **API**：`POST /api/scenes/{id}/audit`、`GET /api/scenes/{id}/audit`、`PATCH /api/audit/issues/{id}`；无正文 400、场景/问题 404、章节结构 409、非法处理方式 400（不用 Pydantic `Literal` 得到 422）。
-- **前端**：`/write` 工具栏与右栏「审校」入口、问题面板（来源 / 严重度 / 原句 / 冲突对象 / 读者观感 / 修正方向 / 四种处理）；LLM 跳过或失败显示 amber 警告；审校中禁用生成 / 保存 / 采纳，生成中禁用审校；审校响应持场景代际令牌。`/world?entry=<id>` 深链选中条目。
+- **前端**：`/write` 工具栏与右栏「审校」入口、问题面板（来源 / 严重度 / 原句 / 冲突对象 / 读者观感 / 修正方向 / 四种处理）；LLM 跳过或失败显示 amber 警告；审校中禁用生成 / 保存 / 采纳，生成中禁用审校；审校响应持场景代际令牌。`/world?project=<项目>&entry=<条目>` 深链选中条目；保存 / 采纳 / 恢复正文后清空面板并提示重新审校（服务端同步把旧问题标为 `superseded`）。
 
 **真实模型复验**（作者库副本，`qwen3.8-flash`，两轮成功调用共 **11,867 tokens**，累计约 66,346 / 1,000,000）：第 1 次 106.9 秒、结构化、3 条问题（规则重复 + LLM 重复 + LLM 地点冲突），问题带原句与冲突对象；一条改设定、一条接受为特例；第 2 次 69.8 秒，`suppressed=1`，特例不再上报。前端渲染真实 LLM 问题正常，控制台 0 报错。作者原库未写入，前后哈希一致；副本已删除。
 
 **复验中发现并修复的真实缺陷**（`511c10c`）：审校预置引用的 `timeline` / `scene_characters` / `related_settings` 在空场景下天然为空，按结构化预置的严格渲染会直接失败。修法是给 `RuntimeService` 增加可选 `allow_missing`，**只由审校路径显式传 `True`**，其它结构化预置保持严格；补了两条判别测试。这条不是模型问题，是接线问题。
 
+**整支复查（只读）** 在合并前覆盖全部提交，无 Critical；1 条 Important（深链不带项目，多项目下跳到错误项目并误报条目已删除）与 5 条 Minor 已修复并补测试（`cefbf46` / `52cee0f` / `a835818`）：深链带 `project`；非 `ValueError` 异常降级为警告；特例抑制计数先去重；面板空态改用独立 `hasBody`；正文保存 / 采纳 / 恢复时旧问题标 `superseded`；补 `last_audited_at` 按场景取的双场景测试。另修 `fingerprint` / `rule_ref` 列宽（改 TEXT）与 `options` 非数组时的逐字符拆分。
+
 **验证：**
 
 | 项 | 结果 |
 |---|---|
-| 后端测试 | **488 passed**（基线 430；本段新增 58） |
+| 后端测试 | **493 passed**（基线 430；本段新增 63） |
 | 前端测试 / 构建 | 30 passed / `pnpm build` 干净 |
 | 临时目录走查 | 无正文 / 未审校 / 规则三项 / 无模型警告 / 四种处理 / 特例抑制 / 深链 / 切场景竞态 / 控制台 0 ERROR 均通过 |
 | 作者库副本 | v4 迁移执行并自动备份；`audit_issue` 建出；「审校」预置出现；二次启动不重复迁移与预置；原数据一条不少 |
@@ -787,6 +789,8 @@ pnpm build                                # 产物给后端同源托管
 | 2026-10-21 | 出场人物未被提及的问题 `quote` 留空 | 正文里没有可引用的原句；伪造一句引用比留空更糟。界面据此不渲染引用块 |
 | 2026-10-21 | `last_audited_at` 按 spec **由该场景问题行派生**；零问题的审校重载后为空 | 本段不新增迁移；修复需给 `scene` 加列并走迁移 v5，记为后续项。会话内仍显示「本次没有发现问题」 |
 | 2026-10-21 | LLM 问题指纹按 spec 含 `rule_ref`；规则层指纹稳定 | 规则层实测特例抑制有效；LLM 再次运行若改写冲突对象表述，指纹会变、抑制可能失效。留后续评估 `kind + quote` 方案 |
+| 2026-10-21 | 审校深链改为 **`/world?project=<项目>&entry=<条目>`**（spec 原写 `/world?entry=<id>`） | 世界观页默认打开最新项目；作者在写作台选了旧项目时，不带项目会跳到错误项目并误报「条目可能已被删除」。整支复查 Important，已用双项目浏览器复验 |
+| 2026-10-21 | **正文保存 / 采纳 / 恢复后，旧 `open` 审校问题标为 `superseded`**；前端同步清空面板并提示重新审校 | 旧问题引用的是旧文本；不失效会让作者对已不存在的句子做处理，并把特例抑制到无意义的指纹上。spec 只规定了「新审校取代旧问题」，这是对正文整份替换的补齐 |
 
 ---
 
