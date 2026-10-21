@@ -182,6 +182,7 @@ def test_new_writing_slots_are_registered():
     assert SLOT_REGISTRY["scene_card"].over_budget == "never"
     assert SLOT_REGISTRY["scene_characters"].over_budget == "never"
     assert SLOT_REGISTRY["recent_text"].key == "recent_text"
+    assert SLOT_REGISTRY["foreshadow_ledger"].label == "伏笔账本"
 
 
 def test_scene_text_slot_is_registered_as_never_trim():

@@ -660,6 +660,9 @@ WRITEBACK_PROMPT = """你是长篇小说的回写助手，服务对象是作者�
 【相关设定】
 {{ related_settings }}
 
+【伏笔账本】
+{{ foreshadow_ledger }}
+
 【已采纳正文】
 {{ scene_text }}
 
@@ -668,7 +671,7 @@ WRITEBACK_PROMPT = """你是长篇小说的回写助手，服务对象是作者�
 2. 摘要客观、按时间顺序，不超过三百字；
 3. 人物与伏笔一律使用材料里的标准名或已有称呼，不新造名称；
 4. 人物状态只列这一场之后发生变化的人物；没有变化就返回空数组；
-5. 伏笔只列正文里确实兑现的；没有兑现就返回空数组；
+5. 伏笔只列【伏笔账本】里确实兑现的；没有兑现就返回空数组；名称必须与账本一致；
 6. 每条人物状态与伏笔回收尽量附上正文原句作为证据；说不清就放进待确认问题；
 7. 返回符合输出契约的结构化结果。"""
 
@@ -839,6 +842,7 @@ DEFAULT_ROSTER: list[dict] = [
             "scene_card",
             "scene_characters",
             "related_settings",
+            "foreshadow_ledger",
             "scene_text",
         ],
         "output_schema": WRITEBACK_SCHEMA,

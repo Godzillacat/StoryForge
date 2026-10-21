@@ -456,6 +456,66 @@ class DbSlotSource:
             lines.append(f"【{label}】{hit.title} — {_clip(hit.snippet)}")
         return "\n".join(lines)
 
+    def foreshadow_ledger(self) -> str | None:
+        """全部伏笔的名称与埋设/回收位置。
+
+        回写助手靠它把正文里实际兑现的伏笔对上标准名；没有这份清单，
+        模型只能猜名字，匹配不到任何一个已有伏笔。
+        """
+        rows = self._session.scalars(
+            select(Foreshadow)
+            .where(Foreshadow.project_id == self._project_id)
+            .order_by(Foreshadow.created_at)
+        ).all()
+        if not rows:
+            return None
+
+        labels: dict[str, str] = {}
+        scenes = self._session.scalars(
+            select(Scene)
+            .join(Chapter, Scene.chapter_id == Chapter.id)
+            .join(Volume, Chapter.volume_id == Volume.id)
+            .where(Volume.project_id == self._project_id)
+        ).all()
+        chapters = {
+            row.id: row
+            for row in self._session.scalars(
+                select(Chapter).join(Volume, Chapter.volume_id == Volume.id).where(
+                    Volume.project_id == self._project_id
+                )
+            )
+        }
+        volumes = {
+            row.id: row
+            for row in self._session.scalars(
+                select(Volume).where(Volume.project_id == self._project_id)
+            )
+        }
+        for scene in scenes:
+            chapter = chapters.get(scene.chapter_id)
+            volume = volumes.get(chapter.volume_id) if chapter else None
+            if chapter is None or volume is None:
+                continue
+            labels[scene.id] = (
+                f"第{volume.seq + 1}卷 第{chapter.seq + 1}章 场景{scene.seq + 1}"
+            )
+
+        def where(scene_id: str | None) -> str:
+            if not scene_id:
+                return "未安排"
+            return labels.get(scene_id, "（场景已删除）")
+
+        lines = []
+        for row in rows:
+            parts = [row.name]
+            parts.append(f"埋设：{where(row.plant_scene_id)}")
+            parts.append(f"计划回收：{where(row.plan_pay_scene_id)}")
+            parts.append(f"实际回收：{where(row.actual_pay_scene_id)}")
+            if row.note:
+                parts.append(f"备注：{_clip(row.note)}")
+            lines.append("｜".join(parts))
+        return "\n".join(lines)
+
     def summarize(self, slot_key: str, text: str) -> str:
         """超预算时的降级压缩。P1a 只截断，不调用模型，避免额外花钱。"""
         collapsed = " ".join(text.split())

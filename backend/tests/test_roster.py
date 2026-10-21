@@ -368,6 +368,7 @@ def test_writeback_is_in_the_default_roster():
     entry = next(e for e in DEFAULT_ROSTER if e["key"] == "writeback")
     assert entry["task_type"] == "writeback"
     assert "writeback" in TASK_TYPES
+    assert "foreshadow_ledger" in entry["context_slots"]
     props = entry["output_schema"]["properties"]
     assert set(props) == {
         "chapter_summary",
@@ -389,6 +390,7 @@ def test_writeback_prompt_stays_grounded_in_the_text():
     assert "不新造名称" in prompt
     assert "没有变化就返回空数组" in prompt
     assert "{{ scene_text }}" in prompt
+    assert "{{ foreshadow_ledger }}" in prompt
 
 
 _SLOT_VARIABLE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")

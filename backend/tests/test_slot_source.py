@@ -354,6 +354,22 @@ def test_scene_text_none_without_scene(session):
     assert DbSlotSource(session, project.id).scene_text() is None
 
 
+def test_foreshadow_ledger_lists_names_and_locations(session):
+    project, scene = _scene_fixture(session)
+
+    text = DbSlotSource(session, project.id).foreshadow_ledger()
+
+    assert "失忆的录音带" in text
+    assert "埋设：第1卷 第1章 场景2" in text
+    assert "计划回收：第1卷 第1章 场景1" in text
+    assert "实际回收：未安排" in text
+
+
+def test_foreshadow_ledger_none_without_foreshadows(session):
+    project = _seed(session)
+    assert DbSlotSource(session, project.id).foreshadow_ledger() is None
+
+
 def test_scene_search_query_uses_goal_conflict_turn_and_names(session):
     from app.services.slot_source import scene_search_query
 
