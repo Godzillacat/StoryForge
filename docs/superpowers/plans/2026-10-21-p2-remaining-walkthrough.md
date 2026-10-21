@@ -8,7 +8,7 @@
 
 | 项 | 结果 |
 |---|---|
-| 后端测试 | **587 passed**（基线 493，本段新增 94） |
+| 后端测试 | **594 passed**（基线 493，本段新增 101） |
 | 前端测试 | **30 passed** |
 | 前端构建 | `pnpm build` 干净 |
 | 作者真实库 | 未写入；`storyforge.db` / `secrets.bin` 前后 SHA-256 一致 |
@@ -68,3 +68,24 @@
 - **回写匹配**只做名称/别名精确匹配；模型写出账本外的名字只给警告，不猜。
 - **EPUB** 为基础版（无封面、图片、样式模板），未做真机阅读器验证；P5 精修。
 - **报告不含锁定状态**：锁定属 P4，尚无数据。
+
+
+## 5. 整支复查与修复
+
+独立只读复查覆盖从分叉点到 HEAD 的全部提交，发现 3 条 Important 与 8 条 Minor，均已修复并补测试。
+
+| 级别 | 发现 | 修法 |
+|---|---|---|
+| Important | 一致性审计与逻辑自检的生命周期查询只按场景/状态过滤，互相把对方的问题标为 `superseded`，两个面板还会互相显示对方的问题 | 审计查询与 supersede 增加 `check_type="consistency"`；补交叉隔离测试 |
+| Important | 逻辑自检在调用模型**之前**就 supersede 旧问题；一次无模型/超时的重跑会把作者尚未处理的问题永久藏起来（逻辑层没有规则层兜底） | 只有 `llm_status=ok` 时才 supersede 并插入；失败时返回并保留旧 open 问题 |
+| Important | 「重试失败」只保留失败场景。任务在 `failed_job` 停在 cursor=0 时，后半段未处理场景被丢掉 | 重试列表 = 失败场景 + 从 cursor 起的未处理场景，按顺序去重 |
+| Minor | 继续 / 重试失败不检查同项目其它进行中任务；两个 worker 同时写一场时唯一约束异常会杀死线程 | resume/retry 增加互斥检查；`save_generated_draft` 捕获 `IntegrityError` 视为跳过 |
+| Minor | 回写 `open_questions` 若是字符串会被逐字符拆成问题 | 只接受数组 |
+| Minor | 账本「未回收」把完全没安排的伏笔也算进去，与成品报告口径不一致 | 改为「实际回收为空且确有埋设或计划回收」 |
+| Minor | v5/v6 迁移从未在真实已有表上执行过测试，列/索引名写错也会全绿 | 新增存量表执行测试，断言三列、实际回收列与两个索引 |
+| Minor | EPUB 3 缺 `dcterms:modified` | 补元数据（取项目更新时间） |
+| Minor | 逻辑指纹用 `sha1(quote)`，spec 写的是 `quote|explanation` | 与 spec 对齐 |
+| Minor | 最后一次场景生成中被暂停，cursor=total 后「继续」按钮禁用，任务永远到不了 completed | 后端 resume 在末尾直接置 completed；前端不再按 cursor 禁用 |
+| Minor | 批量控制响应与仪表盘报告不持项目令牌，快速切项目可能串数据 | 增加项目代际令牌并丢弃迟到响应 |
+
+修复后基线：后端 **594 passed**，前端 **30 passed**，`pnpm build` 干净。

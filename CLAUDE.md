@@ -694,7 +694,7 @@ pnpm build                                # 产物给后端同源托管
 
 **2026-10-21 · P2 收尾：逻辑自检、回写、批量、导出（实施完成并通过真实模型复验）**
 
-设计 `docs/superpowers/specs/2026-10-21-p2-remaining-design.md`；实施计划 `docs/superpowers/plans/2026-10-21-p2-remaining.md`；走查与复验记录 `docs/superpowers/plans/2026-10-21-p2-remaining-walkthrough.md`。在隔离 worktree（`worktree-p2-remaining`）内执行，初版提交 `3a25b1c..24f6c59`，复验与走查修复 `9a9ab30` / `f74d064`。**P2 到此全部完成。**
+设计 `docs/superpowers/specs/2026-10-21-p2-remaining-design.md`；实施计划 `docs/superpowers/plans/2026-10-21-p2-remaining.md`；走查与复验记录 `docs/superpowers/plans/2026-10-21-p2-remaining-walkthrough.md`。在隔离 worktree（`worktree-p2-remaining`）内执行，初版提交 `3a25b1c..24f6c59`，复验与走查修复 `9a9ab30` / `f74d064`，整支复查修复 `0343843` / `5ebe252` / `bf5ef91`。**P2 到此全部完成。**
 
 **产出：**
 
@@ -711,11 +711,13 @@ pnpm build                                # 产物给后端同源托管
 2. **无模型时逻辑自检 / 审校顶部提示误报「没有发现问题」**（`f74d064`）；改为优先显示降级原因。
 3. **回写助手看不到伏笔账本**（`9a9ab30`）：新增 `foreshadow_ledger` 槽位并接入预设。
 
+**整支复查（只读）** 覆盖全部提交，无 Critical；3 条 Important 与若干 Minor 已修复并补测试：审校与逻辑自检的生命周期查询互相覆盖（按 `check_type` 隔离）；逻辑自检失败会清掉旧问题（改为只在成功时 supersede）；重试失败会丢掉未处理场景（失败 + cursor 之后一起重排）；另修批量 resume/retry 互斥、草稿唯一约束竞态、回写问题数组守卫、账本「未回收」口径、迁移真实执行测试、EPUB `dcterms:modified`、逻辑指纹与 spec 对齐、末尾暂停无法完成、前端项目令牌。
+
 **验证：**
 
 | 项 | 结果 |
 |---|---|
-| 后端测试 | **587 passed**（基线 493；本段新增 94） |
+| 后端测试 | **594 passed**（基线 493；本段新增 101） |
 | 前端测试 / 构建 | 30 passed / `pnpm build` 干净 |
 | 临时目录走查 | 逻辑两个阶段与无模型警告、回写建议与勾选应用、批量失败与重试、仪表盘报告与三种下载、控制台 0 ERROR |
 | 作者库副本 | v5 / v6 执行并自动备份；9 个预置；原数据一条不少；二次启动不重复 |
@@ -845,6 +847,10 @@ pnpm build                                # 产物给后端同源托管
 | 2026-10-21 | 导出提供**成品报告 + Markdown/TXT/基础 EPUB**；EPUB 用标准库手写；报告只提示未闭环、不阻止导出 | 不引入重型依赖；P5 再做样式模板与精修。锁定属 P4，报告不虚报锁定状态 |
 | 2026-10-21 | 新增 **`foreshadow_ledger` 槽位**（名称 + 埋设/计划/实际回收位置），接入回写助手 | 真实复验第一次回写时，账本不在任何槽位，模型看不到已有伏笔、只能猜名字；补槽位后精确命中 |
 | 2026-10-21 | 批量 `scene_extra` 必须解包后只传 `extra` 字典 | 走查实测把 `(project, extra)` 元组整个传下去会让每场报 `'tuple' object has no attribute 'get'`；测试夹具补 `isinstance(extra, dict)` |
+| 2026-10-21 | 一致性审计与逻辑自检的查询、supersede、异常指纹**按 `check_type` 隔离** | 复用同一张表后，旧查询只按场景/状态过滤会互相覆盖问题、面板串数据；整支复查 Important，补交叉隔离测试 |
+| 2026-10-21 | 逻辑自检**只在模型成功时** supersede 旧问题；失败/跳过保留旧 open 结果 | 逻辑层没有规则层兜底，一次无模型重跑不应让作者未处理的问题永久消失。整支复查 Important |
+| 2026-10-21 | 批量「重试失败」= 失败场景 + `cursor` 之后未处理的场景 | 任务在 `failed_job` 停在 cursor 处时，只重跑失败项会丢掉后半段。整支复查 Important |
+| 2026-10-21 | 账本「未回收」与成品报告同口径：实际回收为空且确有埋设或计划回收 | 完全没安排的伏笔不算「未回收」，否则账本计数与仪表盘报告不一致 |
 
 ---
 
