@@ -268,6 +268,26 @@ export const api = {
       headers: JSON_HEADERS,
       body: JSON.stringify(payload),
     }),
+  createBatch: (
+    projectId: string,
+    body: { scope_type: 'chapter' | 'volume'; scope_id: string },
+  ) =>
+    request<BatchJob>(`/api/projects/${projectId}/batches`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  getBatch: (jobId: string) => request<BatchJob>(`/api/batches/${jobId}`),
+  getLatestBatch: (projectId: string) =>
+    request<BatchJob | null>(`/api/projects/${projectId}/batches/latest`),
+  pauseBatch: (jobId: string) =>
+    request<BatchJob>(`/api/batches/${jobId}/pause`, { method: 'POST' }),
+  resumeBatch: (jobId: string) =>
+    request<BatchJob>(`/api/batches/${jobId}/resume`, { method: 'POST' }),
+  cancelBatch: (jobId: string) =>
+    request<BatchJob>(`/api/batches/${jobId}/cancel`, { method: 'POST' }),
+  retryBatchFailed: (jobId: string) =>
+    request<BatchJob>(`/api/batches/${jobId}/retry-failed`, { method: 'POST' }),
   resolveAuditIssue: (issueId: string, resolution: AuditResolution) =>
     request<AuditIssue>(`/api/audit/issues/${issueId}`, {
       method: 'PATCH',
@@ -862,6 +882,25 @@ export interface WritebackApplyResult {
     name: string
     actual_pay_scene_id: string
   }[]
+}
+
+export interface BatchFailure {
+  scene_id: string
+  message: string
+}
+
+export interface BatchJob {
+  id: string
+  project_id: string
+  scope_type: 'chapter' | 'volume'
+  scope_id: string
+  status: 'running' | 'paused' | 'completed' | 'cancelled' | 'failed'
+  cursor: number
+  total: number
+  current_scene_id: string | null
+  failures: BatchFailure[]
+  created_at: string
+  updated_at: string
 }
 
 export interface GenerationRunEvent {
