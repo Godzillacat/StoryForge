@@ -5,7 +5,7 @@ import pytest
 
 from app.db.models import GenerationRun, Scene, SceneDraft, SettingEntry
 from app.db.session import SessionLocal
-from app.runtime.llm import ChatError, ChatFailure
+from app.runtime.llm import ChatError, ChatFailure, StreamDelta, StreamUsage
 from app.services import search_service
 from app.services.runtime_service import RuntimeService
 
@@ -26,9 +26,10 @@ def _create_scene(client) -> tuple[str, str]:
 
 
 class FakeStreamClient:
-    def __init__(self, chunks, fail_at=None):
+    def __init__(self, chunks, fail_at=None, usage=None):
         self._chunks = chunks
         self._fail_at = fail_at
+        self._usage = usage
 
     async def stream(self, config, messages, params):
         # fail_at 表示「先吐出这么多块，再失败」：简报里的写法按索引判断，
@@ -40,11 +41,13 @@ class FakeStreamClient:
                     ChatError("network", "网络中断"), partial_text="".join(parts)
                 )
             parts.append(chunk)
-            yield chunk
+            yield StreamDelta(chunk)
         if self._fail_at is not None:
             raise ChatFailure(
                 ChatError("network", "网络中断"), partial_text="".join(parts)
             )
+        if self._usage is not None:
+            yield StreamUsage(*self._usage)
 
     async def complete(self, config, messages, params):
         raise AssertionError("流式生成不允许走非流式接口")
@@ -125,10 +128,20 @@ def test_generate_without_writer_model_is_400_before_streaming(client):
         version = session.get(AgentVersion, writer.current_version_id)
         version.model_binding_json = {}
         session.commit()
+        version_id, original_binding = version.id, {}
 
-    response = client.post(f"/api/scenes/{scene_id}/generate")
-    assert response.status_code == 400
-    assert "绑定模型" in response.json()["detail"]
+    try:
+        response = client.post(f"/api/scenes/{scene_id}/generate")
+        assert response.status_code == 400
+        assert "绑定模型" in response.json()["detail"]
+    finally:
+        # client 夹具共享一个库；不还原会让后面所有生成类用例一起 400。
+        with SessionLocal() as session:
+            from app.db.models import AgentVersion
+
+            restored = session.get(AgentVersion, version_id)
+            restored.model_binding_json = {**original_binding, "model": "test-model"}
+            session.commit()
 
 
 def test_finalize_run_is_idempotent_and_keeps_cancelled_content(client):
@@ -380,10 +393,47 @@ def test_context_preview_without_writer_is_400(client):
         from app.db.models import Agent
 
         writer = session.query(Agent).filter_by(task_type="write").one()
+        writer_id = writer.id
         writer.enabled = False
         session.commit()
 
-    _project_id, scene_id = _create_scene(client)
-    assert (
-        client.get(f"/api/scenes/{scene_id}/context-preview").status_code == 400
+    try:
+        _project_id, scene_id = _create_scene(client)
+        assert (
+            client.get(f"/api/scenes/{scene_id}/context-preview").status_code == 400
+        )
+    finally:
+        # client 夹具共享一个库；停用不还原会让后面所有生成类用例一起 400。
+        with SessionLocal() as session:
+            from app.db.models import Agent
+
+            session.get(Agent, writer_id).enabled = True
+            session.commit()
+
+
+def test_stream_usage_from_provider_is_recorded(client, monkeypatch):
+    project_id, scene_id = _create_scene(client)
+    _patch_stream(
+        monkeypatch, FakeStreamClient(["第一段。"], usage=(123, 45))
     )
+
+    body = _stream_body(client, scene_id)
+
+    assert '"usage_source": "provider"' in body
+    with SessionLocal() as session:
+        run = session.query(GenerationRun).filter_by(project_id=project_id).one()
+        assert run.usage_source == "provider"
+        assert run.prompt_tokens == 123
+        assert run.completion_tokens == 45
+
+
+def test_stream_without_usage_is_marked_estimated(client, monkeypatch):
+    project_id, scene_id = _create_scene(client)
+    _patch_stream(monkeypatch, FakeStreamClient(["第一段。"]))
+
+    body = _stream_body(client, scene_id)
+
+    assert '"usage_source": "estimated"' in body
+    with SessionLocal() as session:
+        run = session.query(GenerationRun).filter_by(project_id=project_id).one()
+        assert run.usage_source == "estimated"

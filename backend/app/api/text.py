@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import TextWrite
 from app.db.session import get_session
-from app.runtime.llm import ChatFailure
+from app.runtime.llm import ChatFailure, StreamUsage
 from app.runtime.pricing import compute_cost, estimate_tokens
 from app.services import text_service
 
@@ -52,17 +52,24 @@ async def generate_scene(
         started = time.monotonic()
         finalized = False
         run_id: str | None = None
+        stream_usage: StreamUsage | None = None
 
-        def usage(content: str) -> tuple[int, int, float]:
-            # 流式不请求服务商 usage（不赌 stream_options 兼容性），
-            # 这两个数都是估算值，精确记账留 P3。
-            prompt_tokens = spec.prompt_tokens
-            completion_tokens = estimate_tokens(content)
+        def usage(content: str) -> tuple[int, int, float, str]:
+            # 服务商给了真账就用真账；没给才回落估算，并在运行记录上标明，
+            # 免得作者把估算值当成实际计费。
+            if stream_usage is not None:
+                prompt_tokens = stream_usage.prompt_tokens or spec.prompt_tokens
+                completion_tokens = stream_usage.completion_tokens
+                source = "provider"
+            else:
+                prompt_tokens = spec.prompt_tokens
+                completion_tokens = estimate_tokens(content)
+                source = "estimated"
             cost = compute_cost(prompt_tokens, completion_tokens, spec.prices)
-            return prompt_tokens, completion_tokens, cost
+            return prompt_tokens, completion_tokens, cost, source
 
         def finish(content: str, status: str, error: dict | None) -> tuple[str | None, int]:
-            prompt_tokens, completion_tokens, cost = usage(content)
+            prompt_tokens, completion_tokens, cost, source = usage(content)
             duration = int((time.monotonic() - started) * 1000)
             draft_id = text_service.finalize_run(
                 run_id,
@@ -74,6 +81,7 @@ async def generate_scene(
                 cost_estimate=cost,
                 duration_ms=duration,
                 error=error,
+                usage_source=source,
             )
             return draft_id, duration
 
@@ -97,18 +105,21 @@ async def generate_scene(
                 },
             )
 
-            async for chunk in prepared.client.stream(
+            async for event in prepared.client.stream(
                 prepared.config, prepared.prompt.messages, prepared.params
             ):
                 if await request.is_disconnected():
                     raise asyncio.CancelledError
-                parts.append(chunk)
-                yield _sse("delta", {"text": chunk})
+                if isinstance(event, StreamUsage):
+                    stream_usage = event
+                    continue
+                parts.append(event.text)
+                yield _sse("delta", {"text": event.text})
 
             content = "".join(parts)
             draft_id, duration = finish(content, "ok", None)
             finalized = True
-            prompt_tokens, completion_tokens, cost = usage(content)
+            prompt_tokens, completion_tokens, cost, source = usage(content)
             yield _sse(
                 "done",
                 {
@@ -117,6 +128,7 @@ async def generate_scene(
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
                     "cost_estimate": cost,
+                    "usage_source": source,
                     "duration_ms": duration,
                     "chars": len(content),
                     "draft_id": draft_id,

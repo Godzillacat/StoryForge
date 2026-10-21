@@ -110,6 +110,16 @@ MIGRATIONS: tuple[Migration, ...] = (
             "CREATE INDEX ix_foreshadow_actual_pay ON foreshadow(actual_pay_scene_id)",
         ),
     ),
+    # token 来源。存量运行记录都是估算值（当时流式路径不请求 usage），
+    # 这正是列的默认值 —— 不需要回填，也不该把它标成真账。
+    Migration(
+        version=7,
+        note="generation_run 记录 token 来源",
+        requires=("generation_run",),
+        statements=(
+            "ALTER TABLE generation_run ADD COLUMN usage_source VARCHAR(20) NOT NULL DEFAULT 'estimated'",
+        ),
+    ),
 )
 
 BASELINE_VERSION = 0

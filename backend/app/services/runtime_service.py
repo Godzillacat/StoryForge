@@ -215,6 +215,7 @@ class RuntimeService:
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
             cost_estimate=result.cost_estimate,
+            usage_source=result.usage_source,
             duration_ms=result.duration_ms,
             status=result.status,
             error_json=result.error,

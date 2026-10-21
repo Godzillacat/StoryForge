@@ -39,6 +39,7 @@ def _run_out(run) -> dict:
         "prompt_tokens": run.prompt_tokens,
         "completion_tokens": run.completion_tokens,
         "cost_estimate": run.cost_estimate,
+        "usage_source": run.usage_source,
         "duration_ms": run.duration_ms,
         "status": run.status,
         "error": run.error_json,

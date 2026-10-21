@@ -39,6 +39,10 @@ class ChatFailure(Exception):
         self.partial_text = partial_text
 
 
+class _StreamOptionRejected(Exception):
+    """服务商拒绝了 include_usage 字段。只在内部流转，不进错误分类。"""
+
+
 @dataclass(frozen=True)
 class ChatConfig:
     base_url: str
@@ -54,6 +58,20 @@ class ChatResult:
     finish_reason: str | None = None
     partial: bool = False
     error: ChatError | None = None
+    # 服务商是否真的返回了 usage。缺了它，token 数是本地估算的，
+    # 作者看到的费用就不是真账。
+    usage_available: bool = False
+
+
+@dataclass(frozen=True)
+class StreamDelta:
+    text: str
+
+
+@dataclass(frozen=True)
+class StreamUsage:
+    prompt_tokens: int
+    completion_tokens: int
 
 
 class ChatClient:
@@ -62,7 +80,9 @@ class ChatClient:
     async def complete(self, config: ChatConfig, messages: list[dict], params: dict) -> ChatResult:
         raise NotImplementedError
 
-    def stream(self, config: ChatConfig, messages: list[dict], params: dict) -> AsyncIterator[str]:
+    def stream(
+        self, config: ChatConfig, messages: list[dict], params: dict
+    ) -> AsyncIterator[StreamDelta | StreamUsage]:
         raise NotImplementedError
 
 
@@ -98,8 +118,18 @@ class HttpxChatClient(ChatClient):
             headers["authorization"] = f"Bearer {config.api_key}"
         return headers
 
-    def _body(self, config: ChatConfig, messages: list[dict], params: dict, stream: bool) -> dict:
+    def _body(
+        self,
+        config: ChatConfig,
+        messages: list[dict],
+        params: dict,
+        stream: bool,
+        *,
+        include_usage: bool = False,
+    ) -> dict:
         body = {"model": config.model, "messages": messages, "stream": stream}
+        if include_usage:
+            body["stream_options"] = {"include_usage": True}
         body.update(params or {})
         return body
 
@@ -147,11 +177,33 @@ class HttpxChatClient(ChatClient):
             )),
             completion_tokens=int(usage.get("completion_tokens") or estimate_tokens(text)),
             finish_reason=choices[0].get("finish_reason"),
+            usage_available=bool(usage.get("prompt_tokens") or usage.get("completion_tokens")),
         )
 
     async def stream(
         self, config: ChatConfig, messages: list[dict], params: dict
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[StreamDelta | StreamUsage]:
+        # 先带 include_usage 请求真账；服务商不认这个字段会回 400，
+        # 此时去掉它重试一次 —— 只重试一次，且只在这种情形。
+        try:
+            async for event in self._stream_once(
+                config, messages, params, include_usage=True
+            ):
+                yield event
+        except _StreamOptionRejected:
+            async for event in self._stream_once(
+                config, messages, params, include_usage=False
+            ):
+                yield event
+
+    async def _stream_once(
+        self,
+        config: ChatConfig,
+        messages: list[dict],
+        params: dict,
+        *,
+        include_usage: bool,
+    ) -> AsyncIterator[StreamDelta | StreamUsage]:
         buffer: list[str] = []
         async with httpx.AsyncClient(transport=self._transport, timeout=self._timeout) as client:
             try:
@@ -159,8 +211,14 @@ class HttpxChatClient(ChatClient):
                     "POST",
                     self._endpoint(config),
                     headers=self._headers(config),
-                    json=self._body(config, messages, params, stream=True),
+                    json=self._body(
+                        config, messages, params, stream=True, include_usage=include_usage
+                    ),
                 ) as response:
+                    if response.status_code == 400 and include_usage:
+                        # 响应头阶段就拒了，一个字符都还没吐，可以安全重试。
+                        await response.aread()
+                        raise _StreamOptionRejected()
                     if response.status_code >= 400:
                         await response.aread()
                         raise ChatFailure(
@@ -180,12 +238,21 @@ class HttpxChatClient(ChatClient):
                             chunk = json.loads(data)
                         except json.JSONDecodeError:
                             continue
+                        usage = chunk.get("usage")
+                        if isinstance(usage, dict) and usage:
+                            yield StreamUsage(
+                                prompt_tokens=int(usage.get("prompt_tokens") or 0),
+                                completion_tokens=int(
+                                    usage.get("completion_tokens") or 0
+                                ),
+                            )
+                            continue
                         delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
                         content = delta.get("content")
                         if content:
                             buffer.append(content)
-                            yield content
-            except ChatFailure:
+                            yield StreamDelta(content)
+            except (_StreamOptionRejected, ChatFailure):
                 raise
             except Exception as exc:  # noqa: BLE001
                 failure = self._wrap_transport_error(exc)

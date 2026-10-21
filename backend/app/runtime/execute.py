@@ -61,6 +61,8 @@ class RunResult:
     status: str  # ok | partial | error
     error: dict | None
     trimmed: dict[str, str]
+    # provider：服务商返回了 usage；estimated：本地估算。
+    usage_source: str = "estimated"
 
 
 def prepare_prompt(
@@ -185,6 +187,7 @@ async def execute_prepared(
         status="ok",
         error=None,
         trimmed=prepared.trimmed,
+        usage_source="provider" if chat.usage_available else "estimated",
     )
 
 
