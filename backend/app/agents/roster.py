@@ -25,6 +25,30 @@ TASK_TYPES = [
     "assistant",
 ]
 
+# 任务类型的中文标签。模型分路与费用汇总都按任务类型分组，
+# 两处必须显示同一套名字 —— 所以定义一次，别在界面里再抄一份。
+TASK_TYPE_LABELS = {
+    "idea_parse": "灵感解析",
+    "architecture": "架构推荐",
+    "worldbuilding": "世界观",
+    "chapter_plan": "章纲策划",
+    "scene_plan": "场景策划",
+    "write": "正文",
+    "writeback": "回写",
+    "polish": "润色",
+    "continuity": "审校",
+    "logic_check": "逻辑自检",
+    "reader": "读者反馈",
+    "assistant": "助手",
+}
+
+
+def task_type_label(task_type: str | None) -> str:
+    """未知类型回落原键：显示成 write 也好过显示成空白。"""
+    if not task_type:
+        return "未知任务"
+    return TASK_TYPE_LABELS.get(task_type, task_type)
+
 IDEA_PARSE_SCHEMA = {
     "type": "object",
     "required": ["genre", "premise", "protagonist_desire", "conflict_source", "open_questions"],
