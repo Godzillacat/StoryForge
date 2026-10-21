@@ -186,11 +186,16 @@ def _normalize_llm_issues(
         kind = normalize_kind(item.get("kind"))
         severity = normalize_severity(item.get("severity"))
         rule_ref = str(item.get("rule_ref") or "").strip()
-        options = [
-            str(option).strip()
-            for option in (item.get("options") or [])
-            if isinstance(option, str) and str(option).strip()
-        ][:3]
+        raw_options = item.get("options")
+        options = (
+            [
+                str(option).strip()
+                for option in raw_options
+                if isinstance(option, str) and str(option).strip()
+            ][:3]
+            if isinstance(raw_options, list)
+            else []
+        )
         identity = _sha1(quote) if quote else _sha1(explanation)
         issues.append(
             RuleIssue(

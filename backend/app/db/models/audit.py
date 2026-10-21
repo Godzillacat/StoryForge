@@ -36,7 +36,7 @@ class AuditIssue(IdMixin, TimestampMixin, Base):
     # critical | major | minor
     severity: Mapped[str] = mapped_column(String(20))
     quote: Mapped[str] = mapped_column(Text, default="")
-    rule_ref: Mapped[str] = mapped_column(String(100), default="")
+    rule_ref: Mapped[str] = mapped_column(Text, default="")
     explanation: Mapped[str] = mapped_column(Text, default="")
     reader_impact: Mapped[str] = mapped_column(Text, default="")
     # 2–3 条修正方向；只展示给作者，不自动执行
@@ -45,8 +45,9 @@ class AuditIssue(IdMixin, TimestampMixin, Base):
     target_entry_id: Mapped[str | None] = mapped_column(
         ForeignKey("setting_entry.id", ondelete="SET NULL"), default=None
     )
-    # 稳定指纹：特例抑制与重复上报判定都以它为准
-    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    # 稳定指纹：特例抑制与重复上报判定都以它为准。LLM 指纹会把冲突对象
+    # 一并编进去，长度不设上限（与 rule_ref 一样用 TEXT）。
+    fingerprint: Mapped[str] = mapped_column(Text, index=True)
     # open | resolved | exception | superseded
     status: Mapped[str] = mapped_column(String(20), default="open")
     # story | setting | character | exception；未处理时为 NULL

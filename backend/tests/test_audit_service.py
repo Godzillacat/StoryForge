@@ -173,6 +173,8 @@ def test_llm_normalization_and_target_mapping(session, monkeypatch):
                 "quote": "门关上了。",
                 "rule_ref": "",
                 "explanation": "未知分类应兜底。",
+                # 字符串不是数组：不能按字符拆成三条修正方向
+                "options": "改故事",
             },
             {
                 "kind": "设定",
@@ -192,6 +194,7 @@ def test_llm_normalization_and_target_mapping(session, monkeypatch):
     assert issues[0]["kind"] == "character" and issues[0]["severity"] == "minor"
     assert issues[0]["target_entry_id"] is None  # 两个条目共用别名，不猜
     assert issues[1]["kind"] == "other" and issues[1]["severity"] == "minor"
+    assert issues[1]["options"] == []
 
 
 def test_llm_issue_cap_and_severity_order(session, monkeypatch):
