@@ -16,6 +16,7 @@ from app.api import (
     foreshadows,
     ideas,
     logic,
+    pipeline,
     projects,
     providers,
     runs,
@@ -29,6 +30,7 @@ from app.api import (
 )
 from app.db.session import SessionLocal, init_db
 from app.services.batch_service import recover_jobs
+from app.services.pipeline_service import recover_runs
 from app.services.seed_service import seed_agents, seed_tools
 
 
@@ -41,6 +43,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         seed_tools(session)
     # 进程内 worker 不跨重启：未完成的任务恢复为暂停，由作者手动继续。
     recover_jobs()
+    recover_runs()
     yield
 
 
@@ -72,5 +75,6 @@ for module in (
     writeback,
     batches,
     export,
+    pipeline,
 ):
     app.include_router(module.router)

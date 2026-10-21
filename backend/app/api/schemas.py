@@ -98,6 +98,20 @@ class ProviderTest(BaseModel):
     model: str | None = None
 
 
+class PipelineNodeIn(BaseModel):
+    name: str = Field(default="", max_length=120)
+    task_type: str = Field(min_length=1, max_length=40)
+    agent_id: str | None = None
+    checkpoint: bool = False
+    enabled: bool = True
+    target_json: dict[str, Any] | None = None
+
+
+class PipelineUpdate(BaseModel):
+    policy: str | None = None
+    nodes: list[PipelineNodeIn] | None = None
+
+
 class ModelPriceIn(BaseModel):
     provider_id: str
     model: str = Field(min_length=1, max_length=120)
