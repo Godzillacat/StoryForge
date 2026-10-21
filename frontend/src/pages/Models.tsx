@@ -1,9 +1,25 @@
 import { useEffect, useState } from 'react'
-import { api, type CostSummary, type Project, type ProviderView, type Settings, type Tool } from '../api/client'
+import {
+  api,
+  type CostBreakdown,
+  type CostSummary,
+  type ModelPrice,
+  type Project,
+  type ProviderView,
+  type Settings,
+  type Tool,
+} from '../api/client'
 import { costLabel } from '../lib/format'
 
 export default function Models() {
   const [providers, setProviders] = useState<ProviderView[]>([])
+  const [prices, setPrices] = useState<ModelPrice[]>([])
+  const [priceForm, setPriceForm] = useState({
+    provider_id: '',
+    model: '',
+    input_price: '',
+    output_price: '',
+  })
   const [settings, setSettings] = useState<Settings | null>(null)
   const [tools, setTools] = useState<Tool[]>([])
   const [projects, setProjects] = useState<Project[]>([])
@@ -14,6 +30,7 @@ export default function Models() {
 
   useEffect(() => {
     api.listProviders().then(setProviders)
+    api.listModelPrices().then(setPrices).catch(() => setPrices([]))
     api.getSettings().then(setSettings)
     api.listTools().then(setTools)
     api.listProjects().then((list) => {
@@ -82,6 +99,48 @@ export default function Models() {
       setProviders((prev) => prev.filter((p) => p.id !== id))
       if (editing?.id === id) setEditing(null)
       setNotice('已删除')
+    } catch (error) {
+      setNotice((error as Error).message)
+    }
+  }
+
+  async function savePrice() {
+    if (!priceForm.provider_id) {
+      setNotice('先选一家服务商')
+      return
+    }
+    if (!priceForm.model.trim()) {
+      setNotice('模型名要填')
+      return
+    }
+    const input = Number(priceForm.input_price || 0)
+    const output = Number(priceForm.output_price || 0)
+    if (!Number.isFinite(input) || !Number.isFinite(output) || input < 0 || output < 0) {
+      setNotice('单价必须是大于等于 0 的数字')
+      return
+    }
+    try {
+      const saved = await api.upsertModelPrice({
+        provider_id: priceForm.provider_id,
+        model: priceForm.model.trim(),
+        input_price: input,
+        output_price: output,
+      })
+      setPrices((prev) => {
+        const rest = prev.filter((row) => row.id !== saved.id)
+        return [...rest, saved].sort((a, b) => a.model.localeCompare(b.model))
+      })
+      setPriceForm({ ...priceForm, model: '', input_price: '', output_price: '' })
+      setNotice('单价已保存。')
+    } catch (error) {
+      setNotice((error as Error).message)
+    }
+  }
+
+  async function removePrice(id: string) {
+    try {
+      await api.deleteModelPrice(id)
+      setPrices((prev) => prev.filter((row) => row.id !== id))
     } catch (error) {
       setNotice((error as Error).message)
     }
@@ -267,6 +326,87 @@ export default function Models() {
         </div>
       </section>
 
+      <section className="space-y-3 rounded border border-slate-800 p-4 text-sm">
+        <h3 className="text-sm font-medium text-slate-300">模型单价（每百万 token）</h3>
+        <p className="text-xs text-slate-500">
+          单价按「服务商 + 模型」保存，同一个模型绑在多个智能体上只填一次。没配单价的模型，费用会显示为未定价，
+          而不是 0。
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
+            value={priceForm.provider_id}
+            onChange={(e) => setPriceForm({ ...priceForm, provider_id: e.target.value })}
+          >
+            <option value="">（选服务商）</option>
+            {providers.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <input
+            className="w-56 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
+            placeholder="模型名，例如 qwen3.8-flash"
+            value={priceForm.model}
+            onChange={(e) => setPriceForm({ ...priceForm, model: e.target.value })}
+          />
+          <input
+            className="w-28 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
+            placeholder="输入单价"
+            value={priceForm.input_price}
+            onChange={(e) => setPriceForm({ ...priceForm, input_price: e.target.value })}
+          />
+          <input
+            className="w-28 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
+            placeholder="输出单价"
+            value={priceForm.output_price}
+            onChange={(e) => setPriceForm({ ...priceForm, output_price: e.target.value })}
+          />
+          <button className="rounded bg-indigo-600 px-4 py-2 text-sm" onClick={savePrice}>
+            保存单价
+          </button>
+        </div>
+
+        <table className="w-full text-left text-xs">
+          <thead className="text-slate-500">
+            <tr>
+              <th className="py-1">服务商</th>
+              <th className="py-1">模型</th>
+              <th className="py-1">输入</th>
+              <th className="py-1">输出</th>
+              <th className="py-1">币种</th>
+              <th className="py-1" />
+            </tr>
+          </thead>
+          <tbody>
+            {prices.map((row) => (
+              <tr key={row.id} className="border-t border-slate-800">
+                <td className="py-1">
+                  {providers.find((p) => p.id === row.provider_id)?.name ?? '已删除的服务商'}
+                </td>
+                <td className="py-1 font-mono">{row.model}</td>
+                <td className="py-1">{row.input_price}</td>
+                <td className="py-1">{row.output_price}</td>
+                <td className="py-1">{row.currency}</td>
+                <td className="py-1 text-right">
+                  <button className="text-amber-400" onClick={() => removePrice(row.id)}>
+                    删除
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {prices.length === 0 && (
+              <tr>
+                <td className="py-2 text-slate-500" colSpan={6}>
+                  还没有配置单价，费用会显示为未定价。
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+
       <section className="space-y-2 rounded border border-slate-800 p-4 text-sm">
         <h3 className="text-sm font-medium text-slate-300">费用</h3>
         <select
@@ -281,10 +421,24 @@ export default function Models() {
           ))}
         </select>
         {cost && (
-          <p className="text-slate-400">
-            {cost.runs} 次调用 · {cost.prompt_tokens + cost.completion_tokens} tokens ·{' '}
-            {costLabel(cost.cost_estimate)}
-          </p>
+          <>
+            <p className="text-slate-400">
+              {cost.runs} 次调用 · {cost.prompt_tokens + cost.completion_tokens} tokens ·{' '}
+              {costLabel(cost.cost_estimate)}
+              {cost.unpriced_runs > 0 && (
+                <span className="ml-2 text-amber-400">其中 {cost.unpriced_runs} 次未定价</span>
+              )}
+            </p>
+            {settings?.budget_alert && cost.cost_estimate > settings.budget_alert && (
+              <p className="rounded border border-amber-900 bg-amber-950/40 p-2 text-xs text-amber-300">
+                本项目累计费用已超过预算提醒线 {costLabel(settings.budget_alert)}。这只是提醒，不会拦下调用。
+              </p>
+            )}
+            <div className="grid gap-4 md:grid-cols-2">
+              <Breakdown title="按智能体" rows={cost.by_agent} nameOf={(row) => row.name ?? ''} />
+              <Breakdown title="按任务" rows={cost.by_task} nameOf={(row) => row.label ?? ''} />
+            </div>
+          </>
         )}
       </section>
 
@@ -299,6 +453,54 @@ export default function Models() {
           ))}
         </ul>
       </section>
+    </div>
+  )
+}
+
+function Breakdown({
+  title,
+  rows,
+  nameOf,
+}: {
+  title: string
+  rows: CostBreakdown[]
+  nameOf: (row: CostBreakdown) => string
+}) {
+  return (
+    <div>
+      <h4 className="mb-1 text-xs text-slate-500">{title}</h4>
+      <table className="w-full text-left text-xs">
+        <thead className="text-slate-500">
+          <tr>
+            <th className="py-1">名称</th>
+            <th className="py-1">次数</th>
+            <th className="py-1">tokens</th>
+            <th className="py-1">费用</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={`${nameOf(row)}-${index}`} className="border-t border-slate-800">
+              <td className="py-1">{nameOf(row)}</td>
+              <td className="py-1">
+                {row.runs}
+                {row.unpriced_runs > 0 && (
+                  <span className="ml-1 text-amber-400">（{row.unpriced_runs} 未定价）</span>
+                )}
+              </td>
+              <td className="py-1">{row.prompt_tokens + row.completion_tokens}</td>
+              <td className="py-1">{costLabel(row.cost_estimate)}</td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td className="py-2 text-slate-500" colSpan={4}>
+                还没有调用记录。
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   )
 }

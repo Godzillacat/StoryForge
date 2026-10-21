@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, type CostSummary, type ExportReport, type Project } from '../api/client'
+import { api, type CostSummary, type ExportReport, type Project, type Settings } from '../api/client'
 
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
   const [selected, setSelected] = useState<Project | null>(null)
   const [cost, setCost] = useState<CostSummary | null>(null)
   const [report, setReport] = useState<ExportReport | null>(null)
+  const [settings, setSettings] = useState<Settings | null>(null)
   const [name, setName] = useState('')
   const [notice, setNotice] = useState('')
   const reportToken = useRef(0)
@@ -15,6 +16,7 @@ export default function Dashboard() {
       .listProjects()
       .then(setProjects)
       .catch((error) => setNotice((error as Error).message))
+    api.getSettings().then(setSettings).catch(() => setSettings(null))
   }, [])
 
   useEffect(() => {
@@ -130,8 +132,20 @@ export default function Dashboard() {
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-slate-500">累计费用</dt>
-                  <dd>${(cost?.cost_estimate ?? 0).toFixed(4)}</dd>
+                  <dd>
+                    ${(cost?.cost_estimate ?? 0).toFixed(4)}
+                    {!!cost?.unpriced_runs && (
+                      <span className="ml-1 text-xs text-amber-400">
+                        （{cost.unpriced_runs} 次未定价）
+                      </span>
+                    )}
+                  </dd>
                 </div>
+                {!!settings?.budget_alert && (cost?.cost_estimate ?? 0) > settings.budget_alert && (
+                  <p className="rounded border border-amber-900 bg-amber-950/40 p-2 text-xs text-amber-300">
+                    已超过预算提醒线 ${settings.budget_alert}。只是提醒，不会拦下调用。
+                  </p>
+                )}
               </dl>
             ) : (
               <p className="text-sm text-slate-500">选一个项目看体检单。</p>
