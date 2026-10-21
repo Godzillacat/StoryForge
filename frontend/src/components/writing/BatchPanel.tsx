@@ -112,7 +112,7 @@ export default function BatchPanel({
             {(job.status === 'paused' || job.status === 'failed') && (
               <button
                 type="button"
-                disabled={busy || job.cursor >= job.total}
+                disabled={busy}
                 onClick={onResume}
                 className="rounded border border-slate-700 px-2 py-0.5 text-slate-300 hover:text-white disabled:opacity-50"
               >

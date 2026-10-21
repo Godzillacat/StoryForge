@@ -237,7 +237,6 @@ describe('buildForeshadowLedger', () => {
       'f3',
     ])
     expect(filterLedger(rows, 'unpaid').map((row) => row.id)).toEqual([
-      'f5',
       'f2',
       'f3',
     ])

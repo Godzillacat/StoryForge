@@ -179,8 +179,9 @@ export function buildForeshadowLedger(
       actualPay,
       missingPlant: plant === null,
       missingPay: pay === null,
-      // 未回收：还没有实际回收场景。完全没安排的伏笔也计入 —— 它同样没回收。
-      unpaid: actualPay === null,
+      // 未回收：还没有实际回收场景，且确实埋设或计划回收过。
+      // 完全没安排的伏笔不计入 —— 与成品报告的口径一致。
+      unpaid: actualPay === null && (plant !== null || pay !== null),
       sameScene: plant !== null && pay !== null && plant.sceneId === pay.sceneId,
     }
   })

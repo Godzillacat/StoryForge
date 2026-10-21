@@ -95,6 +95,7 @@ export default function Writing() {
   const treeToken = useRef(0)
   const sceneToken = useRef(0)
   const logicToken = useRef(0)
+  const batchToken = useRef(0)
   const generateToken = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
   const streamTextRef = useRef('')
@@ -147,6 +148,7 @@ export default function Writing() {
     const token = ++treeToken.current
     sceneToken.current += 1
     logicToken.current += 1
+    batchToken.current += 1
     generateToken.current += 1
     abortRef.current?.abort()
     runIdRef.current = ''
@@ -209,11 +211,12 @@ export default function Writing() {
     if (!batchJob || batchJob.status !== 'running') return
     const jobId = batchJob.id
     let cancelled = false
+    const token = batchToken.current
     const timer = window.setInterval(() => {
       api
         .getBatch(jobId)
         .then((next) => {
-          if (cancelled) return
+          if (cancelled || batchToken.current !== token) return
           setBatchJob(next)
           if (next.status !== 'running') void refreshTree()
         })
@@ -711,6 +714,7 @@ export default function Writing() {
 
   const startBatch = async (scopeType: 'chapter' | 'volume', scopeId: string) => {
     if (!projectId || batchLoading || batchBusy) return
+    const token = batchToken.current
     setBatchLoading(true)
     setNotice('')
     try {
@@ -718,13 +722,15 @@ export default function Writing() {
         scope_type: scopeType,
         scope_id: scopeId,
       })
+      if (batchToken.current !== token) return
       const started = await api.resumeBatch(created.id)
+      if (batchToken.current !== token) return
       setBatchJob(started)
       setNotice('批量生成已开始；你可以随时暂停或取消')
     } catch (error) {
-      setNotice((error as Error).message)
+      if (batchToken.current === token) setNotice((error as Error).message)
     } finally {
-      setBatchLoading(false)
+      if (batchToken.current === token) setBatchLoading(false)
     }
   }
 
@@ -732,16 +738,18 @@ export default function Writing() {
     action: (jobId: string) => Promise<BatchJob>,
   ) => {
     if (!batchJob || batchBusy) return
+    const token = batchToken.current
     setBatchBusy(true)
     setNotice('')
     try {
       const next = await action(batchJob.id)
+      if (batchToken.current !== token) return
       setBatchJob(next)
       if (next.status !== 'running') void refreshTree()
     } catch (error) {
-      setNotice((error as Error).message)
+      if (batchToken.current === token) setNotice((error as Error).message)
     } finally {
-      setBatchBusy(false)
+      if (batchToken.current === token) setBatchBusy(false)
     }
   }
 

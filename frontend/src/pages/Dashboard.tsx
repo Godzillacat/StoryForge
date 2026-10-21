@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, type CostSummary, type ExportReport, type Project } from '../api/client'
 
 export default function Dashboard() {
@@ -8,6 +8,7 @@ export default function Dashboard() {
   const [report, setReport] = useState<ExportReport | null>(null)
   const [name, setName] = useState('')
   const [notice, setNotice] = useState('')
+  const reportToken = useRef(0)
 
   useEffect(() => {
     api
@@ -17,16 +18,29 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
+    const token = ++reportToken.current
     if (!selected) {
       setCost(null)
       setReport(null)
       return
     }
-    api.projectCost(selected.id).then(setCost).catch(() => setCost(null))
+    setReport(null)
+    api
+      .projectCost(selected.id)
+      .then((value) => {
+        if (reportToken.current === token) setCost(value)
+      })
+      .catch(() => {
+        if (reportToken.current === token) setCost(null)
+      })
     api
       .getExportReport(selected.id)
-      .then(setReport)
-      .catch((error) => setNotice((error as Error).message))
+      .then((value) => {
+        if (reportToken.current === token) setReport(value)
+      })
+      .catch((error) => {
+        if (reportToken.current === token) setNotice((error as Error).message)
+      })
   }, [selected])
 
   async function create() {
