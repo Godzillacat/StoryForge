@@ -12,6 +12,7 @@ from app.api import (
     audit,
     batches,
     chapters,
+    export,
     foreshadows,
     ideas,
     logic,
@@ -62,7 +63,6 @@ for module in (
     search,
     slots,
     world,
-    writeback,
     timeline,
     chapters,
     foreshadows,
@@ -71,5 +71,6 @@ for module in (
     logic,
     writeback,
     batches,
+    export,
 ):
     app.include_router(module.router)

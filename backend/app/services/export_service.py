@@ -290,6 +290,13 @@ def build_epub(session: Session, project_id: str) -> bytes:
     return buffer.getvalue()
 
 
+def export_filename(session: Session, project_id: str, fmt: str) -> str:
+    project = _project(session, project_id)
+    if fmt not in _EXTENSIONS:
+        raise ValueError(f"不支持的导出格式：{fmt}")
+    return f"{project.name}.{_EXTENSIONS[fmt]}"
+
+
 def build_export(session: Session, project_id: str, fmt: str) -> tuple[bytes, str, str]:
     """返回 (内容, media_type, 扩展名)。"""
     if fmt not in _MEDIA_TYPES:

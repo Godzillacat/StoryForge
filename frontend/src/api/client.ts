@@ -288,6 +288,10 @@ export const api = {
     request<BatchJob>(`/api/batches/${jobId}/cancel`, { method: 'POST' }),
   retryBatchFailed: (jobId: string) =>
     request<BatchJob>(`/api/batches/${jobId}/retry-failed`, { method: 'POST' }),
+  getExportReport: (projectId: string) =>
+    request<ExportReport>(`/api/projects/${projectId}/export/report`),
+  exportUrl: (projectId: string, format: 'md' | 'txt' | 'epub') =>
+    `/api/projects/${projectId}/export?format=${format}`,
   resolveAuditIssue: (issueId: string, resolution: AuditResolution) =>
     request<AuditIssue>(`/api/audit/issues/${issueId}`, {
       method: 'PATCH',
@@ -901,6 +905,25 @@ export interface BatchJob {
   failures: BatchFailure[]
   created_at: string
   updated_at: string
+}
+
+export interface ExportReport {
+  project_id: string
+  project_name: string
+  total_words: number
+  volumes: number
+  chapters: number
+  scenes: number
+  scenes_without_body: { volume: string; chapter: string; scene: number; goal: string }[]
+  unrecovered_foreshadows: {
+    name: string
+    planted: boolean
+    planted_at: string
+    planned_pay_at: string
+  }[]
+  open_audit_issues: number
+  open_logic_issues: number
+  exportable: boolean
 }
 
 export interface GenerationRunEvent {

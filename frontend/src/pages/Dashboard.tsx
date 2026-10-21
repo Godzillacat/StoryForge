@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { api, type CostSummary, type Project } from '../api/client'
+import { api, type CostSummary, type ExportReport, type Project } from '../api/client'
 
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
   const [selected, setSelected] = useState<Project | null>(null)
   const [cost, setCost] = useState<CostSummary | null>(null)
+  const [report, setReport] = useState<ExportReport | null>(null)
   const [name, setName] = useState('')
   const [notice, setNotice] = useState('')
 
@@ -16,7 +17,16 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
-    if (selected) api.projectCost(selected.id).then(setCost)
+    if (!selected) {
+      setCost(null)
+      setReport(null)
+      return
+    }
+    api.projectCost(selected.id).then(setCost).catch(() => setCost(null))
+    api
+      .getExportReport(selected.id)
+      .then(setReport)
+      .catch((error) => setNotice((error as Error).message))
   }, [selected])
 
   async function create() {
@@ -71,35 +81,93 @@ export default function Dashboard() {
           )}
         </section>
 
-        <section className="rounded border border-slate-800 p-4">
-          <h3 className="mb-3 text-sm font-medium text-slate-300">体检单</h3>
-          {selected ? (
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-slate-500">字数</dt>
-                <dd>0</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-500">结构完整度</dt>
-                <dd>待 P1c</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-500">未处理告警</dt>
-                <dd>待 P2</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-500">累计调用</dt>
-                <dd>{cost?.runs ?? 0} 次</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-500">累计费用</dt>
-                <dd>${(cost?.cost_estimate ?? 0).toFixed(4)}</dd>
-              </div>
-            </dl>
-          ) : (
-            <p className="text-sm text-slate-500">选一个项目看体检单。</p>
-          )}
-        </section>
+        <div className="space-y-4">
+          <section className="rounded border border-slate-800 p-4">
+            <h3 className="mb-3 text-sm font-medium text-slate-300">体检单</h3>
+            {selected ? (
+              <dl className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">字数</dt>
+                  <dd>{report?.total_words ?? 0}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">已写场景</dt>
+                  <dd>
+                    {report
+                      ? `${report.scenes - report.scenes_without_body.length} / ${report.scenes}`
+                      : '—'}
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">未回收伏笔</dt>
+                  <dd>{report?.unrecovered_foreshadows.length ?? 0}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">未处理告警</dt>
+                  <dd>
+                    {report
+                      ? `审计 ${report.open_audit_issues} · 逻辑 ${report.open_logic_issues}`
+                      : '—'}
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">累计调用</dt>
+                  <dd>{cost?.runs ?? 0} 次</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">累计费用</dt>
+                  <dd>${(cost?.cost_estimate ?? 0).toFixed(4)}</dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="text-sm text-slate-500">选一个项目看体检单。</p>
+            )}
+          </section>
+
+          <section className="space-y-3 rounded border border-slate-800 p-4">
+            <h3 className="text-sm font-medium text-slate-300">导出与成品报告</h3>
+            {selected && report ? (
+              <>
+                <p className="text-xs text-slate-500">
+                  共 {report.total_words} 字 · {report.volumes} 卷 {report.chapters} 章 ·{' '}
+                  {report.scenes} 场
+                </p>
+                {(report.scenes_without_body.length > 0 ||
+                  report.unrecovered_foreshadows.length > 0 ||
+                  report.open_audit_issues > 0 ||
+                  report.open_logic_issues > 0) && (
+                  <p className="rounded border border-amber-900 bg-amber-950/40 p-2 text-xs text-amber-300">
+                    还有未闭环项：未写场景 {report.scenes_without_body.length}、未回收伏笔{' '}
+                    {report.unrecovered_foreshadows.length}、未处理告警{' '}
+                    {report.open_audit_issues + report.open_logic_issues}。仍可导出。
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2 text-sm">
+                  <a
+                    href={api.exportUrl(selected.id, 'md')}
+                    className="rounded border border-slate-700 px-3 py-1 text-slate-300 hover:text-white"
+                  >
+                    Markdown
+                  </a>
+                  <a
+                    href={api.exportUrl(selected.id, 'txt')}
+                    className="rounded border border-slate-700 px-3 py-1 text-slate-300 hover:text-white"
+                  >
+                    TXT
+                  </a>
+                  <a
+                    href={api.exportUrl(selected.id, 'epub')}
+                    className="rounded border border-slate-700 px-3 py-1 text-slate-300 hover:text-white"
+                  >
+                    EPUB
+                  </a>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">选一个项目查看成品报告。</p>
+            )}
+          </section>
+        </div>
       </div>
     </div>
   )
