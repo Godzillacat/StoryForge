@@ -13,10 +13,6 @@ from dataclasses import dataclass, field
 
 _DEFAULT_PROFILE = "balanced"
 
-# 版本上的参数档默认就是 balanced；把它当成「作者没意见」，
-# 否则分路里的参数档永远轮不到生效。
-_IMPLICIT_PROFILE = "balanced"
-
 
 @dataclass(frozen=True)
 class RoutingResult:
@@ -42,11 +38,16 @@ def resolve_binding(
     task_type: str,
     routing: dict | None,
     default_model: str | None,
+    profile_is_authorial: bool = True,
 ) -> RoutingResult:
     """逐字段补齐：角色卡显式绑定 > 任务分路 > 全局默认。
 
     逐字段而不是整体回落，是为了让「只换模型、服务商跟随分路」这类最常见的
     组合不必把分路配两遍。
+
+    `profile_is_authorial` 说明版本上的参数档是不是**作者自己选的**。预置阵容
+    出厂就带 strict / balanced，那不是作者的意见；若照「版本优先」处理，分路里
+    的参数档对预置几乎永远不生效。调用方用「版本是否来自未改动的预置」判定。
     """
     version = dict(version_binding or {})
     route = normalize_routing_entry((routing or {}).get(task_type))
@@ -62,10 +63,9 @@ def resolve_binding(
     if model:
         binding["model"] = model
 
-    profile = version_profile or ""
-    if profile and profile != _IMPLICIT_PROFILE:
-        pass  # 作者显式改过，保持
+    if profile_is_authorial and version_profile:
+        profile = version_profile
     else:
-        profile = route.get("param_profile") or profile or _DEFAULT_PROFILE
+        profile = route.get("param_profile") or version_profile or _DEFAULT_PROFILE
 
     return RoutingResult(binding=binding, profile=profile, warnings=warnings)

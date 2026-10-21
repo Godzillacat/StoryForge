@@ -8,6 +8,7 @@ def _resolve(**kwargs):
         "task_type": "write",
         "routing": {},
         "default_model": None,
+        "profile_is_authorial": True,
     }
     base.update(kwargs)
     return resolve_binding(**base)
@@ -47,22 +48,31 @@ def test_missing_model_leaves_binding_empty():
     assert "model" not in result.binding
 
 
-def test_balanced_profile_is_implicit_so_route_wins():
+def test_preset_profile_does_not_block_the_route():
+    """预置出厂带 strict，那不是作者选的 —— 分路里的参数档要能生效。"""
     result = _resolve(
-        version_profile="balanced",
-        routing={"write": {"param_profile": "strict"}},
-    )
-
-    assert result.profile == "strict"
-
-
-def test_explicit_version_profile_wins_over_route():
-    result = _resolve(
-        version_profile="creative",
-        routing={"write": {"param_profile": "strict"}},
+        version_profile="strict",
+        routing={"write": {"param_profile": "creative"}},
+        profile_is_authorial=False,
     )
 
     assert result.profile == "creative"
+
+
+def test_authorial_version_profile_wins_over_route():
+    result = _resolve(
+        version_profile="creative",
+        routing={"write": {"param_profile": "strict"}},
+        profile_is_authorial=True,
+    )
+
+    assert result.profile == "creative"
+
+
+def test_route_profile_absent_falls_back_to_version():
+    result = _resolve(version_profile="strict", profile_is_authorial=False)
+
+    assert result.profile == "strict"
 
 
 def test_profile_defaults_to_balanced():

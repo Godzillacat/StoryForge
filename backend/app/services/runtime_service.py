@@ -142,6 +142,9 @@ class RuntimeService:
             task_type=agent.task_type,
             routing=settings.get("model_routing") or {},
             default_model=settings.get("default_model"),
+            # 预置阵容出厂就带 strict / balanced，那不是作者的意见 ——
+            # 否则分路里的参数档对预置智能体永远不生效。
+            profile_is_authorial=version.preset_fingerprint is None,
         )
 
         # 不要回落到 provider.name —— 那是服务商的显示名，不是模型 ID，

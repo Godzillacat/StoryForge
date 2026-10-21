@@ -346,17 +346,34 @@ def test_param_profile_reaches_the_request(session):
     assert prepared.profile == "creative"
 
 
-def test_route_profile_applies_when_version_says_balanced(session):
+def test_route_profile_applies_to_a_preset_version(session):
+    """预置版本的参数档不算作者意见，分路的参数档要能覆盖它。"""
     from app import config
 
-    project, _provider, agent, _version = _seed(session)
+    project, _provider, agent, version = _seed(session)
+    version.preset_fingerprint = "preset-fingerprint"
+    session.commit()
     config.save_settings(
-        {"model_routing": {"idea_parse": {"param_profile": "strict"}}}
+        {"model_routing": {"idea_parse": {"param_profile": "creative"}}}
     )
 
     prepared = RuntimeService(session).prepare(project.id, agent.id)
 
-    assert prepared.params["temperature"] == 0.2
+    assert prepared.params["temperature"] == 1.0
+
+
+def test_author_edited_version_keeps_its_profile(session):
+    from app import config
+
+    project, _provider, agent, _version = _seed(session)
+    config.save_settings(
+        {"model_routing": {"idea_parse": {"param_profile": "creative"}}}
+    )
+
+    prepared = RuntimeService(session).prepare(project.id, agent.id)
+
+    # _seed 造出来的版本没有 preset_fingerprint，即作者版本
+    assert prepared.params["temperature"] == 0.7
 
 
 def test_version_params_override_profile_and_defaults(session):
