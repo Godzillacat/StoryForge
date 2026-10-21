@@ -7,6 +7,7 @@ P1b/P1c 落地时往 DEFAULT_ROSTER 里追加即可，不改任何运行时代�
 from __future__ import annotations
 
 from app.audit_types import AUDIT_KINDS, AUDIT_SEVERITIES
+from app.logic_types import LOGIC_LAYERS
 from app.world_types import CHARACTER_FIELDS, ENTRY_TYPES, HARDNESS_LEVELS
 
 TASK_TYPES = [
@@ -499,6 +500,91 @@ AUDITOR_PROMPT = """你是长篇小说审校，服务对象是作者。你的任
 6. 正文与材料一致、或材料不足以判断时，返回空的问题清单；
 7. 返回符合输出契约的结构化结果。"""
 
+_LOGIC_LAYER_TITLE = "、".join(LOGIC_LAYERS.values())
+_LOGIC_SEVERITY_TITLE = "、".join(AUDIT_SEVERITIES.values())
+
+LOGIC_SCHEMA = {
+    "type": "object",
+    "required": ["issues"],
+    "properties": {
+        "issues": {
+            "type": "array",
+            "title": "问题清单",
+            "items": {
+                "type": "object",
+                "required": ["layer", "severity", "quote", "rule_ref", "explanation"],
+                "properties": {
+                    # 与一致性审计同一做法：不用 enum，服务层归一化中英文。
+                    "layer": {
+                        "type": "string",
+                        "title": f"检查层面（只能是：{_LOGIC_LAYER_TITLE}）",
+                    },
+                    "severity": {
+                        "type": "string",
+                        "title": f"严重度（只能是：{_LOGIC_SEVERITY_TITLE}）",
+                    },
+                    "quote": {"type": "string", "title": "原文或场景卡原句"},
+                    "rule_ref": {
+                        "type": "string",
+                        "title": "违反的设定、规则、人物卡或事实",
+                    },
+                    "explanation": {"type": "string", "title": "为什么讲不通"},
+                    "reader_impact": {
+                        "type": "string",
+                        "title": "读者可能怎么感受（可空）",
+                    },
+                    "options": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "title": "修正方向（两到三条，只说方向，不给改稿）",
+                    },
+                },
+            },
+        },
+    },
+}
+
+LOGIC_CHECKER_PROMPT = """你是长篇小说的逻辑审查官，服务对象是作者。你的产出是「讲不通的地方、为什么、可选修法」，不是改稿。
+
+【项目核心】
+{{ project_core }}
+
+【故事圣经】
+{{ story_bible }}
+
+【世界观】
+{{ world_context }}
+
+【本卷纲要】
+{{ volume_outline }}
+
+【本章章纲】
+{{ chapter_outline }}
+
+【故事内时间线】
+{{ timeline }}
+
+【当前场景卡】
+{{ scene_card }}
+
+【出场人物】
+{{ scene_characters }}
+
+【相关设定】
+{{ related_settings }}
+
+【待审正文】
+{{ scene_text }}
+
+要求：
+1. 只在五个层面找问题：世界规则、因果链、动机与性格、信息流、设定载荷；
+2. 只把硬规则当硬约束，软规则给提示，氛围类不检查；
+3. 每条问题必须引用正文或场景卡的句子，并指明违反了哪条设定、规则、人物卡或事实；
+4. 说明读者可能怎么感受；给两到三个修正方向，只给方向，不替作者决定；
+5. 不评价文笔、节奏，也不判断剧情是否好看；说不清就不报，不凑数；
+6. 正文或场景卡与材料一致时，返回空的问题清单；
+7. 返回符合输出契约的结构化结果。"""
+
 DEFAULT_ROSTER: list[dict] = [
     {
         "key": "idea_parser",
@@ -624,5 +710,29 @@ DEFAULT_ROSTER: list[dict] = [
         "param_profile": "balanced",
         "trigger_mode": "manual",
         "note": "只审已采纳正文；只找写错的地方，不给改稿。",
+    },
+    {
+        "key": "logic_checker",
+        "name": "逻辑审查官",
+        "role_label": "逻辑",
+        "color": "#a855f7",
+        "task_type": "logic_check",
+        "system_prompt": LOGIC_CHECKER_PROMPT,
+        "context_slots": [
+            "project_core",
+            "story_bible",
+            "world_context",
+            "timeline",
+            "volume_outline",
+            "chapter_outline",
+            "scene_card",
+            "scene_characters",
+            "related_settings",
+            "scene_text",
+        ],
+        "output_schema": LOGIC_SCHEMA,
+        "param_profile": "balanced",
+        "trigger_mode": "manual",
+        "note": "检查讲不讲得通；只给问题与方向，不给改稿。",
     },
 ]

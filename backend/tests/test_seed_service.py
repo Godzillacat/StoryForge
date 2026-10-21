@@ -113,6 +113,15 @@ def test_seed_creates_the_auditor_agent(session):
     assert "scene_text" in version.context_slots_json
 
 
+def test_seed_creates_the_logic_checker_agent(session):
+    seed_agents(session)
+    checker = session.query(Agent).filter_by(task_type="logic_check").one()
+    assert checker.name == "逻辑审查官"
+    version = session.get(AgentVersion, checker.current_version_id)
+    assert version.output_schema_json is not None
+    assert "scene_text" in version.context_slots_json
+
+
 def test_seed_tools_loads_builtin_library(session):
     count = seed_tools(session)
     assert count > 0

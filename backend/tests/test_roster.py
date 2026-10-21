@@ -325,6 +325,45 @@ def test_auditor_prompt_only_looks_for_errors():
     assert "{{ scene_text }}" in prompt
 
 
+def test_logic_checker_is_in_the_default_roster():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "logic_checker")
+    assert entry["name"] == "逻辑审查官"
+    assert entry["task_type"] == "logic_check"
+    assert entry["param_profile"] == "balanced"
+    assert entry["trigger_mode"] == "manual"
+    assert entry["context_slots"] == [
+        "project_core",
+        "story_bible",
+        "world_context",
+        "timeline",
+        "volume_outline",
+        "chapter_outline",
+        "scene_card",
+        "scene_characters",
+        "related_settings",
+        "scene_text",
+    ]
+
+    props = entry["output_schema"]["properties"]
+    assert set(props) == {"issues"}
+    item = props["issues"]["items"]
+    assert set(item["required"]) == {"layer", "severity", "quote", "rule_ref", "explanation"}
+    layer_title = item["properties"]["layer"]["title"]
+    for label in ("世界规则", "因果链", "动机与性格", "信息流", "设定载荷"):
+        assert label in layer_title
+    assert "致命" in item["properties"]["severity"]["title"]
+
+
+def test_logic_checker_prompt_covers_the_five_layers():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "logic_checker")
+    prompt = entry["system_prompt"]
+    for label in ("世界规则", "因果链", "动机与性格", "信息流", "设定载荷"):
+        assert label in prompt
+    assert "不评价文笔" in prompt
+    assert "不凑数" in prompt
+    assert "{{ scene_text }}" in prompt
+
+
 _SLOT_VARIABLE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 
 
