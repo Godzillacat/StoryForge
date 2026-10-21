@@ -6,6 +6,7 @@ interface Props {
   running: boolean
   warning: string
   canRun: boolean
+  hasBody: boolean
   onRun: () => void
   onResolve: (issue: AuditIssue, resolution: AuditResolution) => void
 }
@@ -22,6 +23,7 @@ export default function AuditPanel({
   running,
   warning,
   canRun,
+  hasBody,
   onRun,
   onResolve,
 }: Props) {
@@ -34,7 +36,7 @@ export default function AuditPanel({
           disabled={running || !canRun}
           onClick={onRun}
           className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:text-white disabled:opacity-50"
-          title={canRun ? undefined : '采纳正文后才能审校'}
+          title={hasBody ? undefined : '采纳正文后才能审校'}
         >
           {running ? '审校中…' : lastAuditedAt ? '重新审校' : '审校'}
         </button>
@@ -49,10 +51,10 @@ export default function AuditPanel({
         </p>
       )}
 
-      {!canRun && <p className="text-sm text-slate-500">采纳正文后可审校。</p>}
+      {!hasBody && <p className="text-sm text-slate-500">采纳正文后可审校。</p>}
 
-      {canRun && issues.length === 0 && !warning && lastAuditedAt && (
-        <p className="text-sm text-slate-500">本次没有发现问题。</p>
+      {hasBody && issues.length === 0 && !warning && lastAuditedAt && (
+        <p className="text-sm text-slate-500">当前没有待处理问题。</p>
       )}
 
       <ul className="space-y-2">

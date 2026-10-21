@@ -310,7 +310,10 @@ export default function Writing() {
       if (sceneToken.current !== token) return
       setText(state)
       setBodyDraft(state.body ?? '')
-      setNotice('正文已保存')
+      // 服务端会把旧问题标为 superseded；本地也立即清掉，避免对旧文本处理问题。
+      setAuditIssues([])
+      setAuditWarning('')
+      setNotice(auditIssues.length > 0 ? '正文已保存；之前的审校结果已失效，请重新审校' : '正文已保存')
       void refreshTree()
     } catch (error) {
       if (sceneToken.current === token) setNotice((error as Error).message)
@@ -370,7 +373,13 @@ export default function Writing() {
       setBodyDraft(state.body ?? '')
       setAiDraft('')
       setMode('body')
-      setNotice('已采纳，已生成修订快照')
+      setAuditIssues([])
+      setAuditWarning('')
+      setNotice(
+        auditIssues.length > 0
+          ? '已采纳，已生成修订快照；之前的审校结果已失效，请重新审校'
+          : '已采纳，已生成修订快照',
+      )
       void refreshTree()
     } catch (error) {
       if (sceneToken.current === token) setNotice((error as Error).message)
@@ -444,7 +453,9 @@ export default function Writing() {
         setNotice('已记为特例，后续审校不再重复上报')
       } else {
         const target = issue.target_entry_id
-        navigate(target ? `/world?entry=${encodeURIComponent(target)}` : '/world')
+        const entryParam = target ? `&entry=${encodeURIComponent(target)}` : ''
+        // 带上当前项目：世界观页默认打开最新项目，不传项目会让深链落到别处。
+        navigate(`/world?project=${encodeURIComponent(projectId)}${entryParam}`)
       }
     } catch (error) {
       if (sceneToken.current === token) setNotice((error as Error).message)
@@ -596,7 +607,13 @@ export default function Writing() {
       setBodyDraft(state.body ?? '')
       setMode('body')
       setRevision(null)
-      setNotice('已恢复旧版并生成新的修订')
+      setAuditIssues([])
+      setAuditWarning('')
+      setNotice(
+        auditIssues.length > 0
+          ? '已恢复旧版并生成新的修订；之前的审校结果已失效，请重新审校'
+          : '已恢复旧版并生成新的修订',
+      )
       void refreshTree()
     } catch (error) {
       if (sceneToken.current === token) setNotice((error as Error).message)
@@ -830,6 +847,7 @@ export default function Writing() {
               running={auditLoading || busy}
               warning={auditWarning}
               canRun={Boolean(text?.has_body) && !generating && !busy && !auditLoading}
+              hasBody={Boolean(text?.has_body)}
               onRun={runAudit}
               onResolve={resolveIssue}
             />

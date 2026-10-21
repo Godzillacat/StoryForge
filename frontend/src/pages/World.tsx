@@ -52,6 +52,7 @@ export default function World() {
   // 审校面板的「改设定 / 改人物」会带 ?entry=<id> 跳过来；等条目加载完再选中。
   const [searchParams] = useSearchParams()
   const deepEntryId = searchParams.get('entry')
+  const requestedProjectId = searchParams.get('project')
   const [loadedProjectId, setLoadedProjectId] = useState('')
   const deepLinkApplied = useRef('')
 
@@ -59,7 +60,12 @@ export default function World() {
     api.listEntryTypes().then(setTypes)
     api.listProjects().then((list) => {
       setProjects(list)
-      if (list[0]) setProjectId(list[0].id)
+      // 审校深链会带上项目 id；不认它就会落到列表第一个（最新）项目。
+      const preferred =
+        requestedProjectId && list.some((project) => project.id === requestedProjectId)
+          ? requestedProjectId
+          : list[0]?.id
+      if (preferred) setProjectId(preferred)
     })
   }, [])
 
@@ -89,7 +95,6 @@ export default function World() {
     setLastRun(null)
     setSuggesting(false)
     setLoadedProjectId('')
-    deepLinkApplied.current = ''
     api
       .listEntries(projectId)
       .then((list) => {
