@@ -6,6 +6,7 @@ P1b/P1c 落地时往 DEFAULT_ROSTER 里追加即可，不改任何运行时代�
 
 from __future__ import annotations
 
+from app.audit_types import AUDIT_KINDS, AUDIT_SEVERITIES
 from app.world_types import CHARACTER_FIELDS, ENTRY_TYPES, HARDNESS_LEVELS
 
 TASK_TYPES = [
@@ -412,6 +413,92 @@ WRITER_PROMPT = """你是长篇小说执笔，服务对象是作者。你的任�
 5. 输出 Markdown 正文，段落之间空一行；不要用代码块包裹整篇正文；
 6. 材料不足时按已有信息写，不要停下来提问；不确定的地方写得保守些。"""
 
+_AUDIT_KIND_TITLE = "、".join(AUDIT_KINDS.values())
+_AUDIT_SEVERITY_TITLE = "、".join(AUDIT_SEVERITIES.values())
+
+AUDIT_SCHEMA = {
+    "type": "object",
+    "required": ["issues"],
+    "properties": {
+        "issues": {
+            "type": "array",
+            "title": "问题清单",
+            "items": {
+                "type": "object",
+                "required": ["kind", "severity", "quote", "rule_ref", "explanation"],
+                "properties": {
+                    # 不用 enum：契约说明块不渲染 enum 值的中文名，而提示词里
+                    # 不许写英文键。改由服务层归一化（见 audit_types.py）。
+                    "kind": {
+                        "type": "string",
+                        "title": f"问题类型（只能是：{_AUDIT_KIND_TITLE}）",
+                    },
+                    "severity": {
+                        "type": "string",
+                        "title": f"严重度（只能是：{_AUDIT_SEVERITY_TITLE}）",
+                    },
+                    "quote": {"type": "string", "title": "正文原句"},
+                    "rule_ref": {
+                        "type": "string",
+                        "title": "冲突的设定、规则、人物或时间线事实",
+                    },
+                    "explanation": {"type": "string", "title": "为什么是错的"},
+                    "reader_impact": {
+                        "type": "string",
+                        "title": "读者可能怎么感受（可空）",
+                    },
+                    "options": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "title": "修正方向（两到三条，只说方向，不给改稿）",
+                    },
+                },
+            },
+        },
+    },
+}
+
+AUDITOR_PROMPT = """你是长篇小说审校，服务对象是作者。你的任务是对照设定材料检查已采纳正文有没有写错；你的产出是问题清单，不是改稿。
+
+【项目核心】
+{{ project_core }}
+
+【故事圣经】
+{{ story_bible }}
+
+【世界观】
+{{ world_context }}
+
+【本卷纲要】
+{{ volume_outline }}
+
+【本章章纲】
+{{ chapter_outline }}
+
+【故事内时间线】
+{{ timeline }}
+
+【当前场景卡】
+{{ scene_card }}
+
+【出场人物】
+{{ scene_characters }}
+
+【相关设定】
+{{ related_settings }}
+
+【待审正文】
+{{ scene_text }}
+
+要求：
+1. 只找「写错了」：正文与设定、规则、人物卡、术语、时间线事实冲突的地方；不评价文笔、节奏，也不判断剧情是否好看；
+2. 每条问题必须引用正文原句，并写明冲突的是哪一条设定或事实；说不清是哪一句、错在哪里，就不要报，不凑数；
+3. 只对硬规则做硬约束；软规则给提示；氛围类不检查；
+4. 不给改稿，只给两到三个修正方向，并说清每个方向的代价；
+5. 人物、地点、术语一律使用材料里的标准名或已有称呼，不新造设定；
+6. 正文与材料一致、或材料不足以判断时，返回空的问题清单；
+7. 返回符合输出契约的结构化结果。"""
+
 DEFAULT_ROSTER: list[dict] = [
     {
         "key": "idea_parser",
@@ -513,5 +600,29 @@ DEFAULT_ROSTER: list[dict] = [
         "param_profile": "balanced",
         "trigger_mode": "manual",
         "note": "按场景卡写正文；只出草稿，采纳才入稿。",
+    },
+    {
+        "key": "auditor",
+        "name": "审校",
+        "role_label": "一致性",
+        "color": "#f59e0b",
+        "task_type": "continuity",
+        "system_prompt": AUDITOR_PROMPT,
+        "context_slots": [
+            "project_core",
+            "story_bible",
+            "world_context",
+            "volume_outline",
+            "chapter_outline",
+            "timeline",
+            "scene_card",
+            "scene_characters",
+            "related_settings",
+            "scene_text",
+        ],
+        "output_schema": AUDIT_SCHEMA,
+        "param_profile": "balanced",
+        "trigger_mode": "manual",
+        "note": "只审已采纳正文；只找写错的地方，不给改稿。",
     },
 ]

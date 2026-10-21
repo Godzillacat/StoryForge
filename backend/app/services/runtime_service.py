@@ -80,7 +80,11 @@ class RuntimeService:
         return provider, provider.base_url, api_key, prices
 
     def prepare_context(
-        self, project_id: str, agent_id: str, extra: dict | None = None
+        self,
+        project_id: str,
+        agent_id: str,
+        extra: dict | None = None,
+        allow_missing: bool | None = None,
     ) -> tuple[Agent, AgentVersion, PreparedPrompt]:
         agent = self._session.get(Agent, agent_id)
         if agent is None:
@@ -101,14 +105,26 @@ class RuntimeService:
             source=source,
             # 没有输出契约的预置是纯文本执笔：首场天然可能没有人物、检索结果
             # 或前情正文，缺槽位按空串渲染；结构化预置仍严格报缺变量。
-            allow_missing=version.output_schema_json is None,
+            # 审校是例外：时间线、出场人物、检索结果本来就允许为空，
+            # 由调用方显式传 allow_missing=True。
+            allow_missing=(
+                version.output_schema_json is None
+                if allow_missing is None
+                else allow_missing
+            ),
         )
         return agent, version, prompt
 
     def prepare(
-        self, project_id: str, agent_id: str, extra: dict | None = None
+        self,
+        project_id: str,
+        agent_id: str,
+        extra: dict | None = None,
+        allow_missing: bool | None = None,
     ) -> PreparedExecution:
-        agent, version, prompt = self.prepare_context(project_id, agent_id, extra)
+        agent, version, prompt = self.prepare_context(
+            project_id, agent_id, extra, allow_missing=allow_missing
+        )
         provider, base_url, api_key, prices = self.resolve_provider(version)
         binding = version.model_binding_json or {}
         settings = config.load_settings()
@@ -137,12 +153,16 @@ class RuntimeService:
         )
 
     def execute(
-        self, project_id: str, agent_id: str, extra: dict | None = None
+        self,
+        project_id: str,
+        agent_id: str,
+        extra: dict | None = None,
+        allow_missing: bool | None = None,
     ) -> tuple[GenerationRun, RunResult]:
         # 耗时口径与重构前一致：包含准备阶段（上下文组装与渲染），
         # 否则模板错误这类不发起模型调用的运行会落库成接近 0 毫秒。
         started = time.monotonic()
-        prepared = self.prepare(project_id, agent_id, extra)
+        prepared = self.prepare(project_id, agent_id, extra, allow_missing=allow_missing)
         result = _run_sync(
             execute_prepared,
             prepared.prompt,

@@ -132,6 +132,7 @@ def save_body(session: Session, scene_id: str, content: str) -> dict:
             SceneRevision(scene_id=scene.id, content=new_content, source="author")
         )
         search_service.mark_dirty(session, project.id)
+        _supersede_audit(session, scene.id)
         session.commit()
     return _state(session, scene_id)
 
@@ -171,6 +172,7 @@ def adopt_draft(session: Session, scene_id: str) -> dict:
     )
     session.delete(draft)
     search_service.mark_dirty(session, project.id)
+    _supersede_audit(session, scene.id)
     session.commit()
     return _state(session, scene_id)
 
@@ -210,11 +212,22 @@ def restore_revision(session: Session, scene_id: str, revision_id: str) -> dict:
         )
     )
     search_service.mark_dirty(session, project.id)
+    _supersede_audit(session, scene.id)
     session.commit()
     return _state(session, scene_id)
 
 
-def _scene_extra(session: Session, scene: Scene) -> tuple[Project, dict]:
+def _supersede_audit(session: Session, scene_id: str) -> None:
+    """正文被整份替换后，旧审校问题不再对应当前文本。
+
+    延迟导入避免 text_service ↔ audit_service 的模块级循环。
+    """
+    from app.services.audit_service import supersede_scene_issues
+
+    supersede_scene_issues(session, scene_id)
+
+
+def scene_extra(session: Session, scene: Scene) -> tuple[Project, dict]:
     chapter = session.get(Chapter, scene.chapter_id)
     if chapter is None:
         raise ValueError("场景的章节结构已损坏")
@@ -234,7 +247,7 @@ def _scene_extra(session: Session, scene: Scene) -> tuple[Project, dict]:
 
 def context_preview(session: Session, scene_id: str) -> dict:
     scene = _scene(session, scene_id)
-    project, extra = _scene_extra(session, scene)
+    project, extra = scene_extra(session, scene)
     agent = agent_service.find_by_task_type(session, "write")
     if agent is None:
         raise ValueError("找不到执笔智能体，请检查智能体工作室")
@@ -277,7 +290,7 @@ def context_preview(session: Session, scene_id: str) -> dict:
 
 def prepare_generation(session: Session, scene_id: str) -> GenerationSpec:
     scene = _scene(session, scene_id)
-    project, extra = _scene_extra(session, scene)
+    project, extra = scene_extra(session, scene)
     agent = agent_service.find_by_task_type(session, "write")
     if agent is None:
         raise ValueError("找不到执笔智能体，请检查智能体工作室")

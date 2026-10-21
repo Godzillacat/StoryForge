@@ -1,3 +1,5 @@
+import pytest
+
 from app.db.models import Act, Architecture, Idea, Project, ToolTemplate
 from app.services.slot_source import DbSlotSource
 
@@ -325,6 +327,31 @@ def test_scene_card_and_characters_return_none_without_scene(session):
     assert source.scene_card() is None
     assert source.scene_characters() is None
     assert source.recent_text() is None
+
+
+def test_scene_text_returns_adopted_body(session):
+    project, scene = _scene_fixture(session)
+    scene.body = "档案室的门在自己身后合上。"
+    session.commit()
+
+    source = DbSlotSource(session, project.id, extra_slots={"scene_id": scene.id})
+
+    assert source.scene_text() == "档案室的门在自己身后合上。"
+
+
+def test_scene_text_none_without_body(session):
+    project, scene = _scene_fixture(session)
+    source = DbSlotSource(session, project.id, extra_slots={"scene_id": scene.id})
+    assert source.scene_text() is None
+
+    scene.body = "   \n "
+    session.commit()
+    assert DbSlotSource(session, project.id, extra_slots={"scene_id": scene.id}).scene_text() is None
+
+
+def test_scene_text_none_without_scene(session):
+    project = _seed(session)
+    assert DbSlotSource(session, project.id).scene_text() is None
 
 
 def test_scene_search_query_uses_goal_conflict_turn_and_names(session):

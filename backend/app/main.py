@@ -9,6 +9,7 @@ from app import config
 from app.api import (
     agents,
     architecture,
+    audit,
     chapters,
     foreshadows,
     ideas,
@@ -59,5 +60,6 @@ for module in (
     chapters,
     foreshadows,
     text,
+    audit,
 ):
     app.include_router(module.router)

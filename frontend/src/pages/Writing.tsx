@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   api,
   streamSceneGeneration,
+  type AuditIssue,
+  type AuditResolution,
   type ContextPreview as ContextPreviewData,
   type Project,
   type RevisionDetail,
   type SceneTextState,
   type VolumeNode,
 } from '../api/client'
+import AuditPanel from '../components/writing/AuditPanel'
 import ContextPreview from '../components/writing/ContextPreview'
 import DiffPanel from '../components/writing/DiffPanel'
 import GenerationStream from '../components/writing/GenerationStream'
@@ -41,6 +45,7 @@ function findScene(volumes: VolumeNode[], sceneId: string) {
 }
 
 export default function Writing() {
+  const navigate = useNavigate()
   const [projects, setProjects] = useState<Project[]>([])
   const [projectsLoading, setProjectsLoading] = useState(true)
   const [projectId, setProjectId] = useState('')
@@ -62,6 +67,10 @@ export default function Writing() {
   const [revision, setRevision] = useState<RevisionDetail | null>(null)
   const [runInfo, setRunInfo] = useState<RunInfo | null>(null)
   const [stopCooldown, setStopCooldown] = useState(false)
+  const [auditIssues, setAuditIssues] = useState<AuditIssue[]>([])
+  const [auditLastAt, setAuditLastAt] = useState<string | null>(null)
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [auditWarning, setAuditWarning] = useState('')
 
   const treeToken = useRef(0)
   const sceneToken = useRef(0)
@@ -135,6 +144,10 @@ export default function Writing() {
     setGenerating(false)
     setRevision(null)
     setNotice('')
+    setAuditIssues([])
+    setAuditLastAt(null)
+    setAuditWarning('')
+    setAuditLoading(false)
 
     setTreeLoading(true)
     api
@@ -166,10 +179,14 @@ export default function Writing() {
     setPreviewLoading(true)
     setPreviewError('')
     setPreview(null)
+    setAuditIssues([])
+    setAuditLastAt(null)
+    setAuditWarning('')
     try {
-      const [stateResult, contextResult] = await Promise.allSettled([
+      const [stateResult, contextResult, auditResult] = await Promise.allSettled([
         api.getSceneText(sceneId),
         api.getSceneContextPreview(sceneId),
+        api.getSceneAudit(sceneId),
       ])
       if (sceneToken.current !== token) return
       if (stateResult.status === 'fulfilled') {
@@ -185,6 +202,12 @@ export default function Writing() {
         setPreview(contextResult.value)
       } else {
         setPreviewError((contextResult.reason as Error).message)
+      }
+      if (auditResult.status === 'fulfilled') {
+        setAuditIssues(auditResult.value.issues)
+        setAuditLastAt(auditResult.value.last_audited_at)
+      } else {
+        setAuditWarning((auditResult.reason as Error).message)
       }
     } catch (error) {
       if (sceneToken.current === token) setNotice((error as Error).message)
@@ -217,6 +240,12 @@ export default function Writing() {
     setPreview(null)
     setPreviewError('')
     setNotice('')
+    setAuditIssues([])
+    setAuditLastAt(null)
+    setAuditWarning('')
+    // 在途审校属于上一个场景：loadScene 会递增 sceneToken 让它作废，
+    // 那份响应不会再清 loading，必须在这里收掉。
+    setAuditLoading(false)
     setSelectedSceneId(sceneId)
     void loadScene(sceneId)
   }
@@ -281,7 +310,10 @@ export default function Writing() {
       if (sceneToken.current !== token) return
       setText(state)
       setBodyDraft(state.body ?? '')
-      setNotice('正文已保存')
+      // 服务端会把旧问题标为 superseded；本地也立即清掉，避免对旧文本处理问题。
+      setAuditIssues([])
+      setAuditWarning('')
+      setNotice(auditIssues.length > 0 ? '正文已保存；之前的审校结果已失效，请重新审校' : '正文已保存')
       void refreshTree()
     } catch (error) {
       if (sceneToken.current === token) setNotice((error as Error).message)
@@ -341,7 +373,13 @@ export default function Writing() {
       setBodyDraft(state.body ?? '')
       setAiDraft('')
       setMode('body')
-      setNotice('已采纳，已生成修订快照')
+      setAuditIssues([])
+      setAuditWarning('')
+      setNotice(
+        auditIssues.length > 0
+          ? '已采纳，已生成修订快照；之前的审校结果已失效，请重新审校'
+          : '已采纳，已生成修订快照',
+      )
       void refreshTree()
     } catch (error) {
       if (sceneToken.current === token) setNotice((error as Error).message)
@@ -372,8 +410,62 @@ export default function Writing() {
     }
   }
 
+  const runAudit = async () => {
+    if (!selectedSceneId || !text?.has_body || generating || busy || auditLoading) return
+    const token = sceneToken.current
+    const sceneId = selectedSceneId
+    setAuditLoading(true)
+    setNotice('')
+    try {
+      const result = await api.runSceneAudit(sceneId)
+      if (sceneToken.current !== token) return
+      setAuditIssues(result.issues)
+      setAuditWarning(result.warning)
+      setAuditLastAt(new Date().toISOString())
+      if (result.suppressed > 0) {
+        setNotice(`审校完成；${result.suppressed} 条问题已记为特例，不再重复上报`)
+      } else if (result.issues.length > 0) {
+        setNotice(`审校完成，发现 ${result.issues.length} 条问题`)
+      } else {
+        setNotice('审校完成，没有发现问题')
+      }
+    } catch (error) {
+      if (sceneToken.current === token) setNotice((error as Error).message)
+    } finally {
+      if (sceneToken.current === token) setAuditLoading(false)
+    }
+  }
+
+  const resolveIssue = async (issue: AuditIssue, resolution: AuditResolution) => {
+    if (busy || auditLoading) return
+    const token = sceneToken.current
+    setBusy(true)
+    setNotice('')
+    try {
+      const updated = await api.resolveAuditIssue(issue.id, resolution)
+      if (sceneToken.current !== token) return
+      if (updated.status !== 'open') {
+        setAuditIssues((current) => current.filter((item) => item.id !== issue.id))
+      }
+      if (resolution === 'story') {
+        setNotice('已标记为改故事，请在正文中修改')
+      } else if (resolution === 'exception') {
+        setNotice('已记为特例，后续审校不再重复上报')
+      } else {
+        const target = issue.target_entry_id
+        const entryParam = target ? `&entry=${encodeURIComponent(target)}` : ''
+        // 带上当前项目：世界观页默认打开最新项目，不传项目会让深链落到别处。
+        navigate(`/world?project=${encodeURIComponent(projectId)}${entryParam}`)
+      }
+    } catch (error) {
+      if (sceneToken.current === token) setNotice((error as Error).message)
+    } finally {
+      if (sceneToken.current === token) setBusy(false)
+    }
+  }
+
   const generate = async () => {
-    if (!selectedSceneId || generating || textLoading) return
+    if (!selectedSceneId || generating || textLoading || auditLoading) return
     if (
       hasUnsaved &&
       !window.confirm('生成完成后会刷新场景内容，当前未保存的修改将被覆盖。继续？')
@@ -515,7 +607,13 @@ export default function Writing() {
       setBodyDraft(state.body ?? '')
       setMode('body')
       setRevision(null)
-      setNotice('已恢复旧版并生成新的修订')
+      setAuditIssues([])
+      setAuditWarning('')
+      setNotice(
+        auditIssues.length > 0
+          ? '已恢复旧版并生成新的修订；之前的审校结果已失效，请重新审校'
+          : '已恢复旧版并生成新的修订',
+      )
       void refreshTree()
     } catch (error) {
       if (sceneToken.current === token) setNotice((error as Error).message)
@@ -616,7 +714,7 @@ export default function Writing() {
                         <button
                           type="button"
                           onClick={generate}
-                          disabled={busy || stopCooldown}
+                          disabled={busy || stopCooldown || auditLoading}
                           title={stopCooldown ? '生成刚结束，请稍候' : undefined}
                           className="rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
                         >
@@ -625,10 +723,20 @@ export default function Writing() {
                       )}
                       <button
                         type="button"
+                        onClick={runAudit}
+                        disabled={busy || generating || auditLoading || !text.has_body}
+                        title={text.has_body ? undefined : '采纳正文后才能审校'}
+                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
+                      >
+                        {auditLoading ? '审校中…' : '审校'}
+                      </button>
+                      <button
+                        type="button"
                         onClick={saveBody}
                         disabled={
                           busy ||
                           generating ||
+                          auditLoading ||
                           mode !== 'body' ||
                           bodyDraft === (text.body ?? '')
                         }
@@ -642,6 +750,7 @@ export default function Writing() {
                         disabled={
                           busy ||
                           generating ||
+                          auditLoading ||
                           mode !== 'body' ||
                           bodyDraft === (text.body ?? '')
                         }
@@ -652,7 +761,7 @@ export default function Writing() {
                       <button
                         type="button"
                         onClick={saveDraft}
-                        disabled={busy || generating || !text.draft || mode !== 'draft'}
+                        disabled={busy || generating || auditLoading || !text.draft || mode !== 'draft'}
                         className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
                       >
                         保存草稿
@@ -660,7 +769,7 @@ export default function Writing() {
                       <button
                         type="button"
                         onClick={adopt}
-                        disabled={busy || generating || !text.draft}
+                        disabled={busy || generating || auditLoading || !text.draft}
                         className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
                       >
                         采纳为正文
@@ -668,7 +777,7 @@ export default function Writing() {
                       <button
                         type="button"
                         onClick={discard}
-                        disabled={busy || generating || !text.draft}
+                        disabled={busy || generating || auditLoading || !text.draft}
                         className="rounded border border-amber-800 px-3 py-1.5 text-sm text-amber-300 hover:text-amber-200 disabled:opacity-50"
                       >
                         丢弃草稿
@@ -732,6 +841,16 @@ export default function Writing() {
               loading={previewLoading}
               error={previewError}
             />
+            <AuditPanel
+              issues={auditIssues}
+              lastAuditedAt={auditLastAt}
+              running={auditLoading || busy}
+              warning={auditWarning}
+              canRun={Boolean(text?.has_body) && !generating && !busy && !auditLoading}
+              hasBody={Boolean(text?.has_body)}
+              onRun={runAudit}
+              onResolve={resolveIssue}
+            />
             {runInfo && (
               <section className="space-y-1 rounded border border-slate-800 p-3 text-xs text-slate-400">
                 <h3 className="text-sm font-medium text-slate-300">本次运行</h3>
@@ -789,7 +908,7 @@ export default function Writing() {
                 </pre>
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || auditLoading}
                   onClick={() => restoreRevision(revision.id)}
                   className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:text-white disabled:opacity-50"
                 >

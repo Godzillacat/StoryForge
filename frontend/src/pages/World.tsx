@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   api,
   type EntryRelation,
@@ -48,12 +49,23 @@ export default function World() {
   // 作废在途候选请求用的令牌。真模型下单次要 100 秒以上，作者在等待期间
   // 切项目是常态；没有它，响应回来会把上一个项目的候选写进当前项目。
   const runToken = useRef(0)
+  // 审校面板的「改设定 / 改人物」会带 ?entry=<id> 跳过来；等条目加载完再选中。
+  const [searchParams] = useSearchParams()
+  const deepEntryId = searchParams.get('entry')
+  const requestedProjectId = searchParams.get('project')
+  const [loadedProjectId, setLoadedProjectId] = useState('')
+  const deepLinkApplied = useRef('')
 
   useEffect(() => {
     api.listEntryTypes().then(setTypes)
     api.listProjects().then((list) => {
       setProjects(list)
-      if (list[0]) setProjectId(list[0].id)
+      // 审校深链会带上项目 id；不认它就会落到列表第一个（最新）项目。
+      const preferred =
+        requestedProjectId && list.some((project) => project.id === requestedProjectId)
+          ? requestedProjectId
+          : list[0]?.id
+      if (preferred) setProjectId(preferred)
     })
   }, [])
 
@@ -82,7 +94,17 @@ export default function World() {
     setOpenQuestions([])
     setLastRun(null)
     setSuggesting(false)
-    api.listEntries(projectId).then(setEntries).catch((e) => setNotice((e as Error).message))
+    setLoadedProjectId('')
+    api
+      .listEntries(projectId)
+      .then((list) => {
+        setEntries(list)
+        setLoadedProjectId(projectId)
+      })
+      .catch((e) => {
+        setNotice((e as Error).message)
+        setLoadedProjectId(projectId)
+      })
     api.listRelations(projectId).then(setRelations).catch((e) => setNotice((e as Error).message))
   }, [projectId])
 
@@ -100,6 +122,18 @@ export default function World() {
     setDraft(EMPTY_DRAFT)
     setNotice('')
   }
+
+  // 深链只应用一次：之后的保存 / 刷新不能把作者手动选中的条目抢回去。
+  useEffect(() => {
+    if (!deepEntryId || loadedProjectId !== projectId || !types) return
+    if (deepLinkApplied.current === deepEntryId) return
+    deepLinkApplied.current = deepEntryId
+    const target = entries.find(
+      (entry) => entry.id === deepEntryId && entry.project_id === projectId,
+    )
+    if (target) selectEntry(target)
+    else setNotice('没有找到这条设定，可能已被删除')
+  }, [deepEntryId, loadedProjectId, projectId, entries, types])
 
   function payloadOf(next: EntryDraft) {
     return {

@@ -310,7 +310,7 @@ git commit -m "feat(agents): 审校预置智能体"
 - POST 无正文：400，文案可读。
 - POST 场景不存在：404。
 - GET：返回 `issues` 与 `last_audited_at`；无审校时 `last_audited_at is null`。
-- PATCH：`{"resolution":"exception"}` 成功，返回 `status="exception"`；非法值 422/400；问题 404。
+- PATCH：`{"resolution":"exception"}` 成功，返回 `status="exception"`；非法值 400（请求模型用普通字符串，服务层 `normalize_resolution` 抛错后由路由映射为 400，不用 Pydantic `Literal` 得到 422）；问题 404。
 - 路由注册：应用能启动，路径可访问。
 
 - [ ] **Step 2: 运行确认失败**
@@ -320,7 +320,7 @@ Expected: FAIL（路由不存在）。
 
 - [ ] **Step 3: 实现**
 
-- `api/audit.py`：router prefix `/api`；三个路由；错误映射（场景/问题 404、无正文/非法处理 400、章节结构 409）；PATCH 请求模型 `AuditResolve`（`resolution: Literal[...]`）。
+- `api/audit.py`：router prefix `/api`；三个路由；错误映射（场景/问题 404、无正文/非法处理 400、章节结构 409）；PATCH 请求模型 `AuditResolve` 使用普通 `str`，由服务层归一化，避免 Pydantic `Literal` 返回 422。
 - `api/schemas.py`：追加 `AuditResolve`。
 - `api/main.py`：在现有 `for module in (...)` 中加 `audit`。
 - API 层只做参数校验、错误翻译与调用。

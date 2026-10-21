@@ -188,6 +188,24 @@ def test_prepare_records_missing_variable_without_raising(session):
     assert prepared.prompt.rendered_prompt == ""
 
 
+def test_prepare_allows_missing_slots_only_when_requested(session):
+    """审校预置显式放开空槽位；其它结构化预置仍保持严格，拼错变量照样报错。"""
+    project, _provider, agent, version = _seed(session)
+    version.system_prompt = "缺少：{{ world_context }}"
+    version.context_slots_json = ["raw_idea"]
+    session.commit()
+
+    prepared = RuntimeService(session).prepare(
+        project.id, agent.id, allow_missing=True
+    )
+    assert prepared.prompt.error is None
+    assert prepared.prompt.rendered_prompt.startswith("缺少：")
+
+    strict = RuntimeService(session).prepare(project.id, agent.id)
+    assert strict.prompt.error is not None
+    assert "world_context" in strict.prompt.error["message"]
+
+
 def test_missing_optional_slot_renders_empty_for_plain_text():
     from app.runtime.execute import prepare_prompt
 

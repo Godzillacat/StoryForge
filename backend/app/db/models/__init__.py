@@ -1,5 +1,6 @@
 from app.db.models.agent import Agent, AgentVersion
 from app.db.models.architecture import Act, Architecture
+from app.db.models.audit import AuditIssue
 from app.db.models.chapter import Chapter, Foreshadow, Scene, Volume
 from app.db.models.config_models import Provider, Setting
 from app.db.models.idea import Idea
@@ -16,6 +17,7 @@ __all__ = [
     "Agent",
     "AgentVersion",
     "Architecture",
+    "AuditIssue",
     "Chapter",
     "EntryRelation",
     "Foreshadow",
