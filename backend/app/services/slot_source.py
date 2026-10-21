@@ -411,7 +411,13 @@ class DbSlotSource:
         return text
 
     def scene_text(self) -> str | None:
-        """当前场景的已采纳正文；草稿不算正式稿，不进审校上下文。"""
+        """当前场景的已采纳正文；草稿不算正式稿，不进审校上下文。
+
+        逻辑自检的「开写前」阶段显式跳过正文：那时正文可能来自上一版，
+        拿它当待审材料会让检查对象错位。
+        """
+        if self._extra.get("skip_scene_text"):
+            return None
         chain = self._scene_chain()
         if chain is None:
             return None
