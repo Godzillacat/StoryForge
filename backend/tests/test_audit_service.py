@@ -72,7 +72,7 @@ def _patch_execute(monkeypatch, session, project, result):
     session.add(run)
     session.commit()
 
-    def fake_execute(self, project_id, agent_id, extra=None):
+    def fake_execute(self, project_id, agent_id, extra=None, allow_missing=None):
         return run, result
 
     monkeypatch.setattr(audit_service.RuntimeService, "execute", fake_execute)
@@ -80,7 +80,7 @@ def _patch_execute(monkeypatch, session, project, result):
 
 
 def _patch_execute_error(monkeypatch, message: str):
-    def fake_execute(self, project_id, agent_id, extra=None):
+    def fake_execute(self, project_id, agent_id, extra=None, allow_missing=None):
         raise ValueError(message)
 
     monkeypatch.setattr(audit_service.RuntimeService, "execute", fake_execute)
@@ -225,6 +225,27 @@ def test_llm_issue_cap_and_severity_order(session, monkeypatch):
 
     assert len(result["issues"]) == 30
     assert result["issues"][0]["severity"] == "critical"
+
+
+def test_llm_audit_allows_empty_context_slots(session, monkeypatch):
+    """审校的时间线 / 出场人物 / 检索结果天然可能为空，不能因此拒绝出结果。"""
+    project, scene = _seed_scene(session, body="档案室的门在自己身后合上。")
+    _add_auditor(session)
+    run = GenerationRun(project_id=project.id, status="ok")
+    session.add(run)
+    session.commit()
+    seen: dict = {}
+
+    def fake_execute(self, project_id, agent_id, extra=None, allow_missing=None):
+        seen["allow_missing"] = allow_missing
+        return run, _result({"issues": []}, structured=True)
+
+    monkeypatch.setattr(audit_service.RuntimeService, "execute", fake_execute)
+
+    result = audit_service.run_audit(session, scene.id)
+
+    assert seen["allow_missing"] is True
+    assert result["llm_status"] == "ok"
 
 
 def test_llm_unstructured_falls_back_to_rules(session, monkeypatch):

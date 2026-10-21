@@ -27,7 +27,7 @@ def _create_scene(client, *, body: str | None = REPEATED) -> tuple[str, str]:
 def no_llm(monkeypatch):
     """没有可用模型：规则层照跑，LLM 层降级为 skipped。"""
 
-    def fake_execute(self, project_id, agent_id, extra=None):
+    def fake_execute(self, project_id, agent_id, extra=None, allow_missing=None):
         raise ValueError("没有可用的服务商，请先配置一家")
 
     monkeypatch.setattr(

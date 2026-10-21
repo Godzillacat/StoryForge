@@ -223,7 +223,9 @@ def _run_llm(
         return None, "skipped", "找不到审校智能体，本次只跑了规则层检查。", []
 
     try:
-        run, result = RuntimeService(session).execute(project_id, agent.id, extra)
+        run, result = RuntimeService(session).execute(
+            project_id, agent.id, extra, allow_missing=True
+        )
     except ValueError as exc:
         return None, "skipped", f"语义审计已跳过：{exc}", []
 
