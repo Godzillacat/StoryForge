@@ -214,7 +214,7 @@ def restore_revision(session: Session, scene_id: str, revision_id: str) -> dict:
     return _state(session, scene_id)
 
 
-def _scene_extra(session: Session, scene: Scene) -> tuple[Project, dict]:
+def scene_extra(session: Session, scene: Scene) -> tuple[Project, dict]:
     chapter = session.get(Chapter, scene.chapter_id)
     if chapter is None:
         raise ValueError("场景的章节结构已损坏")
@@ -234,7 +234,7 @@ def _scene_extra(session: Session, scene: Scene) -> tuple[Project, dict]:
 
 def context_preview(session: Session, scene_id: str) -> dict:
     scene = _scene(session, scene_id)
-    project, extra = _scene_extra(session, scene)
+    project, extra = scene_extra(session, scene)
     agent = agent_service.find_by_task_type(session, "write")
     if agent is None:
         raise ValueError("找不到执笔智能体，请检查智能体工作室")
@@ -277,7 +277,7 @@ def context_preview(session: Session, scene_id: str) -> dict:
 
 def prepare_generation(session: Session, scene_id: str) -> GenerationSpec:
     scene = _scene(session, scene_id)
-    project, extra = _scene_extra(session, scene)
+    project, extra = scene_extra(session, scene)
     agent = agent_service.find_by_task_type(session, "write")
     if agent is None:
         raise ValueError("找不到执笔智能体，请检查智能体工作室")
