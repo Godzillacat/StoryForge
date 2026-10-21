@@ -120,7 +120,7 @@ def _normalize_llm_issues(
                 explanation=explanation,
                 reader_impact=str(item.get("reader_impact") or "").strip(),
                 options=options,
-                fingerprint=f"logic:{stage}:{layer}:{_sha1(quote)}",
+                fingerprint=f"logic:{stage}:{layer}:{_sha1(f'{quote}|{explanation}')}",
             )
         )
 
@@ -219,14 +219,15 @@ def run_logic_check(session: Session, scene_id: str, stage: str) -> dict:
     level = _level(project)
     exceptions = _exception_fingerprints(session, scene.id, stage)
 
-    _supersede_open(session, scene.id, stage)
-    session.commit()
-
     run_id, llm_status, warning, issues = _run_llm(
         session, project_id=project.id, extra=extra, level=level, stage=stage
     )
     suppressed = 0
     if llm_status == "ok":
+        # 只有真正拿到新结果才取代旧问题：失败一次不能把作者还没处理的
+        # 逻辑问题静默清掉（逻辑自检没有规则层兜底）。
+        _supersede_open(session, scene.id, stage)
+        session.commit()
         _, suppressed = _insert_issues(
             session,
             project_id=project.id,

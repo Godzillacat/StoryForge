@@ -367,6 +367,64 @@ def test_body_change_supersedes_text_but_keeps_plan_issues(session, monkeypatch)
     assert session.get(AuditIssue, text["issues"][0]["id"]).status == "superseded"
 
 
+def test_failed_recheck_keeps_previous_open_issues(session, monkeypatch):
+    project, scene = _seed_scene(session)
+    _add_checker(session)
+    _patch_execute(
+        monkeypatch,
+        session,
+        project,
+        _result({"issues": [_issue_payload()]}, structured=True),
+    )
+    first = logic_service.run_logic_check(session, scene.id, "text")
+    issue_id = first["issues"][0]["id"]
+
+    def fake_execute(self, project_id, agent_id, extra=None, allow_missing=None):
+        raise ValueError("没有可用的服务商")
+
+    monkeypatch.setattr(logic_service.RuntimeService, "execute", fake_execute)
+    second = logic_service.run_logic_check(session, scene.id, "text")
+
+    assert second["llm_status"] == "skipped"
+    assert [issue["id"] for issue in second["issues"]] == [issue_id]
+    assert session.get(AuditIssue, issue_id).status == "open"
+
+
+def test_audit_and_logic_do_not_supersede_each_other(session, monkeypatch):
+    project, scene = _seed_scene(
+        session,
+        body=(
+            "雨落在旧城的铁皮屋顶上，声音像有人在数硬币。"
+            "雨落在旧城的铁皮屋顶上，声音像有人在数硬币。"
+        ),
+    )
+    _add_checker(session)
+    _patch_execute(
+        monkeypatch,
+        session,
+        project,
+        _result({"issues": [_issue_payload()]}, structured=True),
+    )
+    logic_first = logic_service.run_logic_check(session, scene.id, "text")
+    logic_issue_id = logic_first["issues"][0]["id"]
+
+    # 没有审校智能体时，一致性审计只跑规则层；它不该碰逻辑问题。
+    audit = audit_service.run_audit(session, scene.id)
+    assert audit["issues"]
+    assert session.get(AuditIssue, logic_issue_id).status == "open"
+    assert all(issue["check_type"] == "consistency" for issue in audit["issues"])
+    assert all(
+        issue["check_type"] == "logic"
+        for issue in logic_service.list_logic_check(session, scene.id, "text")["issues"]
+    )
+
+    # 逻辑自检重跑也只取代逻辑问题；审校的规则问题保持 open。
+    audit_issue_ids = [issue["id"] for issue in audit["issues"]]
+    logic_service.run_logic_check(session, scene.id, "text")
+    for issue_id in audit_issue_ids:
+        assert session.get(AuditIssue, issue_id).status == "open"
+
+
 def test_missing_scene(session):
     with pytest.raises(ValueError, match="场景不存在"):
         logic_service.run_logic_check(session, "nope", "text")

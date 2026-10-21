@@ -88,7 +88,9 @@ def sort_issues(issues: list[AuditIssue]) -> list[AuditIssue]:
 def _open_issues(session: Session, scene_id: str) -> list[AuditIssue]:
     rows = session.scalars(
         select(AuditIssue).where(
-            AuditIssue.scene_id == scene_id, AuditIssue.status == "open"
+            AuditIssue.scene_id == scene_id,
+            AuditIssue.check_type == "consistency",
+            AuditIssue.status == "open",
         )
     ).all()
     return sort_issues(list(rows))
@@ -98,7 +100,9 @@ def _exception_fingerprints(session: Session, scene_id: str) -> set[str]:
     return set(
         session.scalars(
             select(AuditIssue.fingerprint).where(
-                AuditIssue.scene_id == scene_id, AuditIssue.status == "exception"
+                AuditIssue.scene_id == scene_id,
+                AuditIssue.check_type == "consistency",
+                AuditIssue.status == "exception",
             )
         ).all()
     )
@@ -107,7 +111,9 @@ def _exception_fingerprints(session: Session, scene_id: str) -> set[str]:
 def _supersede_open(session: Session, scene_id: str) -> None:
     rows = session.scalars(
         select(AuditIssue).where(
-            AuditIssue.scene_id == scene_id, AuditIssue.status == "open"
+            AuditIssue.scene_id == scene_id,
+            AuditIssue.check_type == "consistency",
+            AuditIssue.status == "open",
         )
     ).all()
     for row in rows:
@@ -331,7 +337,10 @@ def list_audit(session: Session, scene_id: str) -> dict:
     _scene(session, scene_id)
     latest = session.scalars(
         select(AuditIssue.created_at)
-        .where(AuditIssue.scene_id == scene_id)
+        .where(
+            AuditIssue.scene_id == scene_id,
+            AuditIssue.check_type == "consistency",
+        )
         .order_by(AuditIssue.created_at.desc())
     ).first()
     return {
