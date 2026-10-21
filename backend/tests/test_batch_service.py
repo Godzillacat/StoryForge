@@ -239,6 +239,56 @@ def test_retry_failed_only_reruns_failed_scenes(session, monkeypatch):
     assert spawned == [job.id]
 
 
+def test_retry_failed_keeps_unprocessed_scenes(session, monkeypatch):
+    project, _volume, chapter, first, _written, _drafted = _seed(session)
+    extra = Scene(chapter_id=chapter.id, seq=3, goal="还没跑到的场景")
+    session.add(extra)
+    session.commit()
+    job = batch_service.create_job(session, project.id, "chapter", chapter.id)
+    assert job.scene_ids_json == [first.id, extra.id]
+    job.status = "failed"
+    job.cursor = 0
+    job.failures_json = [{"scene_id": first.id, "message": "没有服务商"}]
+    session.commit()
+    spawned: list[str] = []
+    monkeypatch.setattr(batch_service, "_spawn", spawned.append)
+
+    result = batch_service.retry_failed(job.id)
+
+    assert result["total"] == 2
+    assert result["cursor"] == 0
+    assert spawned == [job.id]
+
+
+def test_resume_rejects_another_running_job(session, monkeypatch):
+    project, _volume, chapter, _first, _written, _drafted = _seed(session)
+    first_job = batch_service.create_job(session, project.id, "chapter", chapter.id)
+    first_job.status = "paused"
+    session.commit()
+    second_job = batch_service.create_job(session, project.id, "chapter", chapter.id)
+    second_job.status = "running"
+    session.commit()
+    monkeypatch.setattr(batch_service, "_spawn", lambda _job_id: None)
+
+    with pytest.raises(ValueError, match="进行中的批量任务"):
+        batch_service.resume_job(first_job.id)
+
+
+def test_resume_at_the_end_marks_completed(session, monkeypatch):
+    project, _volume, chapter, _first, _written, _drafted = _seed(session)
+    job = batch_service.create_job(session, project.id, "chapter", chapter.id)
+    job.status = "paused"
+    job.cursor = len(job.scene_ids_json)
+    session.commit()
+    spawned: list[str] = []
+    monkeypatch.setattr(batch_service, "_spawn", spawned.append)
+
+    result = batch_service.resume_job(job.id)
+
+    assert result["status"] == "completed"
+    assert spawned == []
+
+
 def test_retry_failed_requires_failures(session):
     project, _volume, chapter, _first, _written, _drafted = _seed(session)
     job = batch_service.create_job(session, project.id, "chapter", chapter.id)

@@ -107,11 +107,16 @@ def _normalize(parsed: Any, entries: list[SettingEntry], session: Session, proje
     foreshadows = _resolve_foreshadows(
         session, project_id, parsed.get("foreshadow_pays"), warnings
     )
-    questions = [
-        str(question).strip()
-        for question in (parsed.get("open_questions") or [])
-        if isinstance(question, str) and str(question).strip()
-    ]
+    raw_questions = parsed.get("open_questions")
+    questions = (
+        [
+            str(question).strip()
+            for question in raw_questions
+            if isinstance(question, str) and str(question).strip()
+        ]
+        if isinstance(raw_questions, list)
+        else []
+    )
     return {
         "chapter_summary": summary,
         "character_updates": characters,

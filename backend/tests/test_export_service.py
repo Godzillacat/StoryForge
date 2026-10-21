@@ -147,6 +147,8 @@ def test_epub_has_the_required_structure_and_escapes_html(session):
     chapter = archive.read("OEBPS/chapter-1.xhtml").decode("utf-8")
     assert "&lt;" in chapter and "&amp;" in chapter
     assert "<script" not in chapter
+    opf = archive.read("OEBPS/content.opf").decode("utf-8")
+    assert 'property="dcterms:modified"' in opf
 
 
 def test_epub_for_empty_project_still_valid(session):

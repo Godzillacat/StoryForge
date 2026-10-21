@@ -582,3 +582,62 @@ def test_a_step_runs_when_all_required_tables_exist(clean_db, monkeypatch):
         assert conn.exec_driver_sql(
             "SELECT note FROM schema_migration WHERE version = 1"
         ).fetchone() == ("目标表存在",)
+
+
+def test_v5_and_v6_actually_execute_on_existing_tables(clean_db):
+    """两条迁移要真的在已有表上跑一遍。
+
+    之前的存量夹具只建到 P1b 的表，v5 / v6 都走「目标表缺失、整步跳过」，
+    测试只能证明 SQL 字符串写对了，证明不了列/索引真的能加上。
+    """
+    with clean_db.begin() as conn:
+        _legacy_database(conn, with_scene=True)
+        conn.exec_driver_sql(
+            "CREATE TABLE audit_issue (id VARCHAR(36) PRIMARY KEY,"
+            " project_id VARCHAR(36) NOT NULL, scene_id VARCHAR(36) NOT NULL,"
+            " source VARCHAR(20) NOT NULL, kind VARCHAR(30) NOT NULL,"
+            " severity VARCHAR(20) NOT NULL, fingerprint TEXT NOT NULL,"
+            " status VARCHAR(20) NOT NULL, created_at DATETIME, updated_at DATETIME)"
+        )
+        conn.exec_driver_sql(
+            "CREATE TABLE foreshadow (id VARCHAR(36) PRIMARY KEY,"
+            " project_id VARCHAR(36) NOT NULL, name VARCHAR(200) NOT NULL,"
+            " note TEXT, plant_scene_id VARCHAR(36), plan_pay_scene_id VARCHAR(36),"
+            " status VARCHAR(20), source_run_id VARCHAR(36),"
+            " created_at DATETIME, updated_at DATETIME)"
+        )
+        conn.exec_driver_sql(
+            "CREATE TABLE schema_migration (version INTEGER PRIMARY KEY,"
+            " note TEXT NOT NULL DEFAULT '', applied_at TEXT NOT NULL)"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO schema_migration (version, note, applied_at) VALUES (4, 'test', '2026-10-21')"
+        )
+
+    db_session.init_db()
+
+    with clean_db.connect() as conn:
+        audit_columns = {
+            row[1] for row in conn.exec_driver_sql("PRAGMA table_info(audit_issue)")
+        }
+        foreshadow_columns = {
+            row[1] for row in conn.exec_driver_sql("PRAGMA table_info(foreshadow)")
+        }
+        indexes = {
+            row[0]
+            for row in conn.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE type='index'"
+            )
+        }
+        versions = [
+            row[0]
+            for row in conn.exec_driver_sql(
+                "SELECT version FROM schema_migration ORDER BY version"
+            )
+        ]
+
+    assert {"check_type", "layer", "stage"} <= audit_columns
+    assert "actual_pay_scene_id" in foreshadow_columns
+    assert "ix_audit_issue_scene_check" in indexes
+    assert "ix_foreshadow_actual_pay" in indexes
+    assert 5 in versions and 6 in versions

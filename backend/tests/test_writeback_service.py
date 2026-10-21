@@ -175,6 +175,29 @@ def test_suggest_unstructured_and_errors(session, monkeypatch):
     assert "凭据无法解密" in unexpected["warning"]
 
 
+def test_open_questions_must_be_a_list(session, monkeypatch):
+    project, scene, _character, _foreshadow = _seed(session)
+    _add_writer(session)
+    _patch(
+        monkeypatch,
+        session,
+        project,
+        _result(
+            {
+                "chapter_summary": "摘要",
+                "character_updates": [],
+                "foreshadow_pays": [],
+                # 字符串不能被逐字符拆成一堆「问题」
+                "open_questions": "只有一个问题",
+            }
+        ),
+    )
+
+    result = writeback_service.suggest(session, scene.id)
+
+    assert result["open_questions"] == []
+
+
 def test_apply_updates_only_selected_targets(session):
     project, scene, character, foreshadow = _seed(session)
 

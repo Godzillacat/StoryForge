@@ -241,15 +241,37 @@ def _spawn(job_id: str) -> None:
         threading.Thread(target=_worker, args=(job_id,), daemon=True).start()
 
 
+def _ensure_no_other_running(session: Session, job: BatchJob) -> None:
+    other = session.scalars(
+        select(BatchJob).where(
+            BatchJob.project_id == job.project_id,
+            BatchJob.status == "running",
+            BatchJob.id != job.id,
+        )
+    ).first()
+    if other is not None:
+        raise ValueError("这个项目已有进行中的批量任务")
+
+
+def _finish_if_at_end(job: BatchJob) -> bool:
+    if job.cursor >= len(job.scene_ids_json or []):
+        job.status = "completed"
+        return True
+    return False
+
+
 def start_job(job_id: str) -> dict:
     with SessionLocal() as session:
         job = _job(session, job_id)
         if job.status in ("completed", "cancelled"):
             raise ValueError("任务已结束")
+        _ensure_no_other_running(session, job)
         job.status = "running"
+        done = _finish_if_at_end(job)
         session.commit()
         result = serialize_job(job)
-    _spawn(job_id)
+    if not done:
+        _spawn(job_id)
     return result
 
 
@@ -268,10 +290,13 @@ def resume_job(job_id: str) -> dict:
         job = _job(session, job_id)
         if job.status in ("completed", "cancelled"):
             raise ValueError("任务已结束")
+        _ensure_no_other_running(session, job)
         job.status = "running"
+        done = _finish_if_at_end(job)
         session.commit()
         result = serialize_job(job)
-    _spawn(job_id)
+    if not done:
+        _spawn(job_id)
     return result
 
 
@@ -290,10 +315,22 @@ def retry_failed(job_id: str) -> dict:
         job = _job(session, job_id)
         if job.status == "running":
             raise ValueError("任务仍在运行，请先暂停")
+        _ensure_no_other_running(session, job)
         failures = list(job.failures_json or [])
         if not failures:
             raise ValueError("没有失败场景")
-        job.scene_ids_json = [item["scene_id"] for item in failures]
+        failed_ids = [
+            item["scene_id"]
+            for item in failures
+            if isinstance(item, dict) and item.get("scene_id")
+        ]
+        # 失败任务可能停在 cursor 处没往前走（例如没有服务商）：重试必须
+        # 把「失败场景 + 尚未处理的后半段」一起放回去，不能只重跑失败项。
+        remaining = list(job.scene_ids_json or [])[job.cursor :]
+        combined = list(dict.fromkeys([*failed_ids, *remaining]))
+        if not combined:
+            raise ValueError("没有失败场景")
+        job.scene_ids_json = combined
         job.cursor = 0
         job.failures_json = []
         job.status = "running"

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import config
@@ -162,7 +163,13 @@ def save_generated_draft(
     session.add(
         SceneDraft(scene_id=scene.id, content=content or "", run_id=run_id)
     )
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # 两个 worker 同时写同一场时，唯一约束是最后一道防线；输的一方
+        # 当作「已有草稿、跳过」，而不是让线程带着异常退出。
+        session.rollback()
+        return False
     return True
 
 

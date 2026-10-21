@@ -228,6 +228,13 @@ def _chapter_xhtml(title: str, text: str) -> str:
     )
 
 
+def _modified_stamp(project: Project) -> str:
+    value = project.updated_at or project.created_at
+    if value is None:
+        return "1970-01-01T00:00:00Z"
+    return value.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def build_epub(session: Session, project_id: str) -> bytes:
     project = _project(session, project_id)
     chapters = _book_chapters(session, project_id)
@@ -282,6 +289,7 @@ def build_epub(session: Session, project_id: str) -> bytes:
             f'<dc:identifier id="bookid">{escape(project.id)}</dc:identifier>\n'
             f"<dc:title>{escape(project.name)}</dc:title>\n"
             "<dc:language>zh</dc:language>\n"
+            f'<meta property="dcterms:modified">{_modified_stamp(project)}</meta>\n'
             "</metadata>\n"
             "<manifest>\n" + "\n".join(manifest) + "\n</manifest>\n"
             "<spine>\n" + "\n".join(spine) + "\n</spine>\n"
