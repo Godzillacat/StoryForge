@@ -147,6 +147,25 @@ def save_draft(session: Session, scene_id: str, content: str) -> dict:
     return _draft_out(draft)
 
 
+def save_generated_draft(
+    session: Session, scene_id: str, content: str, run_id: str | None = None
+) -> bool:
+    """批量生成把结果落为草稿；已有正文或已有草稿时拒绝覆盖。
+
+    返回是否真的写入 —— 调用方（批量任务）据此区分「生成成功」与「跳过」。
+    """
+    scene = _scene(session, scene_id)
+    if (scene.body or "").strip():
+        return False
+    if _draft(session, scene_id) is not None:
+        return False
+    session.add(
+        SceneDraft(scene_id=scene.id, content=content or "", run_id=run_id)
+    )
+    session.commit()
+    return True
+
+
 def discard_draft(session: Session, scene_id: str) -> None:
     _scene(session, scene_id)
     draft = _draft(session, scene_id)
