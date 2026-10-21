@@ -410,6 +410,15 @@ class DbSlotSource:
             return "……" + text[-1200:]
         return text
 
+    def scene_text(self) -> str | None:
+        """当前场景的已采纳正文；草稿不算正式稿，不进审校上下文。"""
+        chain = self._scene_chain()
+        if chain is None:
+            return None
+        scene, _chapter, _volume = chain
+        body = (scene.body or "").strip()
+        return body or None
+
     def related_settings(self) -> str | None:
         """检索与本章相关的设定条目（可选槽位）。
 
