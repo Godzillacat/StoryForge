@@ -248,6 +248,16 @@ export const api = {
     request<AuditResult>(`/api/scenes/${sceneId}/audit`, { method: 'POST' }),
   getSceneAudit: (sceneId: string) =>
     request<AuditView>(`/api/scenes/${sceneId}/audit`),
+  runSceneLogicCheck: (sceneId: string, stage: LogicStage) =>
+    request<LogicCheckResult>(`/api/scenes/${sceneId}/logic-check`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ stage }),
+    }),
+  getSceneLogicCheck: (sceneId: string, stage: LogicStage) =>
+    request<LogicCheckView>(
+      `/api/scenes/${sceneId}/logic-check?stage=${encodeURIComponent(stage)}`,
+    ),
   resolveAuditIssue: (issueId: string, resolution: AuditResolution) =>
     request<AuditIssue>(`/api/audit/issues/${issueId}`, {
       method: 'PATCH',
@@ -749,8 +759,12 @@ export interface AuditIssue {
   id: string
   source: string
   source_label: string
+  check_type?: string
   kind: string
   kind_label: string
+  layer?: string | null
+  layer_label?: string | null
+  stage?: string
   severity: string
   severity_label: string
   quote: string
@@ -776,6 +790,23 @@ export interface AuditResult {
 export interface AuditView {
   issues: AuditIssue[]
   last_audited_at: string | null
+}
+
+export type LogicStage = 'plan' | 'text'
+
+export interface LogicCheckResult {
+  stage: string
+  run_id: string | null
+  issues: AuditIssue[]
+  suppressed: number
+  llm_status: 'ok' | 'skipped' | 'unstructured' | 'error'
+  warning: string
+}
+
+export interface LogicCheckView {
+  stage: string
+  issues: AuditIssue[]
+  last_checked_at: string | null
 }
 
 export interface GenerationRunEvent {
