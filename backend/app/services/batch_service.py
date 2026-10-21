@@ -29,6 +29,10 @@ def _job(session: Session, job_id: str) -> BatchJob:
     return job
 
 
+def get_job(session: Session, job_id: str) -> dict:
+    return serialize_job(_job(session, job_id))
+
+
 def _scope_scene_ids(session: Session, project_id: str, scope_type: str, scope_id: str) -> list[str]:
     if scope_type == "chapter":
         chapter = session.get(Chapter, scope_id)

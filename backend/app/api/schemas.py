@@ -311,3 +311,8 @@ class WritebackApply(BaseModel):
     chapter_summary: str | None = None
     character_updates: list[WritebackCharacterUpdate] = Field(default_factory=list)
     foreshadow_pays: list[WritebackForeshadowPay] = Field(default_factory=list)
+
+
+class BatchCreate(BaseModel):
+    scope_type: str = ""
+    scope_id: str = ""
