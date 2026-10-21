@@ -13,6 +13,7 @@ from app.api import (
     chapters,
     foreshadows,
     ideas,
+    logic,
     projects,
     providers,
     runs,
@@ -61,5 +62,6 @@ for module in (
     foreshadows,
     text,
     audit,
+    logic,
 ):
     app.include_router(module.router)
