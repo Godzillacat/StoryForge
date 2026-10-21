@@ -8,6 +8,20 @@ _TMP = tempfile.mkdtemp(prefix="storyforge-test-")
 os.environ["STORYFORGE_DATA_DIR"] = _TMP
 
 
+@pytest.fixture(autouse=True)
+def _default_settings():
+    """settings.json 是进程级文件，不重置就会从前一条用例串进来。
+
+    模型分路与 ``default_model`` 会直接改变「哪条用例能跑通」，串了以后
+    失败会看起来像产品缺陷而不是测试污染。
+    """
+    from app import config
+
+    config.save_settings(dict(config.DEFAULT_SETTINGS))
+    yield
+    config.save_settings(dict(config.DEFAULT_SETTINGS))
+
+
 @pytest.fixture(scope="session")
 def data_dir_path():
     from app import config

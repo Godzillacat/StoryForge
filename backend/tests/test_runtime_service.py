@@ -251,3 +251,132 @@ def test_execute_duration_covers_preparation_time(session, monkeypatch):
 
     assert run.duration_ms >= 50
 
+
+
+# ---- 模型分路与参数档 ----
+
+def test_routing_supplies_model_when_version_has_none(session, monkeypatch):
+    from app import config
+
+    project, _provider, agent, version = _seed(session)
+    version.model_binding_json = {}
+    session.commit()
+    config.save_settings({"model_routing": {"idea_parse": {"model": "routed-model"}}})
+
+    prepared = RuntimeService(session).prepare(project.id, agent.id)
+
+    assert prepared.model == "routed-model"
+
+
+def test_version_model_beats_routing(session):
+    from app import config
+
+    project, _provider, agent, _version = _seed(session)
+    config.save_settings({"model_routing": {"idea_parse": {"model": "routed-model"}}})
+
+    prepared = RuntimeService(session).prepare(project.id, agent.id)
+
+    assert prepared.model == "test-model"
+
+
+def test_routing_supplies_provider_when_version_has_none(session):
+    from app import config
+
+    project, provider, agent, version = _seed(session)
+    version.model_binding_json = {"model": "test-model"}
+    session.commit()
+    config.save_settings(
+        {"model_routing": {"idea_parse": {"provider_id": provider.id}}}
+    )
+
+    prepared = RuntimeService(session).prepare(project.id, agent.id)
+
+    assert prepared.provider.id == provider.id
+
+
+def test_routing_to_missing_provider_fails_loudly(session):
+    from app import config
+
+    project, _provider, agent, version = _seed(session)
+    version.model_binding_json = {"model": "test-model"}
+    session.commit()
+    config.save_settings({"model_routing": {"idea_parse": {"provider_id": "gone"}}})
+
+    with pytest.raises(ValueError) as excinfo:
+        RuntimeService(session).prepare(project.id, agent.id)
+
+    assert "gone" in str(excinfo.value)
+
+
+def test_unbound_model_message_mentions_routing(session):
+    from app import config
+
+    project, _provider, agent, version = _seed(session)
+    version.model_binding_json = {}
+    session.commit()
+    config.save_settings({"model_routing": {}, "default_model": None})
+
+    with pytest.raises(ValueError) as excinfo:
+        RuntimeService(session).prepare(project.id, agent.id)
+
+    assert "模型分路" in str(excinfo.value)
+
+
+def test_default_model_is_used_as_last_resort(session):
+    from app import config
+
+    project, _provider, agent, version = _seed(session)
+    version.model_binding_json = {}
+    session.commit()
+    config.save_settings({"default_model": "global-default-model"})
+
+    prepared = RuntimeService(session).prepare(project.id, agent.id)
+
+    assert prepared.model == "global-default-model"
+
+
+def test_param_profile_reaches_the_request(session):
+    project, _provider, agent, version = _seed(session)
+    version.param_profile = "creative"
+    session.commit()
+
+    prepared = RuntimeService(session).prepare(project.id, agent.id)
+
+    assert prepared.params["temperature"] == 1.0
+    assert prepared.profile == "creative"
+
+
+def test_route_profile_applies_when_version_says_balanced(session):
+    from app import config
+
+    project, _provider, agent, _version = _seed(session)
+    config.save_settings(
+        {"model_routing": {"idea_parse": {"param_profile": "strict"}}}
+    )
+
+    prepared = RuntimeService(session).prepare(project.id, agent.id)
+
+    assert prepared.params["temperature"] == 0.2
+
+
+def test_version_params_override_profile_and_defaults(session):
+    project, _provider, agent, version = _seed(session)
+    version.model_binding_json = {"model": "test-model", "params": {"max_tokens": 8000}}
+    session.commit()
+
+    prepared = RuntimeService(session).prepare(project.id, agent.id)
+
+    assert prepared.params["max_tokens"] == 8000
+    # 未覆盖的键仍来自参数档
+    assert prepared.params["temperature"] == 0.7
+
+
+def test_unknown_profile_warns_without_failing(session):
+    project, _provider, agent, version = _seed(session)
+    version.param_profile = "wild"
+    session.commit()
+
+    prepared = RuntimeService(session).prepare(project.id, agent.id)
+
+    assert prepared.params["temperature"] == 0.7
+    assert any("wild" in warning for warning in prepared.warnings)

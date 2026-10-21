@@ -114,6 +114,10 @@ def test_failed_regeneration_does_not_overwrite_existing_draft(client, monkeypat
 
 def test_generate_without_writer_model_is_400_before_streaming(client):
     _project_id, scene_id = _create_scene(client)
+    from app import config
+
+    # 分路或全局默认模型也会提供模型名，这条用例要验的是「哪都没有」。
+    config.save_settings({"model_routing": {}, "default_model": None})
     with SessionLocal() as session:
         from app.db.models import Agent, AgentVersion
 
