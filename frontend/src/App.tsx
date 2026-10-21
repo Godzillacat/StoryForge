@@ -4,6 +4,7 @@ import Chapters from './pages/Chapters'
 import Dashboard from './pages/Dashboard'
 import Idea from './pages/Idea'
 import Models from './pages/Models'
+import Pipeline from './pages/Pipeline'
 import Relations from './pages/Relations'
 import Studio from './pages/Studio'
 import Terms from './pages/Terms'
@@ -21,6 +22,7 @@ const NAV = [
   { to: '/terms', label: '术语表' },
   { to: '/chapters', label: '章节设计' },
   { to: '/write', label: '写作台' },
+  { to: '/pipeline', label: '管线编排' },
   { to: '/studio', label: '智能体工作室' },
   { to: '/models', label: '模型与费用' },
 ]
@@ -58,6 +60,7 @@ export default function App() {
           <Route path="/terms" element={<Terms />} />
           <Route path="/chapters" element={<Chapters />} />
           <Route path="/write" element={<Writing />} />
+          <Route path="/pipeline" element={<Pipeline />} />
           <Route path="/studio" element={<Studio />} />
           <Route path="/models" element={<Models />} />
         </Routes>

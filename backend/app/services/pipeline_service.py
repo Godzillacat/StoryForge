@@ -365,11 +365,19 @@ def _node_out(node: PipelineNode) -> dict:
 
 
 def serialize_pipeline(session: Session, pipeline: Pipeline) -> dict:
+    from app.pipeline_executors import available_node_types
+    from app.pipeline_types import POLICY_LABELS
+
     return {
         "id": pipeline.id,
         "project_id": pipeline.project_id,
         "policy": pipeline.policy,
         "nodes": [_node_out(n) for n in list_nodes(session, pipeline.id)],
+        "node_types": available_node_types(),
+        "policies": [
+            {"value": value, "label": POLICY_LABELS[value]}
+            for value in POLICY_LABELS
+        ],
     }
 
 

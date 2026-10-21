@@ -289,3 +289,14 @@ EXECUTORS: dict[str, Executor] = {
 
 def get_executor(task_type: str) -> Executor | None:
     return EXECUTORS.get(task_type)
+
+
+def available_node_types() -> list[dict]:
+    """可加进管线的节点类型。前端据此渲染「追加节点」的下拉 ——
+    不让界面再抄一份任务类型清单。"""
+    from app.agents.roster import task_type_label
+
+    return [
+        {"task_type": key, "label": task_type_label(key)}
+        for key in EXECUTORS
+    ]
