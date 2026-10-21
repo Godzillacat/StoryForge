@@ -10,7 +10,7 @@ from app.db.models import (
     Volume,
 )
 from app.runtime.execute import RunResult
-from app.services import audit_service, logic_service
+from app.services import audit_service, logic_service, text_service
 
 
 def _seed_scene(
@@ -347,6 +347,24 @@ def test_fingerprints_are_stage_isolated(session, monkeypatch):
     assert fingerprints[0].startswith("logic:plan:")
     assert fingerprints[1].startswith("logic:text:")
     assert fingerprints[0] != fingerprints[1]
+
+
+def test_body_change_supersedes_text_but_keeps_plan_issues(session, monkeypatch):
+    project, scene = _seed_scene(session)
+    _add_checker(session)
+    _patch_execute(
+        monkeypatch,
+        session,
+        project,
+        _result({"issues": [_issue_payload()]}, structured=True),
+    )
+    plan = logic_service.run_logic_check(session, scene.id, "plan")
+    text = logic_service.run_logic_check(session, scene.id, "text")
+
+    text_service.save_body(session, scene.id, "换了一份正文。")
+
+    assert session.get(AuditIssue, plan["issues"][0]["id"]).status == "open"
+    assert session.get(AuditIssue, text["issues"][0]["id"]).status == "superseded"
 
 
 def test_missing_scene(session):

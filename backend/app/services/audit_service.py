@@ -115,11 +115,21 @@ def _supersede_open(session: Session, scene_id: str) -> None:
 
 
 def supersede_scene_issues(session: Session, scene_id: str) -> None:
-    """正文整份变化后调用：旧问题针对的是旧文本，标为 superseded。
+    """正文整份变化后调用：针对旧文本的问题标为 superseded。
 
-    不在这里提交 —— 调用方（保存 / 采纳 / 恢复）与自己的写入共用一次事务。
+    只处理 stage="text" 的问题（一致性审计与正文阶段的逻辑自检）；
+    「场景卡」阶段的逻辑问题审的是场景结构，不受正文替换影响。
+    不在这里提交 —— 调用方与自己的写入共用一次事务。
     """
-    _supersede_open(session, scene_id)
+    rows = session.scalars(
+        select(AuditIssue).where(
+            AuditIssue.scene_id == scene_id,
+            AuditIssue.stage == "text",
+            AuditIssue.status == "open",
+        )
+    ).all()
+    for row in rows:
+        row.status = "superseded"
 
 
 def _insert_issues(
