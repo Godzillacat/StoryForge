@@ -109,6 +109,14 @@ def _supersede_open(session: Session, scene_id: str) -> None:
         row.status = "superseded"
 
 
+def supersede_scene_issues(session: Session, scene_id: str) -> None:
+    """正文整份变化后调用：旧问题针对的是旧文本，标为 superseded。
+
+    不在这里提交 —— 调用方（保存 / 采纳 / 恢复）与自己的写入共用一次事务。
+    """
+    _supersede_open(session, scene_id)
+
+
 def _insert_issues(
     session: Session,
     *,
@@ -126,10 +134,10 @@ def _insert_issues(
         fingerprint = issue.fingerprint
         if not fingerprint or fingerprint in seen:
             continue
+        seen.add(fingerprint)
         if fingerprint in exceptions:
             suppressed += 1
             continue
-        seen.add(fingerprint)
         row = AuditIssue(
             project_id=project_id,
             scene_id=scene_id,
@@ -233,6 +241,11 @@ def _run_llm(
         )
     except ValueError as exc:
         return None, "skipped", f"语义审计已跳过：{exc}", []
+    except Exception as exc:  # noqa: BLE001
+        # 密钥解密失败、服务商返回结构异常等都不该把整次审校打成 500：
+        # 规则层结果已经落库，作者至少应该拿到它们和一句可读原因。
+        message = str(exc).strip() or exc.__class__.__name__
+        return None, "error", f"语义审计失败：{message}", []
 
     if result.status != "ok":
         message = (result.error or {}).get("message") or "模型调用失败"

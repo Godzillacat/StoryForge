@@ -9,11 +9,12 @@ from app.db.models import (
     GenerationRun,
     Project,
     Scene,
+    SceneDraft,
     SettingEntry,
     Volume,
 )
 from app.runtime.execute import RunResult
-from app.services import audit_service
+from app.services import audit_service, text_service
 
 REPEATED = (
     "雨落在旧城的铁皮屋顶上，声音像有人在数硬币。"
@@ -249,6 +250,90 @@ def test_llm_audit_allows_empty_context_slots(session, monkeypatch):
 
     assert seen["allow_missing"] is True
     assert result["llm_status"] == "ok"
+
+
+def test_llm_unexpected_error_falls_back_to_rules(session, monkeypatch):
+    """密钥解密失败、服务商返回结构异常等非 ValueError 也不该打穿整次审校。"""
+    project, scene = _seed_scene(session)
+    _add_auditor(session)
+
+    def fake_execute(self, project_id, agent_id, extra=None, allow_missing=None):
+        raise RuntimeError("凭据无法解密")
+
+    monkeypatch.setattr(audit_service.RuntimeService, "execute", fake_execute)
+
+    result = audit_service.run_audit(session, scene.id)
+
+    assert result["llm_status"] == "error"
+    assert "凭据无法解密" in result["warning"]
+    assert [issue["kind"] for issue in result["issues"]] == ["repetition"]
+
+
+def test_duplicate_exception_fingerprints_count_once(session):
+    from app.audit_rules import RuleIssue
+
+    project, scene = _seed_scene(session)
+    issue = RuleIssue(
+        kind="repetition",
+        severity="minor",
+        quote="重复的句子",
+        rule_ref="重复句",
+        explanation="测试",
+        reader_impact="测试",
+        options=[],
+        fingerprint="rule:repetition:abc",
+    )
+
+    inserted, suppressed = audit_service._insert_issues(
+        session,
+        project_id=project.id,
+        scene_id=scene.id,
+        issues=[issue, issue],
+        source="rule",
+        run_id=None,
+        exceptions={"rule:repetition:abc"},
+    )
+
+    assert inserted == []
+    assert suppressed == 1
+
+
+def test_saving_body_supersedes_open_issues(session):
+    project, scene = _seed_scene(session)
+    result = audit_service.run_audit(session, scene.id)
+    issue_id = result["issues"][0]["id"]
+
+    text_service.save_body(session, scene.id, "换了一份全新的正文。")
+
+    assert session.get(AuditIssue, issue_id).status == "superseded"
+    assert audit_service.list_audit(session, scene.id)["issues"] == []
+
+
+def test_adopting_draft_supersedes_open_issues(session):
+    project, scene = _seed_scene(session)
+    result = audit_service.run_audit(session, scene.id)
+    issue_id = result["issues"][0]["id"]
+    session.add(SceneDraft(scene_id=scene.id, content="采纳后的新正文，旧问题应失效。"))
+    session.commit()
+
+    text_service.adopt_draft(session, scene.id)
+
+    assert session.get(AuditIssue, issue_id).status == "superseded"
+
+
+def test_last_audited_at_is_scene_scoped(session):
+    project, first = _seed_scene(session)
+    second = Scene(chapter_id=first.chapter_id, seq=1, goal="第二场", body=REPEATED)
+    session.add(second)
+    session.commit()
+
+    audit_service.run_audit(session, first.id)
+    before = audit_service.list_audit(session, first.id)["last_audited_at"]
+    audit_service.run_audit(session, second.id)
+    after = audit_service.list_audit(session, first.id)["last_audited_at"]
+
+    assert before is not None
+    assert after == before
 
 
 def test_llm_unstructured_falls_back_to_rules(session, monkeypatch):
