@@ -1,6 +1,6 @@
 # P3 走查与复验记录：模型分路、参数档、精确记账、单价与费用
 
-> 2026-10-21。分支 `worktree-p3-model-management`。**真实模型复验暂停**：作者表示等想好再指定模型，本文件先记录不花额度的部分。
+> 2026-10-21。分支 `worktree-p3-model-management`。真实模型复验已完成（`qwen3.8-flash`，四次调用）。
 
 ## 1. 已完成（不花额度）
 
@@ -38,16 +38,27 @@
 
 两条既有用例（`test_generate_without_writer_model_is_400_before_streaming`、`test_context_preview_without_writer_is_400`）会清空模型绑定 / 停用执笔且不还原，共享的 `client` 库因此被污染，后续所有生成类用例一起 400。已改为 `finally` 还原。新增的 `conftest._default_settings` 夹具保证 `settings.json` 在用例之间回到默认值 —— 模型分路会改变哪条用例能跑通，串状态后的失败看起来像产品缺陷。
 
-## 2. 待做（需要真实模型）
+## 2. 真实模型复验（已完成）
 
-作者暂停在模型选择这一步。恢复后按下列步骤执行，**只用作者库副本**：
+做法：SQLite backup API 复制作者库 + `secrets.bin` 到系统临时目录，后端用 `STORYFORGE_DATA_DIR=<副本>` 启动，全程未写作者原库。
 
-1. 复制 `storyforge.db`（SQLite backup API）与 `secrets.bin` 到系统临时目录。
-2. 后端用 `STORYFORGE_DATA_DIR=<副本>` 启动，先验证迁移 v7 执行、`usage_source` 列存在、原数据一条不少、二次启动不重复。
-3. 真实流式生成一次：确认 `usage_source=provider`，token 与服务商返回一致。
-4. 删掉执笔版本上的模型绑定、给 `write` 配分路 → 生成成功，运行记录 model 等于分路值。
-5. 分路指向不存在的服务商 → 报错文案含键名。
-6. 把执笔版本参数档改成 `creative` → 运行记录 `params.temperature == 1.0`。
-7. 删除副本，核对作者原库 `storyforge.db` / `secrets.bin` 的 SHA-256 未变。
+| 步骤 | 结果 |
+|---|---|
+| 副本首次启动 | 迁移 `[0,1] → [0..7]`，生成 `backups/pre-migration-v7-20261021-131722/`；`usage_source` 列存在；2 项目 / 3 智能体一条不少 |
+| 副本二次启动 | 版本不变、不产生第二个备份、智能体不重复预置 |
+| 预置补齐 | 3 → 9 个角色卡；执笔 / 章纲策划 / 场景策划 / 审校 / 逻辑审查官 / 回写助手的模型绑定为空 —— 正好可验分路 |
+| 分路指向不存在的服务商 | 400，文案「指定的服务商不存在：does-not-exist」 |
+| 分路给 `write` 配 `qwen3.8-flash` + `creative`，执笔本身不绑模型 | 生成成功；运行记录 `model=qwen3.8-flash`、`params.temperature=1.0`、`prompt_tokens=855`、`completion_tokens=2540`、`usage_source=provider` |
+| 与存量运行对比 | 同库早期记录（P1b-1 时期）为 `usage_source=estimated`、`temperature=0.7` —— 新旧口径区分清晰 |
+| 配单价（输入 0.3 / 输出 1.2）后再生成 | `cost_estimate=0.003882`；项目汇总新增该费用；`unpriced_runs=1`（只有那条历史无价记录） |
+| 任务分组 | 正文 3 次 0.003882 / 对话 3 次 / 灵感解析 1 次 / 架构推荐 1 次，费用按组正确归集 |
+| 作者把执笔版本改成 `strict` 后再生成 | `params.temperature=0.2` —— 作者版本压过分路的 `creative`（1.0），符合设计 |
+| 作者原库 | `storyforge.db` / `secrets.bin` SHA-256 前后一致；副本已删除 |
 
-**额度基线**：复验前 `qwen3.8-flash` 累计约 88,269 / 1,000,000。本次预计 3–5k。
+**额度**：四次真实调用（分路报错那次不发请求），估算新增约 855+2540 + 855+2584 + 855+3477 ≈ 11.2k tokens；累计约 99.5k / 1,000,000。
+
+### 2.1 复验确认的三条设计意图
+
+1. **分路能接管未绑模型的智能体**：预置阵容出厂不带模型名，作者只在「模型与费用」里按任务配一次即可跑通，不必逐张角色卡去绑。
+2. **参数档真的发出去了**：同一智能体在 `creative` / `strict` 下请求体里的 `temperature` 分别是 1.0 与 0.2。
+3. **token 来源可信**：新运行为 `provider`（服务商返回值），历史记录保持 `estimated`，界面上能区分哪个数不可信。
