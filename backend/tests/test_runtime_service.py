@@ -380,3 +380,60 @@ def test_unknown_profile_warns_without_failing(session):
 
     assert prepared.params["temperature"] == 0.7
     assert any("wild" in warning for warning in prepared.warnings)
+
+
+def test_model_price_table_drives_the_recorded_cost(session):
+    from app.db.models import ModelPrice
+
+    project, provider, agent, _version = _seed(session)
+    session.add(
+        ModelPrice(
+            provider_id=provider.id,
+            model="test-model",
+            input_price=2.0,
+            output_price=8.0,
+        )
+    )
+    session.commit()
+    service = RuntimeService(
+        session, client=HttpxChatClient(transport=httpx.MockTransport(_ok_handler()))
+    )
+
+    run, _result = service.execute(project.id, agent.id)
+
+    # usage 是 40 + 20 tokens，单价按每百万计
+    assert run.cost_estimate == pytest.approx((40 * 2.0 + 20 * 8.0) / 1_000_000)
+
+
+def test_binding_prices_still_win_over_the_table(session):
+    from app.db.models import ModelPrice
+
+    project, provider, agent, version = _seed(session)
+    version.model_binding_json = {
+        "model": "test-model",
+        "prices": {"input": 100.0, "output": 0.0},
+    }
+    session.add(
+        ModelPrice(
+            provider_id=provider.id, model="test-model", input_price=1.0, output_price=1.0
+        )
+    )
+    session.commit()
+    service = RuntimeService(
+        session, client=HttpxChatClient(transport=httpx.MockTransport(_ok_handler()))
+    )
+
+    run, _result = service.execute(project.id, agent.id)
+
+    assert run.cost_estimate == pytest.approx(40 * 100.0 / 1_000_000)
+
+
+def test_unpriced_model_records_zero_cost(session):
+    project, _provider, agent, _version = _seed(session)
+    service = RuntimeService(
+        session, client=HttpxChatClient(transport=httpx.MockTransport(_ok_handler()))
+    )
+
+    run, _result = service.execute(project.id, agent.id)
+
+    assert run.cost_estimate == 0.0

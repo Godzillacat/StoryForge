@@ -98,6 +98,14 @@ class ProviderTest(BaseModel):
     model: str | None = None
 
 
+class ModelPriceIn(BaseModel):
+    provider_id: str
+    model: str = Field(min_length=1, max_length=120)
+    input_price: float = Field(ge=0)
+    output_price: float = Field(ge=0)
+    currency: str = "CNY"
+
+
 class EntryCreate(BaseModel):
     type: str
     name: str = Field(min_length=1, max_length=200)

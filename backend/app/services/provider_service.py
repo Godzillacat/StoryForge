@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app import config
 from app.crypto import dpapi
-from app.db.models import AgentVersion, GenerationRun, Provider
+from app.db.models import AgentVersion, GenerationRun, ModelPrice, Provider
 from app.runtime.llm import ChatConfig, ChatFailure, HttpxChatClient
 
 
@@ -58,6 +58,70 @@ def masked_key(provider: Provider) -> str:
     if not provider.api_key_ref:
         return ""
     return dpapi.mask(dpapi.get_secret(provider.api_key_ref) or "")
+
+
+# ---- 模型单价 ----
+
+def list_prices(session: Session) -> list[ModelPrice]:
+    return list(
+        session.scalars(
+            select(ModelPrice).order_by(ModelPrice.provider_id, ModelPrice.model)
+        )
+    )
+
+
+def get_price(session: Session, provider_id: str, model: str) -> ModelPrice | None:
+    return session.scalars(
+        select(ModelPrice).where(
+            ModelPrice.provider_id == provider_id, ModelPrice.model == model
+        )
+    ).first()
+
+
+def price_dict(session: Session, provider_id: str | None, model: str | None) -> dict | None:
+    """给运行时用的单价快照。runtime 层不认识 ORM，所以在这里转成 dict。"""
+    if not provider_id or not model:
+        return None
+    row = get_price(session, provider_id, model)
+    if row is None:
+        return None
+    return {
+        "input_price": row.input_price,
+        "output_price": row.output_price,
+        "currency": row.currency,
+    }
+
+
+def upsert_price(
+    session: Session,
+    *,
+    provider_id: str,
+    model: str,
+    input_price: float,
+    output_price: float,
+    currency: str = "CNY",
+) -> ModelPrice:
+    if session.get(Provider, provider_id) is None:
+        raise ValueError(f"服务商不存在：{provider_id}")
+    if input_price < 0 or output_price < 0:
+        raise ValueError("单价不能为负数")
+    row = get_price(session, provider_id, model)
+    if row is None:
+        row = ModelPrice(provider_id=provider_id, model=model)
+        session.add(row)
+    row.input_price = input_price
+    row.output_price = output_price
+    row.currency = currency or "CNY"
+    session.commit()
+    return row
+
+
+def delete_price(session: Session, price_id: str) -> None:
+    row = session.get(ModelPrice, price_id)
+    if row is None:
+        raise ValueError(f"单价记录不存在：{price_id}")
+    session.delete(row)
+    session.commit()
 
 
 # 按 HTTP 状态码给判定，比按 error.kind 分得更细：

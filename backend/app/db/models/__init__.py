@@ -3,7 +3,7 @@ from app.db.models.architecture import Act, Architecture
 from app.db.models.audit import AuditIssue
 from app.db.models.batch import BatchJob
 from app.db.models.chapter import Chapter, Foreshadow, Scene, Volume
-from app.db.models.config_models import Provider, Setting
+from app.db.models.config_models import ModelPrice, Provider, Setting
 from app.db.models.idea import Idea
 from app.db.models.project import Project
 from app.db.models.run import GenerationRun
@@ -25,6 +25,7 @@ __all__ = [
     "Foreshadow",
     "GenerationRun",
     "Idea",
+    "ModelPrice",
     "Project",
     "Provider",
     "Scene",

@@ -19,7 +19,9 @@ from app.runtime.execute import (
 )
 from app.runtime.llm import ChatClient, ChatConfig, HttpxChatClient
 from app.runtime.params import resolve_params
+from app.runtime.pricing import resolve_prices
 from app.runtime.routing import resolve_binding
+from app.services import provider_service
 from app.services.slot_source import DbSlotSource
 
 
@@ -151,8 +153,13 @@ class RuntimeService:
                 f"或在「模型与费用」里为任务 {agent.task_type} 配置模型分路"
             )
 
-        provider, base_url, api_key, prices = self.resolve_provider(
+        provider, base_url, api_key, binding_prices = self.resolve_provider(
             resolved.binding.get("provider_id"), binding.get("prices") or None
+        )
+        # 单价要等 provider 与 model 都定下来才能查 —— 顺序不能提前。
+        prices = resolve_prices(
+            binding_prices,
+            provider_service.price_dict(self._session, provider.id, model),
         )
         params, param_warnings = resolve_params(
             profile=resolved.profile,

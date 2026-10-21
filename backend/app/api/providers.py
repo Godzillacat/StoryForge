@@ -4,7 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import config
-from app.api.schemas import ProviderCreate, ProviderTest, ProviderUpdate, SettingsUpdate
+from app.api.schemas import (
+    ModelPriceIn,
+    ProviderCreate,
+    ProviderTest,
+    ProviderUpdate,
+    SettingsUpdate,
+)
 from app.db.session import get_session
 from app.services import provider_service
 
@@ -81,3 +87,41 @@ def update_settings(payload: SettingsUpdate) -> dict:
 @router.get("/projects/{project_id}/cost")
 def project_cost(project_id: str, session: Session = Depends(get_session)) -> dict:
     return provider_service.project_cost_summary(session, project_id)
+
+
+def _price_out(row) -> dict:
+    return {
+        "id": row.id,
+        "provider_id": row.provider_id,
+        "model": row.model,
+        "input_price": row.input_price,
+        "output_price": row.output_price,
+        "currency": row.currency,
+    }
+
+
+@router.get("/model-prices")
+def list_model_prices(session: Session = Depends(get_session)) -> list[dict]:
+    return [_price_out(row) for row in provider_service.list_prices(session)]
+
+
+@router.put("/model-prices")
+def upsert_model_price(
+    payload: ModelPriceIn, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        row = provider_service.upsert_price(session, **payload.model_dump())
+    except ValueError as exc:
+        status = 404 if "不存在" in str(exc) else 400
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+    return _price_out(row)
+
+
+@router.delete("/model-prices/{price_id}", status_code=204)
+def delete_model_price(
+    price_id: str, session: Session = Depends(get_session)
+) -> None:
+    try:
+        provider_service.delete_price(session, price_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
