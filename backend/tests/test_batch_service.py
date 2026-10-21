@@ -58,6 +58,8 @@ def _patch_execute(monkeypatch, session, project, result):
     session.commit()
 
     def fake_execute(self, project_id, agent_id, extra=None, allow_missing=None):
+        # 批量服务必须把槽位字典传下去，而不是 scene_extra 返回的整个元组。
+        assert isinstance(extra, dict)
         return run, result
 
     monkeypatch.setattr(batch_service.RuntimeService, "execute", fake_execute)

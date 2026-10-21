@@ -182,8 +182,7 @@ def advance_job(session: Session, job_id: str) -> str:
         return "failed_job"
 
     try:
-        project = chapter_service.get_project_for_chapter(session, scene.chapter_id)
-        extra = text_service.scene_extra(session, scene)
+        project, extra = text_service.scene_extra(session, scene)
         run, result = RuntimeService(session).execute(project.id, agent.id, extra)
     except ValueError as exc:
         _failure(job, scene_id, str(exc))

@@ -526,7 +526,13 @@ export default function Writing() {
       setAuditIssues(result.issues)
       setAuditWarning(result.warning)
       setAuditLastAt(new Date().toISOString())
-      if (result.suppressed > 0) {
+      if (result.llm_status !== 'ok') {
+        setNotice(
+          `${result.warning || '语义审计未完成'}${
+            result.issues.length > 0 ? `（规则层发现 ${result.issues.length} 条问题）` : ''
+          }`,
+        )
+      } else if (result.suppressed > 0) {
         setNotice(`审校完成；${result.suppressed} 条问题已记为特例，不再重复上报`)
       } else if (result.issues.length > 0) {
         setNotice(`审校完成，发现 ${result.issues.length} 条问题`)
@@ -554,7 +560,9 @@ export default function Writing() {
       setLogicIssues(result.issues)
       setLogicWarning(result.warning)
       setLogicLastAt(new Date().toISOString())
-      if (result.suppressed > 0) {
+      if (result.llm_status !== 'ok') {
+        setNotice(result.warning || '逻辑自检未完成')
+      } else if (result.suppressed > 0) {
         setNotice(`逻辑自检完成；${result.suppressed} 条问题已记为特例，不再重复上报`)
       } else if (result.issues.length > 0) {
         setNotice(`逻辑自检完成，发现 ${result.issues.length} 条问题`)
