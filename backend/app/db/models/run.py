@@ -31,6 +31,9 @@ class GenerationRun(IdMixin, TimestampMixin, Base):
     prompt_tokens: Mapped[int] = mapped_column(default=0)
     completion_tokens: Mapped[int] = mapped_column(default=0)
     cost_estimate: Mapped[float] = mapped_column(Float, default=0.0)
+    # token 从哪来：provider（服务商返回的 usage）/ estimated（本地估算）。
+    # 估算值不能冒充真账 —— 作者据此判断这条费用能不能信。
+    usage_source: Mapped[str] = mapped_column(String(20), default="estimated")
     duration_ms: Mapped[int] = mapped_column(default=0)
     # ok | partial | error
     status: Mapped[str] = mapped_column(String(20), default="ok")

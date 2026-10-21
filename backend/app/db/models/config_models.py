@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Boolean, JSON, String, Text
+from sqlalchemy import Boolean, Float, ForeignKey, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IdMixin, TimestampMixin
@@ -19,6 +19,27 @@ class Provider(IdMixin, TimestampMixin, Base):
     api_key_ref: Mapped[str] = mapped_column(String(120), default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     priority: Mapped[int] = mapped_column(default=0)
+
+
+class ModelPrice(IdMixin, TimestampMixin, Base):
+    """每百万 token 的单价，按「服务商 + 模型」配置。
+
+    单价是**模型**的属性，不是绑定的属性：放角色卡里的话，同一个模型绑在
+    十个智能体上就要填十遍，改一次价得改十处。
+    """
+
+    __tablename__ = "model_price"
+    __table_args__ = (
+        UniqueConstraint("provider_id", "model", name="uq_model_price"),
+    )
+
+    provider_id: Mapped[str] = mapped_column(
+        ForeignKey("provider.id", ondelete="CASCADE"), index=True
+    )
+    model: Mapped[str] = mapped_column(String(120))
+    input_price: Mapped[float] = mapped_column(Float, default=0.0)
+    output_price: Mapped[float] = mapped_column(Float, default=0.0)
+    currency: Mapped[str] = mapped_column(String(8), default="CNY")
 
 
 class Setting(IdMixin, TimestampMixin, Base):

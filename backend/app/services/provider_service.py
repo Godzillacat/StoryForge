@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app import config
 from app.crypto import dpapi
-from app.db.models import AgentVersion, GenerationRun, Provider
+from app.db.models import AgentVersion, GenerationRun, ModelPrice, Provider
 from app.runtime.llm import ChatConfig, ChatFailure, HttpxChatClient
 
 
@@ -58,6 +58,70 @@ def masked_key(provider: Provider) -> str:
     if not provider.api_key_ref:
         return ""
     return dpapi.mask(dpapi.get_secret(provider.api_key_ref) or "")
+
+
+# ---- 模型单价 ----
+
+def list_prices(session: Session) -> list[ModelPrice]:
+    return list(
+        session.scalars(
+            select(ModelPrice).order_by(ModelPrice.provider_id, ModelPrice.model)
+        )
+    )
+
+
+def get_price(session: Session, provider_id: str, model: str) -> ModelPrice | None:
+    return session.scalars(
+        select(ModelPrice).where(
+            ModelPrice.provider_id == provider_id, ModelPrice.model == model
+        )
+    ).first()
+
+
+def price_dict(session: Session, provider_id: str | None, model: str | None) -> dict | None:
+    """给运行时用的单价快照。runtime 层不认识 ORM，所以在这里转成 dict。"""
+    if not provider_id or not model:
+        return None
+    row = get_price(session, provider_id, model)
+    if row is None:
+        return None
+    return {
+        "input_price": row.input_price,
+        "output_price": row.output_price,
+        "currency": row.currency,
+    }
+
+
+def upsert_price(
+    session: Session,
+    *,
+    provider_id: str,
+    model: str,
+    input_price: float,
+    output_price: float,
+    currency: str = "CNY",
+) -> ModelPrice:
+    if session.get(Provider, provider_id) is None:
+        raise ValueError(f"服务商不存在：{provider_id}")
+    if input_price < 0 or output_price < 0:
+        raise ValueError("单价不能为负数")
+    row = get_price(session, provider_id, model)
+    if row is None:
+        row = ModelPrice(provider_id=provider_id, model=model)
+        session.add(row)
+    row.input_price = input_price
+    row.output_price = output_price
+    row.currency = currency or "CNY"
+    session.commit()
+    return row
+
+
+def delete_price(session: Session, price_id: str) -> None:
+    row = session.get(ModelPrice, price_id)
+    if row is None:
+        raise ValueError(f"单价记录不存在：{price_id}")
+    session.delete(row)
+    session.commit()
 
 
 # 按 HTTP 状态码给判定，比按 error.kind 分得更细：
@@ -151,12 +215,77 @@ def _sync_probe(client: HttpxChatClient, config: ChatConfig) -> None:
 
 
 def project_cost_summary(session: Session, project_id: str) -> dict:
-    runs = session.scalars(
-        select(GenerationRun).where(GenerationRun.project_id == project_id)
-    ).all()
+    """按三个维度汇总：整体 / 智能体 / 任务类型。
+
+    旧字段原样保留（仪表盘与既有调用方依赖它们），新维度是加法。
+
+    **`unpriced_runs` 在读时判定**，不落库：单价配置是事后可改的，一条运行
+    「是否定价」若写死，作者补完单价后历史仍会显示未定价。
+    """
+    from app.agents.roster import task_type_label
+    from app.db.models import Agent
+
+    runs = list(
+        session.scalars(
+            select(GenerationRun).where(GenerationRun.project_id == project_id)
+        )
+    )
+    priced = {
+        (row.provider_id, row.model) for row in session.scalars(select(ModelPrice))
+    }
+    agents = {agent.id: agent for agent in session.scalars(select(Agent))}
+    priced_versions = {
+        version.id
+        for version in session.scalars(select(AgentVersion))
+        if (version.model_binding_json or {}).get("prices")
+    }
+
+    def _is_unpriced(run) -> bool:
+        if run.agent_version_id in priced_versions:
+            return False
+        return (run.provider_id, run.model) not in priced
+
+    def _bucket() -> dict:
+        return {
+            "runs": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "cost_estimate": 0.0,
+            "unpriced_runs": 0,
+        }
+
+    by_agent: dict[str, dict] = {}
+    by_task: dict[str, dict] = {}
+    for run in runs:
+        unpriced = _is_unpriced(run)
+        key = run.agent_id or ""
+        agent = agents.get(key)
+        agent_row = by_agent.setdefault(
+            key,
+            {**_bucket(), "agent_id": key, "name": agent.name if agent else "已删除的智能体"},
+        )
+        task_key = (agent.task_type if agent else "") or ""
+        task_row = by_task.setdefault(
+            task_key,
+            {**_bucket(), "task_type": task_key, "label": task_type_label(task_key or None)},
+        )
+        for row in (agent_row, task_row):
+            row["runs"] += 1
+            row["prompt_tokens"] += run.prompt_tokens
+            row["completion_tokens"] += run.completion_tokens
+            row["cost_estimate"] += run.cost_estimate
+            row["unpriced_runs"] += 1 if unpriced else 0
+
+    for rows in (by_agent.values(), by_task.values()):
+        for row in rows:
+            row["cost_estimate"] = round(row["cost_estimate"], 6)
+
     return {
         "runs": len(runs),
         "prompt_tokens": sum(r.prompt_tokens for r in runs),
         "completion_tokens": sum(r.completion_tokens for r in runs),
         "cost_estimate": round(sum(r.cost_estimate for r in runs), 6),
+        "unpriced_runs": sum(1 for r in runs if _is_unpriced(r)),
+        "by_agent": sorted(by_agent.values(), key=lambda r: -r["runs"]),
+        "by_task": sorted(by_task.values(), key=lambda r: -r["runs"]),
     }

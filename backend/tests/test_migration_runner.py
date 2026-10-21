@@ -427,7 +427,7 @@ def test_the_character_columns_are_added_to_a_pre_existing_database(clean_db):
         # 所以断言整张表而不是只取 MAX。
         assert conn.exec_driver_sql(
             "SELECT version FROM schema_migration ORDER BY version"
-        ).fetchall() == [(0,), (1,), (2,), (3,), (4,), (5,), (6,)]
+        ).fetchall() == [(0,), (1,), (2,), (3,), (4,), (5,), (6,), (7,)]
 
     scene_columns = {c["name"] for c in inspect(clean_db).get_columns("scene")}
     assert "body" in scene_columns
@@ -470,7 +470,7 @@ def test_a_legacy_database_without_the_scene_table_still_starts(clean_db):
     with clean_db.connect() as conn:
         assert conn.exec_driver_sql(
             "SELECT version FROM schema_migration ORDER BY version"
-        ).fetchall() == [(0,), (1,), (2,), (3,), (4,), (5,), (6,)]
+        ).fetchall() == [(0,), (1,), (2,), (3,), (4,), (5,), (6,), (7,)]
         assert conn.exec_driver_sql(
             "SELECT note FROM schema_migration WHERE version = 4"
         ).fetchone() == ("scene 加已采纳正文列（目标表尚未建出，由 create_all 建出）",)
@@ -478,6 +478,8 @@ def test_a_legacy_database_without_the_scene_table_still_starts(clean_db):
     # create_all 按最新模型建出了 scene，因此 body 列与表本身都在
     assert "scene" in inspect(clean_db).get_table_names()
     assert "body" in {c["name"] for c in inspect(clean_db).get_columns("scene")}
+    run_columns = {c["name"] for c in inspect(clean_db).get_columns("generation_run")}
+    assert "usage_source" in run_columns
 
     # 其它表的迁移照常执行、原有数据一行不少
     with clean_db.connect() as conn:

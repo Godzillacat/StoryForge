@@ -62,8 +62,13 @@ export const api = {
   applyPreset: (agentId: string) =>
     request<Agent>(`/api/agents/${agentId}/apply-preset`, { method: 'POST' }),
 
-  listRuns: (projectId?: string) =>
-    request<RunView[]>(`/api/runs${projectId ? `?project_id=${projectId}` : ''}`),
+  listRuns: (projectId?: string, agentId?: string) => {
+    const params = new URLSearchParams()
+    if (projectId) params.set('project_id', projectId)
+    if (agentId) params.set('agent_id', agentId)
+    const query = params.toString()
+    return request<RunView[]>(`/api/runs${query ? `?${query}` : ''}`)
+  },
   runAgent: (projectId: string, agentId: string) =>
     request<{ run: RunView; parse_error: string | null; trimmed: Record<string, string> }>('/api/runs', {
       method: 'POST',
@@ -345,6 +350,16 @@ export const api = {
       body: JSON.stringify({ values }),
     }),
   projectCost: (projectId: string) => request<CostSummary>(`/api/projects/${projectId}/cost`),
+
+  listModelPrices: () => request<ModelPrice[]>('/api/model-prices'),
+  upsertModelPrice: (body: Record<string, unknown>) =>
+    request<ModelPrice>('/api/model-prices', {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  deleteModelPrice: (id: string) =>
+    request<void>(`/api/model-prices/${id}`, { method: 'DELETE' }),
 }
 
 export interface Project {
@@ -369,6 +384,7 @@ export interface RunView {
   id: string
   agent_id: string
   model: string
+  params: Record<string, unknown>
   rendered_prompt: string
   raw_output: string
   parsed_json: Record<string, unknown> | null
@@ -377,10 +393,12 @@ export interface RunView {
   prompt_tokens: number
   completion_tokens: number
   cost_estimate: number
+  usage_source: string
   duration_ms: number
   status: string
   error: { kind: string; message: string } | null
   trimmed: Record<string, string>
+  created_at: string
 }
 
 export interface ArchitectureOption {
@@ -493,7 +511,8 @@ export interface ProviderView {
 export interface Settings {
   context_token_budget: number
   default_params: { temperature: number; max_tokens: number }
-  model_routing: Record<string, string>
+  model_routing: Record<string, unknown>
+  default_model?: string | null
   budget_alert: number | null
   request_timeout_seconds: number
 }
@@ -503,6 +522,30 @@ export interface CostSummary {
   prompt_tokens: number
   completion_tokens: number
   cost_estimate: number
+  unpriced_runs: number
+  by_agent: CostBreakdown[]
+  by_task: CostBreakdown[]
+}
+
+export interface CostBreakdown {
+  runs: number
+  prompt_tokens: number
+  completion_tokens: number
+  cost_estimate: number
+  unpriced_runs: number
+  agent_id?: string
+  name?: string
+  task_type?: string
+  label?: string
+}
+
+export interface ModelPrice {
+  id: string
+  provider_id: string
+  model: string
+  input_price: number
+  output_price: number
+  currency: string
 }
 
 export interface SlotSpec {

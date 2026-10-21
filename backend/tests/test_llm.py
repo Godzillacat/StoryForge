@@ -1,7 +1,15 @@
+import json
+
 import httpx
 import pytest
 
-from app.runtime.llm import ChatConfig, ChatFailure, HttpxChatClient
+from app.runtime.llm import (
+    ChatConfig,
+    ChatFailure,
+    HttpxChatClient,
+    StreamDelta,
+    StreamUsage,
+)
 
 CONFIG = ChatConfig(base_url="https://api.example.com/v1", api_key="sk-test", model="m1")
 MESSAGES = [{"role": "user", "content": "你好"}]
@@ -86,25 +94,28 @@ async def test_stream_yields_content_chunks():
     def handler(request):
         return httpx.Response(200, text=body, headers={"content-type": "text/event-stream"})
 
-    chunks = [c async for c in _client(handler).stream(CONFIG, MESSAGES, {})]
-    assert chunks == ["你", "好"]
+    events = [c async for c in _client(handler).stream(CONFIG, MESSAGES, {})]
+    assert events == [StreamDelta("你"), StreamDelta("好")]
 
 
 async def test_stream_failure_preserves_content_already_received():
     # 先吐两个 data 块，然后传输层中断
     def handler(request):
         async def body():
-            yield b'data: {"choices":[{"delta":{"content":"\xe4\xbd\xa0"}}]}\n\n'
-            yield b'data: {"choices":[{"delta":{"content":"\xe5\xa5\xbd"}}]}\n\n'
+            for text in ("你", "好"):
+                payload = json.dumps(
+                    {"choices": [{"delta": {"content": text}}]}, ensure_ascii=False
+                )
+                yield f"data: {payload}\n\n".encode()
             raise httpx.ReadError("connection dropped")
 
         return httpx.Response(200, content=body(), headers={"content-type": "text/event-stream"})
 
-    chunks = []
+    events = []
     with pytest.raises(ChatFailure) as exc:
-        async for chunk in _client(handler).stream(CONFIG, MESSAGES, {}):
-            chunks.append(chunk)
-    assert chunks == ["你", "好"]
+        async for event in _client(handler).stream(CONFIG, MESSAGES, {}):
+            events.append(event)
+    assert events == [StreamDelta("你"), StreamDelta("好")]
     assert exc.value.partial_text == "你好"
 
 
@@ -130,3 +141,85 @@ async def test_timeout_message_carries_the_limit():
     assert excinfo.value.error.kind == "timeout"
     assert "275" in excinfo.value.error.message
     assert not excinfo.value.error.message.endswith("：")
+
+
+async def test_stream_requests_usage_and_emits_it():
+    seen: list[dict] = []
+    body = (
+        'data: {"choices":[{"delta":{"content":"你"}}]}\n\n'
+        'data: {"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":7}}\n\n'
+        "data: [DONE]\n\n"
+    )
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, text=body, headers={"content-type": "text/event-stream"})
+
+    events = [e async for e in _client(handler).stream(CONFIG, MESSAGES, {})]
+
+    assert seen[0]["stream_options"] == {"include_usage": True}
+    assert events == [StreamDelta("你"), StreamUsage(11, 7)]
+
+
+async def test_stream_retries_once_without_stream_options_on_400():
+    calls: list[dict] = []
+    body = 'data: {"choices":[{"delta":{"content":"好"}}]}\n\ndata: [DONE]\n\n'
+
+    def handler(request):
+        payload = json.loads(request.content)
+        calls.append(payload)
+        if "stream_options" in payload:
+            return httpx.Response(400, json={"error": {"message": "unknown field"}})
+        return httpx.Response(200, text=body, headers={"content-type": "text/event-stream"})
+
+    events = [e async for e in _client(handler).stream(CONFIG, MESSAGES, {})]
+
+    assert len(calls) == 2
+    assert "stream_options" not in calls[1]
+    assert events == [StreamDelta("好")]
+
+
+async def test_stream_400_twice_is_reported_as_failure():
+    calls: list[dict] = []
+
+    def handler(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(400, json={"error": {"message": "bad"}})
+
+    with pytest.raises(ChatFailure) as exc:
+        async for _event in _client(handler).stream(CONFIG, MESSAGES, {}):
+            pass
+
+    assert len(calls) == 2
+    assert exc.value.error.kind == "bad_request"
+
+
+async def test_stream_without_usage_emits_no_usage_event():
+    body = (
+        'data: {"choices":[{"delta":{"content":"你"}}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+
+    def handler(request):
+        return httpx.Response(200, text=body, headers={"content-type": "text/event-stream"})
+
+    events = [e async for e in _client(handler).stream(CONFIG, MESSAGES, {})]
+
+    assert events == [StreamDelta("你")]
+
+
+async def test_non_stream_reports_whether_usage_came_from_provider():
+    def with_usage(request):
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "x"}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 4},
+            },
+        )
+
+    def without_usage(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": "x"}}]})
+
+    assert (await _client(with_usage).complete(CONFIG, MESSAGES, {})).usage_available is True
+    assert (await _client(without_usage).complete(CONFIG, MESSAGES, {})).usage_available is False

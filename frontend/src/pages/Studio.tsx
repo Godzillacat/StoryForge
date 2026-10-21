@@ -29,6 +29,7 @@ export default function Studio() {
   const [selected, setSelected] = useState<Agent | null>(null)
   const [versions, setVersions] = useState<AgentVersion[]>([])
   const [run, setRun] = useState<RunView | null>(null)
+  const [recentRuns, setRecentRuns] = useState<RunView[]>([])
   const [notice, setNotice] = useState('')
 
   const [draft, setDraft] = useState({
@@ -91,6 +92,7 @@ export default function Studio() {
       setRun(null)
     }
     api.listVersions(selected.id).then(setVersions)
+    api.listRuns(undefined, selected.id).then(setRecentRuns).catch(() => setRecentRuns([]))
   }, [selected])
 
   async function refreshAgents(agentId?: string) {
@@ -186,6 +188,7 @@ export default function Studio() {
     try {
       const response = await api.runAgent(projectId, selected.id)
       setRun(response.run)
+      setRecentRuns((prev) => [response.run, ...prev].slice(0, 20))
       setNotice('')
     } catch (error) {
       setNotice((error as Error).message)
@@ -367,7 +370,8 @@ export default function Studio() {
                 </select>
               </div>
               <p className="text-xs text-slate-500">
-                模型名必须与服务商提供的一致，否则调用会失败。参数档目前只存不生效（属 P3）。
+                模型名必须与服务商提供的一致，否则调用会失败。参数档决定发出去的采样参数：
+                严谨（temperature 0.2）、平衡（0.7）、发散（1.0）。没绑模型时会跟随「模型与费用」里的任务分路。
               </p>
             </section>
 
@@ -463,6 +467,31 @@ export default function Studio() {
                 <RunTrace run={run} />
               </section>
             )}
+
+            <section className="space-y-2 text-sm">
+              <h3 className="font-medium text-slate-300">最近运行</h3>
+              {recentRuns.length === 0 ? (
+                <p className="text-slate-500">这个智能体还没有运行记录。</p>
+              ) : (
+                <ul className="space-y-1">
+                  {recentRuns.map((item) => (
+                    <li key={item.id} className="flex flex-wrap items-center gap-3 text-xs">
+                      <span className="text-slate-500">
+                        {new Date(item.created_at ?? '').toLocaleString()}
+                      </span>
+                      <span className="text-slate-400">{item.model || '未指定模型'}</span>
+                      <span>{item.prompt_tokens + item.completion_tokens} tokens</span>
+                      <span className={item.status === 'ok' ? 'text-emerald-400' : 'text-amber-400'}>
+                        {item.status}
+                      </span>
+                      <button className="text-indigo-400" onClick={() => setRun(item)}>
+                        查看
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           </div>
         ) : (
           <p className="text-sm text-slate-500">左边挑一个智能体。</p>

@@ -18,6 +18,10 @@ from app.runtime.execute import (
     prepare_prompt,
 )
 from app.runtime.llm import ChatClient, ChatConfig, HttpxChatClient
+from app.runtime.params import resolve_params
+from app.runtime.pricing import resolve_prices
+from app.runtime.routing import resolve_binding
+from app.services import provider_service
 from app.services.slot_source import DbSlotSource
 
 
@@ -27,11 +31,13 @@ class PreparedExecution:
     version: AgentVersion
     provider: Provider
     model: str
+    profile: str
     params: dict
     prices: dict | None
     config: ChatConfig
     prompt: PreparedPrompt
     client: ChatClient
+    warnings: tuple[str, ...] = ()
 
 
 class RuntimeService:
@@ -57,15 +63,18 @@ class RuntimeService:
         return float(config.load_settings().get("request_timeout_seconds", 300))
 
     def resolve_provider(
-        self, version: AgentVersion
+        self, provider_id: str | None, prices: dict | None = None
     ) -> tuple[Provider, str, str, dict]:
-        """返回 (provider, base_url, api_key, prices)。密钥从 DPAPI 取，不进数据库。"""
-        binding = version.model_binding_json or {}
-        provider_id = binding.get("provider_id")
+        """返回 (provider, base_url, api_key, prices)。密钥从 DPAPI 取，不进数据库。
 
+        显式指定 `provider_id` 却找不到时**报错**，不静默回落到第一家：
+        作者会以为在用 A 家、实际在花 B 家的钱。只有完全没指定时才按优先级取。
+        """
         provider: Provider | None = None
         if provider_id:
             provider = self._session.get(Provider, provider_id)
+            if provider is None:
+                raise ValueError(f"指定的服务商不存在：{provider_id}")
         if provider is None:
             provider = self._session.scalars(
                 select(Provider).where(Provider.enabled.is_(True)).order_by(Provider.priority)
@@ -76,8 +85,7 @@ class RuntimeService:
         api_key = dpapi.get_secret(provider.api_key_ref) if provider.api_key_ref else ""
         if api_key is None:
             api_key = ""
-        prices = binding.get("prices") or {}
-        return provider, provider.base_url, api_key, prices
+        return provider, provider.base_url, api_key, prices or {}
 
     def prepare_context(
         self,
@@ -125,31 +133,54 @@ class RuntimeService:
         agent, version, prompt = self.prepare_context(
             project_id, agent_id, extra, allow_missing=allow_missing
         )
-        provider, base_url, api_key, prices = self.resolve_provider(version)
         binding = version.model_binding_json or {}
         settings = config.load_settings()
 
+        resolved = resolve_binding(
+            version_binding=binding,
+            version_profile=version.param_profile,
+            task_type=agent.task_type,
+            routing=settings.get("model_routing") or {},
+            default_model=settings.get("default_model"),
+            # 预置阵容出厂就带 strict / balanced，那不是作者的意见 ——
+            # 否则分路里的参数档对预置智能体永远不生效。
+            profile_is_authorial=version.preset_fingerprint is None,
+        )
+
         # 不要回落到 provider.name —— 那是服务商的显示名，不是模型 ID，
         # 发出去必然被拒，而错误信息会把作者引到错误的方向。
-        model = binding.get("model") or settings.get("default_model")
+        model = resolved.binding.get("model")
         if not model:
             raise ValueError(
-                f"智能体「{agent.name}」还没有绑定模型，请先在「智能体工作室」为它指定一个"
+                f"智能体「{agent.name}」还没有绑定模型，请先在「智能体工作室」为它指定，"
+                f"或在「模型与费用」里为任务 {agent.task_type} 配置模型分路"
             )
-        params = {
-            **settings.get("default_params", {}),
-            **(binding.get("params") or {}),
-        }
+
+        provider, base_url, api_key, binding_prices = self.resolve_provider(
+            resolved.binding.get("provider_id"), binding.get("prices") or None
+        )
+        # 单价要等 provider 与 model 都定下来才能查 —— 顺序不能提前。
+        prices = resolve_prices(
+            binding_prices,
+            provider_service.price_dict(self._session, provider.id, model),
+        )
+        params, param_warnings = resolve_params(
+            profile=resolved.profile,
+            default_params=settings.get("default_params", {}),
+            override=binding.get("params") or {},
+        )
         return PreparedExecution(
             agent=agent,
             version=version,
             provider=provider,
             model=model,
+            profile=resolved.profile,
             params=params,
             prices=prices,
             config=ChatConfig(base_url=base_url, api_key=api_key, model=model),
             prompt=prompt,
             client=self._resolve_client(self._resolve_timeout(binding)),
+            warnings=tuple([*resolved.warnings, *param_warnings]),
         )
 
     def execute(
@@ -194,6 +225,7 @@ class RuntimeService:
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
             cost_estimate=result.cost_estimate,
+            usage_source=result.usage_source,
             duration_ms=result.duration_ms,
             status=result.status,
             error_json=result.error,

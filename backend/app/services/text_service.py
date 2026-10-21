@@ -368,6 +368,7 @@ def finalize_run(
     cost_estimate: float,
     duration_ms: int,
     error: dict | None,
+    usage_source: str = "estimated",
 ) -> str | None:
     """幂等收尾：只有 running 的运行会更新；成功后覆盖草稿，失败只补空缺。"""
     with SessionLocal() as session:
@@ -379,6 +380,7 @@ def finalize_run(
         run.prompt_tokens = prompt_tokens
         run.completion_tokens = completion_tokens
         run.cost_estimate = cost_estimate
+        run.usage_source = usage_source
         run.duration_ms = duration_ms
         run.status = status
         run.error_json = error

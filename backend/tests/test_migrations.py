@@ -6,14 +6,14 @@ def test_the_first_real_migration_adds_the_character_columns():
 
     只加可空列：SQLite 的 ALTER TABLE ADD COLUMN 对可空列是原地操作，
     作者的存量数据不受影响，也不触发改列类型所需的 12 步重建。"""
-    assert [m.version for m in migrations.MIGRATIONS] == [1, 2, 3, 4, 5, 6]
+    assert [m.version for m in migrations.MIGRATIONS] == [1, 2, 3, 4, 5, 6, 7]
 
     step = migrations.MIGRATIONS[0]
     assert all(
         statement.startswith("ALTER TABLE setting_entry ADD COLUMN ")
         for statement in step.statements
     )
-    assert migrations.latest_version() == 6
+    assert migrations.latest_version() == 7
 
 
 def test_the_first_real_migration_is_frozen_history():
@@ -120,3 +120,13 @@ def test_pending_sorts_by_version_even_if_the_list_is_out_of_order(monkeypatch):
     )
 
     assert [m.version for m in migrations.pending(0)] == [1, 2]
+
+
+def test_v7_records_usage_source():
+    migration = next(m for m in migrations.MIGRATIONS if m.version == 7)
+
+    assert migration.requires == ("generation_run",)
+    joined = " ".join(migration.statements)
+    assert "ALTER TABLE generation_run ADD COLUMN usage_source" in joined
+    # 存量运行记录都是估算出来的，默认值必须与这条历史事实一致。
+    assert "'estimated'" in joined

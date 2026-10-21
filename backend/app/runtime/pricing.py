@@ -38,3 +38,22 @@ def compute_cost(prompt_tokens: int, completion_tokens: int, prices: dict | None
     input_price = float(prices.get("input") or 0.0)
     output_price = float(prices.get("output") or 0.0)
     return (prompt_tokens * input_price + completion_tokens * output_price) / 1_000_000
+
+
+def resolve_prices(
+    binding_prices: dict | None, price_row: dict | None
+) -> dict | None:
+    """单价解析：角色卡绑定里的 prices 优先，其次模型单价表。
+
+    保留绑定优先是为了兼容 P1a 以来的数据与测试；界面上已不再鼓励写它。
+    两者都没有时返回 None —— 调用方据此判断这条运行「未定价」，
+    而不是把 0 当成「免费」。
+    """
+    if binding_prices:
+        return binding_prices
+    if price_row:
+        return {
+            "input": float(price_row.get("input_price") or 0.0),
+            "output": float(price_row.get("output_price") or 0.0),
+        }
+    return None
