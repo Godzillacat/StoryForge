@@ -287,6 +287,44 @@ def test_worldbuilder_type_descriptions_match_the_vocabulary():
         assert label in described, f"契约说明块没有讲到类型「{label}」"
 
 
+def test_auditor_is_in_the_default_roster():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "auditor")
+    assert entry["name"] == "审校"
+    assert entry["task_type"] == "continuity"
+    assert entry["param_profile"] == "balanced"
+    assert entry["trigger_mode"] == "manual"
+    assert entry["context_slots"] == [
+        "project_core",
+        "story_bible",
+        "world_context",
+        "volume_outline",
+        "chapter_outline",
+        "timeline",
+        "scene_card",
+        "scene_characters",
+        "related_settings",
+        "scene_text",
+    ]
+
+    props = entry["output_schema"]["properties"]
+    assert set(props) == {"issues"}
+    assert entry["output_schema"]["required"] == ["issues"]
+    item = props["issues"]["items"]
+    assert set(item["required"]) == {"kind", "severity", "quote", "rule_ref", "explanation"}
+    assert "称呼" in item["properties"]["kind"]["title"]
+    assert "致命" in item["properties"]["severity"]["title"]
+
+
+def test_auditor_prompt_only_looks_for_errors():
+    entry = next(e for e in DEFAULT_ROSTER if e["key"] == "auditor")
+    prompt = entry["system_prompt"]
+    assert "只找「写错了」" in prompt
+    assert "不评价文笔" in prompt
+    assert "不给改稿" in prompt
+    assert "不新造设定" in prompt
+    assert "{{ scene_text }}" in prompt
+
+
 _SLOT_VARIABLE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 
 
