@@ -84,6 +84,21 @@ MIGRATIONS: tuple[Migration, ...] = (
         requires=("scene",),
         statements=("ALTER TABLE scene ADD COLUMN body TEXT",),
     ),
+    # 逻辑自检复用 audit_issue：用 check_type 区分两类检查，layer 记逻辑层，
+    # stage 隔离「开写前」与「定稿前」两套问题生命周期。
+    # `requires` 只列出本步真正要改的表：从 P2a 直接升级的库还没有 audit_issue，
+    # 整步跳过、由 create_all 按当前模型建出（已含这三列）。
+    Migration(
+        version=5,
+        note="audit_issue 加检查类型、逻辑层与时机",
+        requires=("audit_issue",),
+        statements=(
+            "ALTER TABLE audit_issue ADD COLUMN check_type VARCHAR(20) NOT NULL DEFAULT 'consistency'",
+            "ALTER TABLE audit_issue ADD COLUMN layer VARCHAR(30)",
+            "ALTER TABLE audit_issue ADD COLUMN stage VARCHAR(10) NOT NULL DEFAULT 'text'",
+            "CREATE INDEX ix_audit_issue_scene_check ON audit_issue(scene_id, check_type, stage, status)",
+        ),
+    ),
 )
 
 BASELINE_VERSION = 0

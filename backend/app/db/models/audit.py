@@ -17,11 +17,24 @@ class AuditIssue(IdMixin, TimestampMixin, Base):
     __tablename__ = "audit_issue"
     __table_args__ = (
         Index("ix_audit_issue_scene_status", "scene_id", "status"),
+        Index(
+            "ix_audit_issue_scene_check",
+            "scene_id",
+            "check_type",
+            "stage",
+            "status",
+        ),
     )
 
     project_id: Mapped[str] = mapped_column(
         ForeignKey("project.id", ondelete="CASCADE"), index=True
     )
+    # consistency | logic：一致性审计与逻辑自检共用这张表与处理生命周期
+    check_type: Mapped[str] = mapped_column(String(20), default="consistency")
+    # 逻辑问题的层面；一致性审计为 NULL
+    layer: Mapped[str | None] = mapped_column(String(30), default=None)
+    # plan | text：逻辑自检的两个时机；一致性审计固定为 text
+    stage: Mapped[str] = mapped_column(String(10), default="text")
     scene_id: Mapped[str] = mapped_column(
         ForeignKey("scene.id", ondelete="CASCADE")
     )
