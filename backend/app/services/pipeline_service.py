@@ -260,6 +260,11 @@ def advance_run(session: Session, run_id: str) -> None:
     if run.cursor >= len(run_nodes(session, run_id)):
         run.status = "completed"
         run.message = ""
+        # 收尾时把「停在检查点」的标记收掉：整条管线都跑完了，
+        # 还留着「待确认」会让作者以为有一步没做。
+        for other in run_nodes(session, run_id):
+            if other.status == "awaiting":
+                other.status = "ok"
     session.commit()
 
 

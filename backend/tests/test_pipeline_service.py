@@ -412,3 +412,27 @@ def test_real_executor_blocked_by_missing_idea(session, project):
     node = pipeline_service.run_nodes(session, run.id)[0]
     assert node.status == "blocked"
     assert "灵感与解析" in node.message
+
+
+def test_completing_clears_awaiting_markers(session, project, monkeypatch):
+    """整条管线跑完后，停在检查点的节点不该继续显示「待确认」。"""
+    _stub_executors(monkeypatch)
+    pipeline_service.update_pipeline(
+        session,
+        project.id,
+        policy="key_only",
+        nodes=[
+            {"name": "一", "task_type": "idea_parse", "checkpoint": True},
+            {"name": "二", "task_type": "architecture"},
+        ],
+    )
+    run = pipeline_service.start_run(session, project.id)
+    pipeline_service.advance_run(session, run.id)
+    session.expire_all()
+    assert pipeline_service.run_nodes(session, run.id)[0].status == "awaiting"
+
+    pipeline_service.resume_run(session, run.id)
+    final = _drain(session, run.id)
+
+    assert final.status == "completed"
+    assert [n.status for n in pipeline_service.run_nodes(session, run.id)] == ["ok", "ok"]
