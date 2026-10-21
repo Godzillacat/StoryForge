@@ -5,6 +5,7 @@ from app.db.models.batch import BatchJob
 from app.db.models.chapter import Chapter, Foreshadow, Scene, Volume
 from app.db.models.config_models import ModelPrice, Provider, Setting
 from app.db.models.idea import Idea
+from app.db.models.pipeline import Pipeline, PipelineNode, PipelineRun, PipelineRunNode
 from app.db.models.project import Project
 from app.db.models.run import GenerationRun
 from app.db.models.search import SearchIndexState
@@ -26,6 +27,10 @@ __all__ = [
     "GenerationRun",
     "Idea",
     "ModelPrice",
+    "Pipeline",
+    "PipelineNode",
+    "PipelineRun",
+    "PipelineRunNode",
     "Project",
     "Provider",
     "Scene",

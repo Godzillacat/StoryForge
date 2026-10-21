@@ -351,6 +351,28 @@ export const api = {
     }),
   projectCost: (projectId: string) => request<CostSummary>(`/api/projects/${projectId}/cost`),
 
+  getPipeline: (projectId: string) =>
+    request<Pipeline>(`/api/projects/${projectId}/pipeline`),
+  updatePipeline: (projectId: string, body: Record<string, unknown>) =>
+    request<Pipeline>(`/api/projects/${projectId}/pipeline`, {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  resetPipeline: (projectId: string) =>
+    request<Pipeline>(`/api/projects/${projectId}/pipeline/reset`, { method: 'POST' }),
+  startPipelineRun: (projectId: string) =>
+    request<PipelineRun>(`/api/projects/${projectId}/pipeline/runs`, { method: 'POST' }),
+  latestPipelineRun: (projectId: string) =>
+    request<PipelineRun | null>(`/api/projects/${projectId}/pipeline/runs/latest`),
+  getPipelineRun: (runId: string) => request<PipelineRun>(`/api/pipeline-runs/${runId}`),
+  pausePipelineRun: (runId: string) =>
+    request<PipelineRun>(`/api/pipeline-runs/${runId}/pause`, { method: 'POST' }),
+  resumePipelineRun: (runId: string) =>
+    request<PipelineRun>(`/api/pipeline-runs/${runId}/resume`, { method: 'POST' }),
+  cancelPipelineRun: (runId: string) =>
+    request<PipelineRun>(`/api/pipeline-runs/${runId}/cancel`, { method: 'POST' }),
+
   listModelPrices: () => request<ModelPrice[]>('/api/model-prices'),
   upsertModelPrice: (body: Record<string, unknown>) =>
     request<ModelPrice>('/api/model-prices', {
@@ -1047,4 +1069,46 @@ export async function streamSceneGeneration(
   if (tail) {
     for (const event of parser.push(tail)) dispatch(event.event, event.data)
   }
+}
+
+export interface PipelineNodeSpec {
+  id: string
+  seq: number
+  name: string
+  task_type: string
+  agent_id: string | null
+  checkpoint: boolean
+  enabled: boolean
+}
+
+export interface Pipeline {
+  id: string
+  project_id: string
+  policy: string
+  nodes: PipelineNodeSpec[]
+  node_types: { task_type: string; label: string }[]
+  policies: { value: string; label: string }[]
+}
+
+export interface PipelineRunNode {
+  id: string
+  seq: number
+  name: string
+  task_type: string
+  agent_id: string | null
+  status: string
+  generation_run_id: string | null
+  summary: Record<string, unknown>
+  message: string
+}
+
+export interface PipelineRun {
+  id: string
+  project_id: string
+  policy: string
+  status: string
+  cursor: number
+  message: string
+  nodes: PipelineRunNode[]
+  created_at: string
 }
