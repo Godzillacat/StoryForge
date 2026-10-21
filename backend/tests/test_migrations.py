@@ -6,14 +6,14 @@ def test_the_first_real_migration_adds_the_character_columns():
 
     只加可空列：SQLite 的 ALTER TABLE ADD COLUMN 对可空列是原地操作，
     作者的存量数据不受影响，也不触发改列类型所需的 12 步重建。"""
-    assert [m.version for m in migrations.MIGRATIONS] == [1, 2, 3, 4]
+    assert [m.version for m in migrations.MIGRATIONS] == [1, 2, 3, 4, 5, 6]
 
     step = migrations.MIGRATIONS[0]
     assert all(
         statement.startswith("ALTER TABLE setting_entry ADD COLUMN ")
         for statement in step.statements
     )
-    assert migrations.latest_version() == 4
+    assert migrations.latest_version() == 6
 
 
 def test_the_first_real_migration_is_frozen_history():
@@ -58,6 +58,26 @@ def test_v3_adds_preset_identity_and_fingerprint():
 def test_v4_adds_the_scene_body_column():
     step = migrations.MIGRATIONS[3]
     assert step.statements == ("ALTER TABLE scene ADD COLUMN body TEXT",)
+
+
+def test_v5_adds_logic_columns_to_audit_issue():
+    step = migrations.MIGRATIONS[4]
+    assert step.requires == ("audit_issue",)
+    assert step.statements == (
+        "ALTER TABLE audit_issue ADD COLUMN check_type VARCHAR(20) NOT NULL DEFAULT 'consistency'",
+        "ALTER TABLE audit_issue ADD COLUMN layer VARCHAR(30)",
+        "ALTER TABLE audit_issue ADD COLUMN stage VARCHAR(10) NOT NULL DEFAULT 'text'",
+        "CREATE INDEX ix_audit_issue_scene_check ON audit_issue(scene_id, check_type, stage, status)",
+    )
+
+
+def test_v6_adds_actual_pay_scene_to_foreshadow():
+    step = migrations.MIGRATIONS[5]
+    assert step.requires == ("foreshadow",)
+    assert step.statements == (
+        "ALTER TABLE foreshadow ADD COLUMN actual_pay_scene_id VARCHAR(36) REFERENCES scene(id) ON DELETE SET NULL",
+        "CREATE INDEX ix_foreshadow_actual_pay ON foreshadow(actual_pay_scene_id)",
+    )
 
 
 def test_schema_migration_baseline_still_zero():

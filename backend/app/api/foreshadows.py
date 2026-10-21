@@ -22,6 +22,7 @@ def _out(row) -> dict:
         "note": row.note,
         "plant_scene_id": row.plant_scene_id,
         "plan_pay_scene_id": row.plan_pay_scene_id,
+        "actual_pay_scene_id": row.actual_pay_scene_id,
         "status": row.status,
         "source_run_id": row.source_run_id,
     }

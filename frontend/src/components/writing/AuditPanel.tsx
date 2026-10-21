@@ -71,7 +71,9 @@ export default function AuditPanel({
               >
                 {issue.severity_label}
               </span>
-              <span className="text-slate-400">{issue.kind_label}</span>
+              <span className="text-slate-400">
+                {issue.layer_label ?? issue.kind_label}
+              </span>
             </div>
 
             {issue.quote && (

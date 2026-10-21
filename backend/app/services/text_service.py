@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import config
@@ -145,6 +146,31 @@ def save_draft(session: Session, scene_id: str, content: str) -> dict:
     draft.content = content or ""
     session.commit()
     return _draft_out(draft)
+
+
+def save_generated_draft(
+    session: Session, scene_id: str, content: str, run_id: str | None = None
+) -> bool:
+    """批量生成把结果落为草稿；已有正文或已有草稿时拒绝覆盖。
+
+    返回是否真的写入 —— 调用方（批量任务）据此区分「生成成功」与「跳过」。
+    """
+    scene = _scene(session, scene_id)
+    if (scene.body or "").strip():
+        return False
+    if _draft(session, scene_id) is not None:
+        return False
+    session.add(
+        SceneDraft(scene_id=scene.id, content=content or "", run_id=run_id)
+    )
+    try:
+        session.commit()
+    except IntegrityError:
+        # 两个 worker 同时写同一场时，唯一约束是最后一道防线；输的一方
+        # 当作「已有草稿、跳过」，而不是让线程带着异常退出。
+        session.rollback()
+        return False
+    return True
 
 
 def discard_draft(session: Session, scene_id: str) -> None:

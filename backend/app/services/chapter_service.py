@@ -297,6 +297,11 @@ def _scene_foreshadows(
             for item in foreshadows
             if item.plan_pay_scene_id == scene_id
         ],
+        "actual_pays": [
+            {"id": item.id, "name": item.name}
+            for item in foreshadows
+            if item.actual_pay_scene_id == scene_id
+        ],
     }
 
 

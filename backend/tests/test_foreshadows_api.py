@@ -6,6 +6,7 @@ def test_foreshadow_crud_over_http(client):
         json={"name": "失忆的录音带", "note": "主角的过去"},
     ).json()
     assert created["name"] == "失忆的录音带"
+    assert created["actual_pay_scene_id"] is None
 
     listed = client.get(f"/api/projects/{project['id']}/foreshadows").json()
     assert [row["id"] for row in listed] == [created["id"]]

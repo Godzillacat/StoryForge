@@ -51,15 +51,28 @@ def _clean_name(value: str | None) -> str:
     return name
 
 
+def _checked_scene_id(session: Session, project_id: str, scene_id: str) -> str:
+    scene = session.get(Scene, scene_id)
+    if scene is None:
+        raise ValueError(f"场景不存在：{scene_id}")
+    if get_project_for_scene(session, scene) != project_id:
+        raise ValueError(f"场景不属于这个项目：{scene_id}")
+    return scene_id
+
+
 def create_foreshadow(session: Session, project_id: str, **fields) -> Foreshadow:
     name = _clean_name(fields.get("name"))
     if find_by_name(session, project_id, name) is not None:
         raise ValueError(f"这个项目里已经有叫「{name}」的伏笔了")
+    actual = fields.get("actual_pay_scene_id") or None
+    if actual:
+        actual = _checked_scene_id(session, project_id, actual)
     row = Foreshadow(
         project_id=project_id,
         name=name,
         note=fields.get("note") or "",
         status=normalize_status(fields.get("status")),
+        actual_pay_scene_id=actual,
         source_run_id=fields.get("source_run_id"),
     )
     session.add(row)
@@ -84,12 +97,13 @@ def update_foreshadow(session: Session, foreshadow_id: str, **fields) -> Foresha
         if "plan_pay_scene_id" in fields:
             scene_id = fields.get("plan_pay_scene_id")
             if scene_id:
-                scene = session.get(Scene, scene_id)
-                if scene is None:
-                    raise ValueError(f"场景不存在：{scene_id}")
-                if get_project_for_scene(session, scene) != row.project_id:
-                    raise ValueError(f"场景不属于这个项目：{scene_id}")
+                _checked_scene_id(session, row.project_id, scene_id)
             row.plan_pay_scene_id = scene_id or None
+        if "actual_pay_scene_id" in fields:
+            scene_id = fields.get("actual_pay_scene_id")
+            if scene_id:
+                _checked_scene_id(session, row.project_id, scene_id)
+            row.actual_pay_scene_id = scene_id or None
         if "status" in fields:
             row.status = normalize_status(fields.get("status"))
         session.commit()

@@ -84,6 +84,32 @@ MIGRATIONS: tuple[Migration, ...] = (
         requires=("scene",),
         statements=("ALTER TABLE scene ADD COLUMN body TEXT",),
     ),
+    # 逻辑自检复用 audit_issue：用 check_type 区分两类检查，layer 记逻辑层，
+    # stage 隔离「开写前」与「定稿前」两套问题生命周期。
+    # `requires` 只列出本步真正要改的表：从 P2a 直接升级的库还没有 audit_issue，
+    # 整步跳过、由 create_all 按当前模型建出（已含这三列）。
+    Migration(
+        version=5,
+        note="audit_issue 加检查类型、逻辑层与时机",
+        requires=("audit_issue",),
+        statements=(
+            "ALTER TABLE audit_issue ADD COLUMN check_type VARCHAR(20) NOT NULL DEFAULT 'consistency'",
+            "ALTER TABLE audit_issue ADD COLUMN layer VARCHAR(30)",
+            "ALTER TABLE audit_issue ADD COLUMN stage VARCHAR(10) NOT NULL DEFAULT 'text'",
+            "CREATE INDEX ix_audit_issue_scene_check ON audit_issue(scene_id, check_type, stage, status)",
+        ),
+    ),
+    # 伏笔实际回收：只记录「在哪个场景被兑现」，不改规划状态。
+    # 与 v5 分开：从 P2a 升级的库可能还没有 audit_issue，合并会触发「部分缺表」。
+    Migration(
+        version=6,
+        note="foreshadow 加实际回收场景",
+        requires=("foreshadow",),
+        statements=(
+            "ALTER TABLE foreshadow ADD COLUMN actual_pay_scene_id VARCHAR(36) REFERENCES scene(id) ON DELETE SET NULL",
+            "CREATE INDEX ix_foreshadow_actual_pay ON foreshadow(actual_pay_scene_id)",
+        ),
+    ),
 )
 
 BASELINE_VERSION = 0

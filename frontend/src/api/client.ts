@@ -248,6 +248,50 @@ export const api = {
     request<AuditResult>(`/api/scenes/${sceneId}/audit`, { method: 'POST' }),
   getSceneAudit: (sceneId: string) =>
     request<AuditView>(`/api/scenes/${sceneId}/audit`),
+  runSceneLogicCheck: (sceneId: string, stage: LogicStage) =>
+    request<LogicCheckResult>(`/api/scenes/${sceneId}/logic-check`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ stage }),
+    }),
+  getSceneLogicCheck: (sceneId: string, stage: LogicStage) =>
+    request<LogicCheckView>(
+      `/api/scenes/${sceneId}/logic-check?stage=${encodeURIComponent(stage)}`,
+    ),
+  runSceneWriteback: (sceneId: string) =>
+    request<WritebackSuggestion>(`/api/scenes/${sceneId}/writeback`, {
+      method: 'POST',
+    }),
+  applySceneWriteback: (sceneId: string, payload: WritebackApplyPayload) =>
+    request<WritebackApplyResult>(`/api/scenes/${sceneId}/writeback/apply`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(payload),
+    }),
+  createBatch: (
+    projectId: string,
+    body: { scope_type: 'chapter' | 'volume'; scope_id: string },
+  ) =>
+    request<BatchJob>(`/api/projects/${projectId}/batches`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  getBatch: (jobId: string) => request<BatchJob>(`/api/batches/${jobId}`),
+  getLatestBatch: (projectId: string) =>
+    request<BatchJob | null>(`/api/projects/${projectId}/batches/latest`),
+  pauseBatch: (jobId: string) =>
+    request<BatchJob>(`/api/batches/${jobId}/pause`, { method: 'POST' }),
+  resumeBatch: (jobId: string) =>
+    request<BatchJob>(`/api/batches/${jobId}/resume`, { method: 'POST' }),
+  cancelBatch: (jobId: string) =>
+    request<BatchJob>(`/api/batches/${jobId}/cancel`, { method: 'POST' }),
+  retryBatchFailed: (jobId: string) =>
+    request<BatchJob>(`/api/batches/${jobId}/retry-failed`, { method: 'POST' }),
+  getExportReport: (projectId: string) =>
+    request<ExportReport>(`/api/projects/${projectId}/export/report`),
+  exportUrl: (projectId: string, format: 'md' | 'txt' | 'epub') =>
+    `/api/projects/${projectId}/export?format=${format}`,
   resolveAuditIssue: (issueId: string, resolution: AuditResolution) =>
     request<AuditIssue>(`/api/audit/issues/${issueId}`, {
       method: 'PATCH',
@@ -582,7 +626,11 @@ export interface SceneNode {
   status: string
   source_run_id: string | null
   has_body: boolean
-  foreshadows: { plants: { id: string; name: string }[]; pays: { id: string; name: string }[] }
+  foreshadows: {
+    plants: { id: string; name: string }[]
+    pays: { id: string; name: string }[]
+    actual_pays: { id: string; name: string }[]
+  }
 }
 
 export interface Foreshadow {
@@ -592,6 +640,7 @@ export interface Foreshadow {
   note: string
   plant_scene_id: string | null
   plan_pay_scene_id: string | null
+  actual_pay_scene_id: string | null
   status: string
   source_run_id: string | null
 }
@@ -749,8 +798,12 @@ export interface AuditIssue {
   id: string
   source: string
   source_label: string
+  check_type?: string
   kind: string
   kind_label: string
+  layer?: string | null
+  layer_label?: string | null
+  stage?: string
   severity: string
   severity_label: string
   quote: string
@@ -776,6 +829,101 @@ export interface AuditResult {
 export interface AuditView {
   issues: AuditIssue[]
   last_audited_at: string | null
+}
+
+export type LogicStage = 'plan' | 'text'
+
+export interface LogicCheckResult {
+  stage: string
+  run_id: string | null
+  issues: AuditIssue[]
+  suppressed: number
+  llm_status: 'ok' | 'skipped' | 'unstructured' | 'error'
+  warning: string
+}
+
+export interface LogicCheckView {
+  stage: string
+  issues: AuditIssue[]
+  last_checked_at: string | null
+}
+
+export interface WritebackCharacterCandidate {
+  entry_id: string
+  name: string
+  current_state: string
+  evidence: string
+}
+
+export interface WritebackForeshadowCandidate {
+  foreshadow_id: string
+  name: string
+  evidence: string
+}
+
+export interface WritebackSuggestion {
+  run_id: string | null
+  llm_status: 'ok' | 'skipped' | 'unstructured' | 'error'
+  warning: string
+  chapter_summary: string
+  character_updates: WritebackCharacterCandidate[]
+  foreshadow_pays: WritebackForeshadowCandidate[]
+  open_questions: string[]
+  warnings: string[]
+}
+
+export interface WritebackApplyPayload {
+  chapter_summary?: string
+  character_updates: { entry_id: string; current_state: string }[]
+  foreshadow_pays: { foreshadow_id: string }[]
+}
+
+export interface WritebackApplyResult {
+  chapter_summary: string
+  character_updates: { entry_id: string; name: string; current_state: string }[]
+  foreshadow_pays: {
+    foreshadow_id: string
+    name: string
+    actual_pay_scene_id: string
+  }[]
+}
+
+export interface BatchFailure {
+  scene_id: string
+  message: string
+}
+
+export interface BatchJob {
+  id: string
+  project_id: string
+  scope_type: 'chapter' | 'volume'
+  scope_id: string
+  status: 'running' | 'paused' | 'completed' | 'cancelled' | 'failed'
+  cursor: number
+  total: number
+  current_scene_id: string | null
+  failures: BatchFailure[]
+  created_at: string
+  updated_at: string
+}
+
+export interface ExportReport {
+  project_id: string
+  project_name: string
+  total_words: number
+  volumes: number
+  chapters: number
+  scenes: number
+  scenes_without_body: { volume: string; chapter: string; scene: number; goal: string }[]
+  unrecovered_foreshadows: {
+    name: string
+    planted: boolean
+    planted_at: string
+    planned_pay_at: string
+  }[]
+  open_audit_issues: number
+  open_logic_issues: number
+  exportable: boolean
 }
 
 export interface GenerationRunEvent {

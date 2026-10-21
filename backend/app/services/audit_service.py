@@ -22,6 +22,7 @@ from app.audit_types import (
     normalize_severity,
 )
 from app.db.models import AuditIssue, Scene, SettingEntry
+from app.logic_types import LOGIC_LAYERS
 from app.services import agent_service, text_service, world_service
 from app.services.runtime_service import RuntimeService
 
@@ -44,7 +45,7 @@ def _label(mapping: dict[str, str], key: str) -> str:
     return mapping.get(key, key)
 
 
-def _serialize_issue(session: Session, issue: AuditIssue) -> dict:
+def serialize_issue(session: Session, issue: AuditIssue) -> dict:
     target = (
         session.get(SettingEntry, issue.target_entry_id)
         if issue.target_entry_id
@@ -54,8 +55,12 @@ def _serialize_issue(session: Session, issue: AuditIssue) -> dict:
         "id": issue.id,
         "source": issue.source,
         "source_label": _label(AUDIT_SOURCES, issue.source),
+        "check_type": issue.check_type,
         "kind": issue.kind,
         "kind_label": _label(AUDIT_KINDS, issue.kind),
+        "layer": issue.layer,
+        "layer_label": LOGIC_LAYERS.get(issue.layer, issue.layer) if issue.layer else None,
+        "stage": issue.stage,
         "severity": issue.severity,
         "severity_label": _label(AUDIT_SEVERITIES, issue.severity),
         "quote": issue.quote,
@@ -71,7 +76,7 @@ def _serialize_issue(session: Session, issue: AuditIssue) -> dict:
     }
 
 
-def _sort_issues(issues: list[AuditIssue]) -> list[AuditIssue]:
+def sort_issues(issues: list[AuditIssue]) -> list[AuditIssue]:
     # 只按严重度排；同一严重度保留插入顺序（SQLite 按 rowid 返回）。
     # 不拿 created_at 当次级键：内存对象是带时区的，回库读出来是 naïve 的，
     # 混在一起比较会直接抛 TypeError。
@@ -83,17 +88,21 @@ def _sort_issues(issues: list[AuditIssue]) -> list[AuditIssue]:
 def _open_issues(session: Session, scene_id: str) -> list[AuditIssue]:
     rows = session.scalars(
         select(AuditIssue).where(
-            AuditIssue.scene_id == scene_id, AuditIssue.status == "open"
+            AuditIssue.scene_id == scene_id,
+            AuditIssue.check_type == "consistency",
+            AuditIssue.status == "open",
         )
     ).all()
-    return _sort_issues(list(rows))
+    return sort_issues(list(rows))
 
 
 def _exception_fingerprints(session: Session, scene_id: str) -> set[str]:
     return set(
         session.scalars(
             select(AuditIssue.fingerprint).where(
-                AuditIssue.scene_id == scene_id, AuditIssue.status == "exception"
+                AuditIssue.scene_id == scene_id,
+                AuditIssue.check_type == "consistency",
+                AuditIssue.status == "exception",
             )
         ).all()
     )
@@ -102,7 +111,9 @@ def _exception_fingerprints(session: Session, scene_id: str) -> set[str]:
 def _supersede_open(session: Session, scene_id: str) -> None:
     rows = session.scalars(
         select(AuditIssue).where(
-            AuditIssue.scene_id == scene_id, AuditIssue.status == "open"
+            AuditIssue.scene_id == scene_id,
+            AuditIssue.check_type == "consistency",
+            AuditIssue.status == "open",
         )
     ).all()
     for row in rows:
@@ -110,11 +121,21 @@ def _supersede_open(session: Session, scene_id: str) -> None:
 
 
 def supersede_scene_issues(session: Session, scene_id: str) -> None:
-    """正文整份变化后调用：旧问题针对的是旧文本，标为 superseded。
+    """正文整份变化后调用：针对旧文本的问题标为 superseded。
 
-    不在这里提交 —— 调用方（保存 / 采纳 / 恢复）与自己的写入共用一次事务。
+    只处理 stage="text" 的问题（一致性审计与正文阶段的逻辑自检）；
+    「场景卡」阶段的逻辑问题审的是场景结构，不受正文替换影响。
+    不在这里提交 —— 调用方与自己的写入共用一次事务。
     """
-    _supersede_open(session, scene_id)
+    rows = session.scalars(
+        select(AuditIssue).where(
+            AuditIssue.scene_id == scene_id,
+            AuditIssue.stage == "text",
+            AuditIssue.status == "open",
+        )
+    ).all()
+    for row in rows:
+        row.status = "superseded"
 
 
 def _insert_issues(
@@ -305,7 +326,7 @@ def run_audit(session: Session, scene_id: str) -> dict:
 
     return {
         "run_id": run_id,
-        "issues": [_serialize_issue(session, row) for row in _open_issues(session, scene.id)],
+        "issues": [serialize_issue(session, row) for row in _open_issues(session, scene.id)],
         "suppressed": suppressed,
         "llm_status": llm_status,
         "warning": warning,
@@ -316,11 +337,14 @@ def list_audit(session: Session, scene_id: str) -> dict:
     _scene(session, scene_id)
     latest = session.scalars(
         select(AuditIssue.created_at)
-        .where(AuditIssue.scene_id == scene_id)
+        .where(
+            AuditIssue.scene_id == scene_id,
+            AuditIssue.check_type == "consistency",
+        )
         .order_by(AuditIssue.created_at.desc())
     ).first()
     return {
-        "issues": [_serialize_issue(session, row) for row in _open_issues(session, scene_id)],
+        "issues": [serialize_issue(session, row) for row in _open_issues(session, scene_id)],
         "last_audited_at": latest.isoformat() if latest else None,
     }
 
@@ -333,4 +357,4 @@ def resolve_issue(session: Session, issue_id: str, resolution: str) -> dict:
     issue.resolution = normalized
     issue.status = "exception" if normalized == "exception" else "resolved"
     session.commit()
-    return _serialize_issue(session, issue)
+    return serialize_issue(session, issue)

@@ -94,6 +94,35 @@ def test_options_json_defaults_to_empty_list(session):
         assert fresh.get(AuditIssue, bare.id).options_json == []
 
 
+def test_logic_issue_roundtrip_keeps_check_fields(session):
+    project, scene = _scene(session)
+    issue = _issue(
+        session,
+        project,
+        scene,
+        check_type="logic",
+        layer="causality",
+        stage="plan",
+    )
+
+    with SessionLocal() as fresh:
+        stored = fresh.get(AuditIssue, issue.id)
+        assert stored.check_type == "logic"
+        assert stored.layer == "causality"
+        assert stored.stage == "plan"
+
+
+def test_consistency_issue_defaults_to_text_stage(session):
+    project, scene = _scene(session)
+    issue = _issue(session, project, scene)
+
+    with SessionLocal() as fresh:
+        stored = fresh.get(AuditIssue, issue.id)
+        assert stored.check_type == "consistency"
+        assert stored.layer is None
+        assert stored.stage == "text"
+
+
 def test_deleting_scene_cascades_to_issues(session):
     project, scene = _scene(session)
     issue = _issue(session, project, scene)

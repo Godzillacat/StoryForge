@@ -10,9 +10,12 @@ from app.api import (
     agents,
     architecture,
     audit,
+    batches,
     chapters,
+    export,
     foreshadows,
     ideas,
+    logic,
     projects,
     providers,
     runs,
@@ -22,8 +25,10 @@ from app.api import (
     timeline,
     tools,
     world,
+    writeback,
 )
 from app.db.session import SessionLocal, init_db
+from app.services.batch_service import recover_jobs
 from app.services.seed_service import seed_agents, seed_tools
 
 
@@ -34,6 +39,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     with SessionLocal() as session:
         seed_agents(session)
         seed_tools(session)
+    # 进程内 worker 不跨重启：未完成的任务恢复为暂停，由作者手动继续。
+    recover_jobs()
     yield
 
 
@@ -61,5 +68,9 @@ for module in (
     foreshadows,
     text,
     audit,
+    logic,
+    writeback,
+    batches,
+    export,
 ):
     app.include_router(module.router)

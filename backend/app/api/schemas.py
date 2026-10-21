@@ -291,3 +291,28 @@ class AuditResolve(BaseModel):
     # 用普通字符串而非 Literal：非法值要由服务层报中文原因、映射成 400，
     # 而不是 Pydantic 校验失败的 422（先例：处理方式是作者显式动作）。
     resolution: str = ""
+
+
+class LogicCheckRequest(BaseModel):
+    # 同上：非法时机由服务层报错并映射 400。
+    stage: str = "text"
+
+
+class WritebackCharacterUpdate(BaseModel):
+    entry_id: str = ""
+    current_state: str = ""
+
+
+class WritebackForeshadowPay(BaseModel):
+    foreshadow_id: str = ""
+
+
+class WritebackApply(BaseModel):
+    chapter_summary: str | None = None
+    character_updates: list[WritebackCharacterUpdate] = Field(default_factory=list)
+    foreshadow_pays: list[WritebackForeshadowPay] = Field(default_factory=list)
+
+
+class BatchCreate(BaseModel):
+    scope_type: str = ""
+    scope_id: str = ""

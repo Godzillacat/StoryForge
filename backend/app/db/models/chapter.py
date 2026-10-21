@@ -87,5 +87,9 @@ class Foreshadow(IdMixin, TimestampMixin, Base):
     plan_pay_scene_id: Mapped[str | None] = mapped_column(
         ForeignKey("scene.id", ondelete="SET NULL"), index=True, default=None
     )
+    # 实际回收场景：由回写建议经作者确认后写入；不改变规划状态。
+    actual_pay_scene_id: Mapped[str | None] = mapped_column(
+        ForeignKey("scene.id", ondelete="SET NULL"), index=True, default=None
+    )
     status: Mapped[str] = mapped_column(String(20), default="planned")
     source_run_id: Mapped[str | None] = mapped_column(String(36), default=None)

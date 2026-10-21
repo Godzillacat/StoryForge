@@ -5,18 +5,25 @@ import {
   streamSceneGeneration,
   type AuditIssue,
   type AuditResolution,
+  type BatchJob,
   type ContextPreview as ContextPreviewData,
+  type LogicStage,
   type Project,
   type RevisionDetail,
   type SceneTextState,
   type VolumeNode,
+  type WritebackApplyPayload,
+  type WritebackSuggestion,
 } from '../api/client'
 import AuditPanel from '../components/writing/AuditPanel'
+import BatchPanel from '../components/writing/BatchPanel'
 import ContextPreview from '../components/writing/ContextPreview'
 import DiffPanel from '../components/writing/DiffPanel'
 import GenerationStream from '../components/writing/GenerationStream'
+import LogicPanel from '../components/writing/LogicPanel'
 import RevisionHistory from '../components/writing/RevisionHistory'
 import SceneTextView from '../components/writing/SceneTextView'
+import WritebackPanel from '../components/writing/WritebackPanel'
 import WritingTree from '../components/writing/WritingTree'
 
 interface RunInfo {
@@ -71,9 +78,24 @@ export default function Writing() {
   const [auditLastAt, setAuditLastAt] = useState<string | null>(null)
   const [auditLoading, setAuditLoading] = useState(false)
   const [auditWarning, setAuditWarning] = useState('')
+  const [logicStage, setLogicStage] = useState<LogicStage>('text')
+  const [logicIssues, setLogicIssues] = useState<AuditIssue[]>([])
+  const [logicLastAt, setLogicLastAt] = useState<string | null>(null)
+  const [logicLoading, setLogicLoading] = useState(false)
+  const [logicWarning, setLogicWarning] = useState('')
+  const [writeback, setWriteback] = useState<WritebackSuggestion | null>(null)
+  const [writebackLoading, setWritebackLoading] = useState(false)
+  const [writebackApplying, setWritebackApplying] = useState(false)
+  const [batchJob, setBatchJob] = useState<BatchJob | null>(null)
+  const [batchLoading, setBatchLoading] = useState(false)
+  const [batchBusy, setBatchBusy] = useState(false)
+
+  const writebackBusy = writebackLoading || writebackApplying
 
   const treeToken = useRef(0)
   const sceneToken = useRef(0)
+  const logicToken = useRef(0)
+  const batchToken = useRef(0)
   const generateToken = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
   const streamTextRef = useRef('')
@@ -125,6 +147,8 @@ export default function Writing() {
     if (!projectId) return
     const token = ++treeToken.current
     sceneToken.current += 1
+    logicToken.current += 1
+    batchToken.current += 1
     generateToken.current += 1
     abortRef.current?.abort()
     runIdRef.current = ''
@@ -148,6 +172,17 @@ export default function Writing() {
     setAuditLastAt(null)
     setAuditWarning('')
     setAuditLoading(false)
+    setLogicStage('text')
+    setLogicIssues([])
+    setLogicLastAt(null)
+    setLogicWarning('')
+    setLogicLoading(false)
+    setWriteback(null)
+    setWritebackLoading(false)
+    setWritebackApplying(false)
+    setBatchJob(null)
+    setBatchLoading(false)
+    setBatchBusy(false)
 
     setTreeLoading(true)
     api
@@ -161,7 +196,39 @@ export default function Writing() {
       .finally(() => {
         if (treeToken.current === token) setTreeLoading(false)
       })
+    api
+      .getLatestBatch(projectId)
+      .then((job) => {
+        if (treeToken.current === token) setBatchJob(job)
+      })
+      .catch(() => {
+        // 最近任务读不到不影响写作；作者仍可新建批量任务。
+      })
   }, [projectId])
+
+  // 活动任务每 2 秒拉一次进度；完成或停止后自动结束轮询并刷新树。
+  useEffect(() => {
+    if (!batchJob || batchJob.status !== 'running') return
+    const jobId = batchJob.id
+    let cancelled = false
+    const token = batchToken.current
+    const timer = window.setInterval(() => {
+      api
+        .getBatch(jobId)
+        .then((next) => {
+          if (cancelled || batchToken.current !== token) return
+          setBatchJob(next)
+          if (next.status !== 'running') void refreshTree()
+        })
+        .catch(() => {
+          // 轮询失败不打扰作者；下一次继续。
+        })
+    }, 2000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [batchJob?.id, batchJob?.status])
 
   const hasUnsaved =
     Boolean(text) &&
@@ -175,6 +242,7 @@ export default function Writing() {
 
   const loadScene = async (sceneId: string) => {
     const token = ++sceneToken.current
+    const logicSeq = ++logicToken.current
     setTextLoading(true)
     setPreviewLoading(true)
     setPreviewError('')
@@ -182,12 +250,17 @@ export default function Writing() {
     setAuditIssues([])
     setAuditLastAt(null)
     setAuditWarning('')
+    setLogicIssues([])
+    setLogicLastAt(null)
+    setLogicWarning('')
     try {
-      const [stateResult, contextResult, auditResult] = await Promise.allSettled([
-        api.getSceneText(sceneId),
-        api.getSceneContextPreview(sceneId),
-        api.getSceneAudit(sceneId),
-      ])
+      const [stateResult, contextResult, auditResult, logicResult] =
+        await Promise.allSettled([
+          api.getSceneText(sceneId),
+          api.getSceneContextPreview(sceneId),
+          api.getSceneAudit(sceneId),
+          api.getSceneLogicCheck(sceneId, logicStage),
+        ])
       if (sceneToken.current !== token) return
       if (stateResult.status === 'fulfilled') {
         const state = stateResult.value
@@ -209,6 +282,14 @@ export default function Writing() {
       } else {
         setAuditWarning((auditResult.reason as Error).message)
       }
+      if (logicResult.status === 'fulfilled') {
+        if (logicToken.current === logicSeq) {
+          setLogicIssues(logicResult.value.issues)
+          setLogicLastAt(logicResult.value.last_checked_at)
+        }
+      } else if (logicToken.current === logicSeq) {
+        setLogicWarning((logicResult.reason as Error).message)
+      }
     } catch (error) {
       if (sceneToken.current === token) setNotice((error as Error).message)
     } finally {
@@ -224,6 +305,7 @@ export default function Writing() {
     if (hasUnsaved && !window.confirm('当前场景有未保存的修改，确定切换吗？')) return
     abortRef.current?.abort()
     generateToken.current += 1
+    logicToken.current += 1
     clearStopCooldown()
     runIdRef.current = ''
     streamTextRef.current = ''
@@ -243,9 +325,16 @@ export default function Writing() {
     setAuditIssues([])
     setAuditLastAt(null)
     setAuditWarning('')
+    setLogicIssues([])
+    setLogicLastAt(null)
+    setLogicWarning('')
     // 在途审校属于上一个场景：loadScene 会递增 sceneToken 让它作废，
     // 那份响应不会再清 loading，必须在这里收掉。
     setAuditLoading(false)
+    setLogicLoading(false)
+    setWriteback(null)
+    setWritebackLoading(false)
+    setWritebackApplying(false)
     setSelectedSceneId(sceneId)
     void loadScene(sceneId)
   }
@@ -313,6 +402,10 @@ export default function Writing() {
       // 服务端会把旧问题标为 superseded；本地也立即清掉，避免对旧文本处理问题。
       setAuditIssues([])
       setAuditWarning('')
+      if (logicStage === 'text') {
+        setLogicIssues([])
+        setLogicWarning('')
+      }
       setNotice(auditIssues.length > 0 ? '正文已保存；之前的审校结果已失效，请重新审校' : '正文已保存')
       void refreshTree()
     } catch (error) {
@@ -375,6 +468,10 @@ export default function Writing() {
       setMode('body')
       setAuditIssues([])
       setAuditWarning('')
+      if (logicStage === 'text') {
+        setLogicIssues([])
+        setLogicWarning('')
+      }
       setNotice(
         auditIssues.length > 0
           ? '已采纳，已生成修订快照；之前的审校结果已失效，请重新审校'
@@ -411,7 +508,17 @@ export default function Writing() {
   }
 
   const runAudit = async () => {
-    if (!selectedSceneId || !text?.has_body || generating || busy || auditLoading) return
+    if (
+      !selectedSceneId ||
+      !text?.has_body ||
+      generating ||
+      busy ||
+      auditLoading ||
+      logicLoading ||
+      writebackBusy
+    ) {
+      return
+    }
     const token = sceneToken.current
     const sceneId = selectedSceneId
     setAuditLoading(true)
@@ -422,7 +529,13 @@ export default function Writing() {
       setAuditIssues(result.issues)
       setAuditWarning(result.warning)
       setAuditLastAt(new Date().toISOString())
-      if (result.suppressed > 0) {
+      if (result.llm_status !== 'ok') {
+        setNotice(
+          `${result.warning || '语义审计未完成'}${
+            result.issues.length > 0 ? `（规则层发现 ${result.issues.length} 条问题）` : ''
+          }`,
+        )
+      } else if (result.suppressed > 0) {
         setNotice(`审校完成；${result.suppressed} 条问题已记为特例，不再重复上报`)
       } else if (result.issues.length > 0) {
         setNotice(`审校完成，发现 ${result.issues.length} 条问题`)
@@ -436,21 +549,82 @@ export default function Writing() {
     }
   }
 
-  const resolveIssue = async (issue: AuditIssue, resolution: AuditResolution) => {
-    if (busy || auditLoading) return
+  const runLogic = async () => {
+    if (!selectedSceneId || generating || busy || auditLoading || logicLoading || writebackBusy) return
+    if (logicStage === 'text' && !text?.has_body) return
+    const token = sceneToken.current
+    const sceneId = selectedSceneId
+    const stage = logicStage
+    setLogicLoading(true)
+    setNotice('')
+    try {
+      const result = await api.runSceneLogicCheck(sceneId, stage)
+      if (sceneToken.current !== token) return
+      setLogicIssues(result.issues)
+      setLogicWarning(result.warning)
+      setLogicLastAt(new Date().toISOString())
+      if (result.llm_status !== 'ok') {
+        setNotice(result.warning || '逻辑自检未完成')
+      } else if (result.suppressed > 0) {
+        setNotice(`逻辑自检完成；${result.suppressed} 条问题已记为特例，不再重复上报`)
+      } else if (result.issues.length > 0) {
+        setNotice(`逻辑自检完成，发现 ${result.issues.length} 条问题`)
+      } else {
+        setNotice('逻辑自检完成，没有发现问题')
+      }
+    } catch (error) {
+      if (sceneToken.current === token) setNotice((error as Error).message)
+    } finally {
+      if (sceneToken.current === token) setLogicLoading(false)
+    }
+  }
+
+  const changeLogicStage = (next: LogicStage) => {
+    if (next === logicStage || logicLoading) return
+    setLogicStage(next)
+    setLogicIssues([])
+    setLogicLastAt(null)
+    setLogicWarning('')
+    if (!selectedSceneId) return
+    const sceneSeq = sceneToken.current
+    const seq = ++logicToken.current
+    setLogicLoading(true)
+    api
+      .getSceneLogicCheck(selectedSceneId, next)
+      .then((data) => {
+        if (sceneToken.current !== sceneSeq || logicToken.current !== seq) return
+        setLogicIssues(data.issues)
+        setLogicLastAt(data.last_checked_at)
+      })
+      .catch((error) => {
+        if (sceneToken.current === sceneSeq && logicToken.current === seq) {
+          setLogicWarning((error as Error).message)
+        }
+      })
+      .finally(() => {
+        if (sceneToken.current === sceneSeq && logicToken.current === seq) {
+          setLogicLoading(false)
+        }
+      })
+  }
+
+  const applyResolution = async (
+    issue: AuditIssue,
+    resolution: AuditResolution,
+    removeIssue: (id: string) => void,
+  ) => {
+    if (busy || auditLoading || logicLoading || writebackBusy) return
     const token = sceneToken.current
     setBusy(true)
     setNotice('')
     try {
       const updated = await api.resolveAuditIssue(issue.id, resolution)
       if (sceneToken.current !== token) return
-      if (updated.status !== 'open') {
-        setAuditIssues((current) => current.filter((item) => item.id !== issue.id))
-      }
+      if (updated.status !== 'open') removeIssue(issue.id)
       if (resolution === 'story') {
         setNotice('已标记为改故事，请在正文中修改')
       } else if (resolution === 'exception') {
-        setNotice('已记为特例，后续审校不再重复上报')
+        setNotice('已记为特例，后续检查不再重复上报')
       } else {
         const target = issue.target_entry_id
         const entryParam = target ? `&entry=${encodeURIComponent(target)}` : ''
@@ -464,8 +638,132 @@ export default function Writing() {
     }
   }
 
+  const resolveIssue = (issue: AuditIssue, resolution: AuditResolution) =>
+    applyResolution(issue, resolution, (id) =>
+      setAuditIssues((current) => current.filter((item) => item.id !== id)),
+    )
+
+  const resolveLogicIssue = (issue: AuditIssue, resolution: AuditResolution) =>
+    applyResolution(issue, resolution, (id) =>
+      setLogicIssues((current) => current.filter((item) => item.id !== id)),
+    )
+
+  const runWriteback = async () => {
+    if (
+      !selectedSceneId ||
+      !text?.has_body ||
+      generating ||
+      busy ||
+      auditLoading ||
+      logicLoading ||
+      writebackBusy
+    ) {
+      return
+    }
+    const token = sceneToken.current
+    const sceneId = selectedSceneId
+    setWritebackLoading(true)
+    setNotice('')
+    try {
+      const result = await api.runSceneWriteback(sceneId)
+      if (sceneToken.current !== token) return
+      setWriteback(result)
+      if (result.llm_status === 'ok') {
+        setNotice('回写建议已生成，请在右栏逐项确认后应用')
+      } else {
+        setNotice(result.warning || '回写建议未生成')
+      }
+    } catch (error) {
+      if (sceneToken.current === token) setNotice((error as Error).message)
+    } finally {
+      if (sceneToken.current === token) setWritebackLoading(false)
+    }
+  }
+
+  const applyWriteback = async (payload: WritebackApplyPayload) => {
+    if (
+      !selectedSceneId ||
+      busy ||
+      generating ||
+      auditLoading ||
+      logicLoading ||
+      writebackApplying
+    ) {
+      return
+    }
+    const token = sceneToken.current
+    const sceneId = selectedSceneId
+    setWritebackApplying(true)
+    setNotice('')
+    try {
+      const result = await api.applySceneWriteback(sceneId, payload)
+      if (sceneToken.current !== token) return
+      setWriteback(null)
+      setNotice(
+        `已写回：章节摘要${result.chapter_summary ? '已更新' : '未改'}，` +
+          `${result.character_updates.length} 个人物状态、` +
+          `${result.foreshadow_pays.length} 条伏笔回收`,
+      )
+      void refreshTree()
+    } catch (error) {
+      if (sceneToken.current === token) setNotice((error as Error).message)
+    } finally {
+      if (sceneToken.current === token) setWritebackApplying(false)
+    }
+  }
+
+  const startBatch = async (scopeType: 'chapter' | 'volume', scopeId: string) => {
+    if (!projectId || batchLoading || batchBusy) return
+    const token = batchToken.current
+    setBatchLoading(true)
+    setNotice('')
+    try {
+      const created = await api.createBatch(projectId, {
+        scope_type: scopeType,
+        scope_id: scopeId,
+      })
+      if (batchToken.current !== token) return
+      const started = await api.resumeBatch(created.id)
+      if (batchToken.current !== token) return
+      setBatchJob(started)
+      setNotice('批量生成已开始；你可以随时暂停或取消')
+    } catch (error) {
+      if (batchToken.current === token) setNotice((error as Error).message)
+    } finally {
+      if (batchToken.current === token) setBatchLoading(false)
+    }
+  }
+
+  const controlBatch = async (
+    action: (jobId: string) => Promise<BatchJob>,
+  ) => {
+    if (!batchJob || batchBusy) return
+    const token = batchToken.current
+    setBatchBusy(true)
+    setNotice('')
+    try {
+      const next = await action(batchJob.id)
+      if (batchToken.current !== token) return
+      setBatchJob(next)
+      if (next.status !== 'running') void refreshTree()
+    } catch (error) {
+      if (batchToken.current === token) setNotice((error as Error).message)
+    } finally {
+      if (batchToken.current === token) setBatchBusy(false)
+    }
+  }
+
   const generate = async () => {
-    if (!selectedSceneId || generating || textLoading || auditLoading) return
+    if (
+      !selectedSceneId ||
+      generating ||
+      textLoading ||
+      auditLoading ||
+      logicLoading ||
+      writebackBusy
+    ) {
+      return
+    }
     if (
       hasUnsaved &&
       !window.confirm('生成完成后会刷新场景内容，当前未保存的修改将被覆盖。继续？')
@@ -609,6 +907,10 @@ export default function Writing() {
       setRevision(null)
       setAuditIssues([])
       setAuditWarning('')
+      if (logicStage === 'text') {
+        setLogicIssues([])
+        setLogicWarning('')
+      }
       setNotice(
         auditIssues.length > 0
           ? '已恢复旧版并生成新的修订；之前的审校结果已失效，请重新审校'
@@ -714,7 +1016,7 @@ export default function Writing() {
                         <button
                           type="button"
                           onClick={generate}
-                          disabled={busy || stopCooldown || auditLoading}
+                          disabled={busy || stopCooldown || auditLoading || logicLoading || writebackBusy}
                           title={stopCooldown ? '生成刚结束，请稍候' : undefined}
                           className="rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
                         >
@@ -724,11 +1026,47 @@ export default function Writing() {
                       <button
                         type="button"
                         onClick={runAudit}
-                        disabled={busy || generating || auditLoading || !text.has_body}
+                        disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.has_body}
                         title={text.has_body ? undefined : '采纳正文后才能审校'}
                         className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
                       >
                         {auditLoading ? '审校中…' : '审校'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={runLogic}
+                        disabled={
+                          busy ||
+                          generating ||
+                          auditLoading ||
+                          logicLoading ||
+                          writebackBusy ||
+                          (logicStage === 'text' && !text.has_body)
+                        }
+                        title={
+                          logicStage === 'text' && !text.has_body
+                            ? '采纳正文后才能检查正文'
+                            : undefined
+                        }
+                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
+                      >
+                        {logicLoading ? '逻辑检查中…' : '逻辑自检'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={runWriteback}
+                        disabled={
+                          busy ||
+                          generating ||
+                          auditLoading ||
+                          logicLoading ||
+                          writebackBusy ||
+                          !text.has_body
+                        }
+                        title={text.has_body ? undefined : '采纳正文后才能生成回写建议'}
+                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
+                      >
+                        {writebackLoading ? '生成中…' : '回写建议'}
                       </button>
                       <button
                         type="button"
@@ -737,6 +1075,8 @@ export default function Writing() {
                           busy ||
                           generating ||
                           auditLoading ||
+                          logicLoading ||
+                          writebackBusy ||
                           mode !== 'body' ||
                           bodyDraft === (text.body ?? '')
                         }
@@ -751,6 +1091,8 @@ export default function Writing() {
                           busy ||
                           generating ||
                           auditLoading ||
+                          logicLoading ||
+                          writebackBusy ||
                           mode !== 'body' ||
                           bodyDraft === (text.body ?? '')
                         }
@@ -761,7 +1103,7 @@ export default function Writing() {
                       <button
                         type="button"
                         onClick={saveDraft}
-                        disabled={busy || generating || auditLoading || !text.draft || mode !== 'draft'}
+                        disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.draft || mode !== 'draft'}
                         className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
                       >
                         保存草稿
@@ -769,7 +1111,7 @@ export default function Writing() {
                       <button
                         type="button"
                         onClick={adopt}
-                        disabled={busy || generating || auditLoading || !text.draft}
+                        disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.draft}
                         className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
                       >
                         采纳为正文
@@ -777,7 +1119,7 @@ export default function Writing() {
                       <button
                         type="button"
                         onClick={discard}
-                        disabled={busy || generating || auditLoading || !text.draft}
+                        disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.draft}
                         className="rounded border border-amber-800 px-3 py-1.5 text-sm text-amber-300 hover:text-amber-200 disabled:opacity-50"
                       >
                         丢弃草稿
@@ -844,12 +1186,66 @@ export default function Writing() {
             <AuditPanel
               issues={auditIssues}
               lastAuditedAt={auditLastAt}
-              running={auditLoading || busy}
+              running={auditLoading || busy || writebackBusy}
               warning={auditWarning}
-              canRun={Boolean(text?.has_body) && !generating && !busy && !auditLoading}
+              canRun={Boolean(text?.has_body) && !generating && !busy && !auditLoading && !logicLoading && !writebackBusy}
               hasBody={Boolean(text?.has_body)}
               onRun={runAudit}
               onResolve={resolveIssue}
+            />
+            <LogicPanel
+              stage={logicStage}
+              issues={logicIssues}
+              lastCheckedAt={logicLastAt}
+              running={logicLoading || busy || writebackBusy}
+              warning={logicWarning}
+              canRun={
+                Boolean(selectedSceneId) &&
+                !generating &&
+                !busy &&
+                !auditLoading &&
+                !logicLoading &&
+                !writebackBusy
+              }
+              hasBody={Boolean(text?.has_body)}
+              onStageChange={changeLogicStage}
+              onRun={runLogic}
+              onResolve={resolveLogicIssue}
+            />
+            <WritebackPanel
+              suggestion={writeback}
+              loading={writebackLoading}
+              applying={writebackApplying}
+              canRun={
+                Boolean(selectedSceneId) &&
+                !generating &&
+                !busy &&
+                !auditLoading &&
+                !logicLoading &&
+                !writebackBusy
+              }
+              hasBody={Boolean(text?.has_body)}
+              onRun={runWriteback}
+              onApply={applyWriteback}
+            />
+            <BatchPanel
+              job={batchJob}
+              loading={batchLoading}
+              busy={batchBusy}
+              canStart={Boolean(selected)}
+              chapterId={selected?.chapter.id ?? ''}
+              chapterLabel={
+                selected ? `第${selected.chapter.seq + 1}章 ${selected.chapter.title}` : ''
+              }
+              volumeId={selected?.volume.id ?? ''}
+              volumeLabel={
+                selected ? `第${selected.volume.seq + 1}卷 ${selected.volume.name}` : ''
+              }
+              onStart={startBatch}
+              onPause={() => controlBatch(api.pauseBatch)}
+              onResume={() => controlBatch(api.resumeBatch)}
+              onCancel={() => controlBatch(api.cancelBatch)}
+              onRetryFailed={() => controlBatch(api.retryBatchFailed)}
             />
             {runInfo && (
               <section className="space-y-1 rounded border border-slate-800 p-3 text-xs text-slate-400">
@@ -908,7 +1304,7 @@ export default function Writing() {
                 </pre>
                 <button
                   type="button"
-                  disabled={busy || auditLoading}
+                  disabled={busy || auditLoading || logicLoading || writebackBusy}
                   onClick={() => restoreRevision(revision.id)}
                   className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:text-white disabled:opacity-50"
                 >
