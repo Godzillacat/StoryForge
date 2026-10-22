@@ -37,10 +37,15 @@ def _split_sentences(paragraph: str) -> list[str]:
 
 
 def _match(sentence: str) -> tuple[str, str] | None:
+    """一句命中多类时取**类型优先级**最高的一类（因果 > 转折 > 揭示），
+    但在这一类里报**最先出现**的那个词 —— 作者看的是「这句靠哪个词连起来」。
+
+    「于是他停下，因为下雨」应当报「于是」，而不是按元组顺序报「因为」。
+    """
     for kind, markers in _MARKERS:
-        for marker in markers:
-            if marker in sentence:
-                return kind, marker
+        found = [marker for marker in markers if marker in sentence]
+        if found:
+            return kind, min(found, key=sentence.index)
     return None
 
 

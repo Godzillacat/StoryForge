@@ -27,7 +27,7 @@ function hints(row: LedgerRow): string {
   if (row.missingPlant) out.push('缺埋设')
   if (row.missingPay) out.push('缺计划回收')
   if (row.effectiveStatus === 'dropped') out.push('作者已放弃')
-  else if (row.actualPay) out.push('已回收')
+  else if (row.effectiveStatus === 'paid') out.push('已回收')
   else if (!row.missingPay) out.push('已计划、未回收')
   if (row.sameScene) out.push('埋设与回收同一场')
   return out.join(' ')
@@ -80,7 +80,10 @@ export default function ForeshadowLedger({
   const rows = buildForeshadowLedger(volumes, foreshadows)
 
   async function changeStatus(row: LedgerRow, next: string) {
-    if (next === row.effectiveStatus) return
+    // 旧值是唯一不能早返回的情形：库里存的是 `confirmed`，界面上显示的却是
+    // 「规划中」。作者照提示重选「规划中」，两者的派生值相等 —— 早返回会让
+    // 徽标永远去不掉；这一下正好把库里的值改写成 `planned`。
+    if (next === row.effectiveStatus && !row.statusIsLegacy) return
     setSavingId(row.id)
     onNotice('')
     try {
@@ -125,27 +128,28 @@ export default function ForeshadowLedger({
   }
 
   const visible = filterLedger(rows, filter)
-  const counts = summary ?? {
-    total: rows.length,
-    planned: 0,
-    planted: 0,
-    paid: 0,
-    dropped: 0,
-    rate: 0,
-  }
   // 分母 = 未放弃的三类；`dropped` 不进分母（与后端同一口径）。
-  const denominator = counts.paid + counts.planted + counts.planned
+  const denominator = summary
+    ? summary.paid + summary.planted + summary.planned
+    : 0
 
   return (
     <div className="space-y-3">
       <div>
         <h3 className="text-sm font-medium text-slate-300">伏笔账本</h3>
-        <p className="text-xs text-slate-500">
-          共 {counts.total} 条 · 已收 {counts.paid} · 已埋未收 {counts.planted} · 规划中{' '}
-          {counts.planned} · 已弃 {counts.dropped} · 回收率{' '}
-          {(counts.rate * 100).toFixed(0)}%
-          {denominator > 0 && `（${counts.paid}/${denominator}）`}
-        </p>
+        {summary ? (
+          <p className="text-xs text-slate-500">
+            共 {summary.total} 条 · 已收 {summary.paid} · 已埋未收 {summary.planted} ·
+            规划中 {summary.planned} · 已弃 {summary.dropped} · 回收率{' '}
+            {(summary.rate * 100).toFixed(0)}%
+            {denominator > 0 && `（${summary.paid}/${denominator}）`}
+          </p>
+        ) : (
+          // 列表拉到了、统计没拉到：显示一排 0 会被读成「一条都没收」。
+          <p className="text-xs text-amber-400">
+            统计不可用（表格里的数据是好的）。共 {rows.length} 条。
+          </p>
+        )}
         <p className="text-xs text-slate-600">回收率不算已弃的伏笔。</p>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -223,6 +227,11 @@ export default function ForeshadowLedger({
                           {status.label}
                         </option>
                       ))}
+                      {/* 词表没拉到时下拉会是一片空白；用服务端给的中文名兜底，
+                          至少让作者看得出现在是什么状态（只是选不了）。 */}
+                      {statuses.length === 0 && (
+                        <option value={row.effectiveStatus}>{row.statusLabel}</option>
+                      )}
                     </select>
                     {savingId === row.id && (
                       <span className="text-xs text-slate-500">保存中…</span>

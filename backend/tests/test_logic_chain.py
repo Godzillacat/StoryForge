@@ -67,3 +67,11 @@ def test_summarize_counts_by_kind():
     chain = extract_chain("因为下雨。但是他没有停。原来他在等人。")
 
     assert summarize(chain) == {"total": 3, "cause": 1, "turn": 1, "reveal": 1}
+
+
+def test_the_first_occurring_marker_is_reported():
+    """「于是…因为…」里先出现的是「于是」，报它；类型仍是因果。"""
+    chain = extract_chain("于是他停下，因为下雨。")
+
+    assert chain[0]["kind"] == "cause"
+    assert chain[0]["marker"] == "于是"
