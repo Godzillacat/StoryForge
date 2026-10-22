@@ -249,6 +249,19 @@ export default function Writing() {
     setProjectId(nextId)
   }
 
+  async function refreshSceneChanges(sceneId: string, token: number) {
+    try {
+      const body = await api.listChanges(projectId, {
+        target_type: 'scene',
+        target_id: sceneId,
+        limit: 20,
+      })
+      if (sceneToken.current === token) setSceneChanges(body.changes)
+    } catch {
+      // 历史是辅助信息，取不到不影响写作。
+    }
+  }
+
   const loadScene = async (sceneId: string) => {
     const token = ++sceneToken.current
     const logicSeq = ++logicToken.current
@@ -279,16 +292,7 @@ export default function Writing() {
       if (sceneToken.current !== token) return
       setSceneLock(lockResult.status === 'fulfilled' ? lockResult.value : null)
       setParagraphLocks(paraResult.status === 'fulfilled' ? paraResult.value.paragraphs : [])
-      api
-        .listChanges(projectId, {
-          target_type: 'scene',
-          target_id: sceneId,
-          limit: 20,
-        })
-        .then((body) => {
-          if (sceneToken.current === token) setSceneChanges(body.changes)
-        })
-        .catch(() => undefined)
+      void refreshSceneChanges(sceneId, token)
       if (stateResult.status === 'fulfilled') {
         const state = stateResult.value
         setText(state)
@@ -426,6 +430,7 @@ export default function Writing() {
       if (sceneToken.current !== token) return
       setText(state)
       setBodyDraft(state.body ?? '')
+      void refreshSceneChanges(sceneId, token)
       // 服务端会把旧问题标为 superseded；本地也立即清掉，避免对旧文本处理问题。
       setAuditIssues([])
       setAuditWarning('')
@@ -505,6 +510,7 @@ export default function Writing() {
           : '已采纳，已生成修订快照',
       )
       void refreshTree()
+      void refreshSceneChanges(sceneId, token)
     } catch (error) {
       if (sceneToken.current === token) setNotice((error as Error).message)
     } finally {
@@ -930,6 +936,7 @@ export default function Writing() {
       if (sceneToken.current !== token) return
       setText(state)
       setBodyDraft(state.body ?? '')
+      void refreshSceneChanges(sceneId, token)
       setMode('body')
       setRevision(null)
       setAuditIssues([])

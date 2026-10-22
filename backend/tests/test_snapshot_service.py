@@ -314,3 +314,66 @@ def test_restoring_an_automatic_backup_does_not_make_another_backup(session):
         if row["name"].count(snapshot_service.AUTO_PREFIX) > 1
     ]
     assert nested == []
+
+
+def test_restore_survives_an_issue_pointing_at_a_dropped_entry(session):
+    """审校问题可能指向快照之后新建的条目 —— 回滚把它删了，问题不能因此卡住回滚。"""
+    from app.db.models import AuditIssue
+
+    project, _volume, _chapter, scene, _shen = _seed(session)
+    snapshot_service.create_snapshot(session, project.id, "初稿")
+    extra = SettingEntry(project_id=project.id, type="faction", name="新势力")
+    session.add(extra)
+    session.commit()
+    session.add(
+        AuditIssue(
+            project_id=project.id,
+            scene_id=scene.id,
+            source="llm",
+            kind="setting",
+            severity="major",
+            fingerprint="fp-1",
+            target_entry_id=extra.id,
+        )
+    )
+    session.commit()
+
+    snapshot_service.restore_snapshot(session, _only_snapshot(session, "初稿").id)
+
+    session.expire_all()
+    issue = session.query(AuditIssue).filter_by(fingerprint="fp-1").first()
+    assert issue is not None
+    assert issue.target_entry_id is None  # 条目没了，引用按 FK 语义置空
+
+
+def test_the_same_snapshot_can_be_restored_twice(session):
+    """回滚过的快照还要能再回滚一次 —— 自动备份不能撞名。"""
+    project, _volume, _chapter, scene, _shen = _seed(session)
+    snapshot = snapshot_service.create_snapshot(session, project.id, "初稿")
+
+    first = snapshot_service.restore_snapshot(session, snapshot.id)
+    session.get(Scene, scene.id).body = "又改了"
+    session.commit()
+    second = snapshot_service.restore_snapshot(session, snapshot.id)
+
+    assert first["backup"]["name"] != second["backup"]["name"]
+    session.expire_all()
+    assert session.get(Scene, scene.id).body == "第一段。\n\n第二段。"
+
+
+def test_restore_does_not_silently_unlock_newer_locks(session):
+    """快照之后才加的锁，回滚不该把它解掉 —— 解锁是静默的，作者不会发现。"""
+    project, _volume, _chapter, scene, _shen = _seed(session)
+    scene.locked = False
+    session.commit()
+    snapshot_service.create_snapshot(session, project.id, "初稿")
+    scene.locked = True
+    scene.locked_paragraphs_json = ["第一段。"]
+    session.commit()
+
+    snapshot_service.restore_snapshot(session, _only_snapshot(session, "初稿").id)
+
+    session.expire_all()
+    restored = session.get(Scene, scene.id)
+    assert restored.locked is True
+    assert "第一段。" in restored.locked_paragraphs_json

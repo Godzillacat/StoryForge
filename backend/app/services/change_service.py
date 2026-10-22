@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.db.models import ChangeLog, Project
@@ -97,10 +97,13 @@ def list_changes(
         query = query.where(ChangeLog.target_type == target_type)
     if target_id:
         query = query.where(ChangeLog.target_id == target_id)
-    # 同一次事务里写的一批记录时间戳相同；用 id 兜底保证顺序稳定。
+    # 同一次事务里写的一批记录时间戳相同。用 rowid 兜底：它按**插入顺序**
+    # 递增，而 uuid 是随机的 —— 用 uuid 排序稳定，但同毫秒内的次序会乱。
     rows = list(
         session.scalars(
-            query.order_by(ChangeLog.created_at.desc(), ChangeLog.id.desc())
+            query.order_by(
+                ChangeLog.created_at.desc(), text("change_log.rowid DESC")
+            )
             .offset(max(0, offset))
             .limit(max(1, min(limit, 200)))
         )

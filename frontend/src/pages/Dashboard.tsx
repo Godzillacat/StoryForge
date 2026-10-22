@@ -253,12 +253,26 @@ export default function Dashboard() {
               onReload={reloadSnapshots}
               onRestored={() => {
                 // 回滚改了整份结构：报告与费用都过期了，重新拉一遍。
+                // 持令牌守卫 —— 回滚途中切了项目时，这批响应属于旧项目。
+                const token = reportToken.current
+                const projectId = selected.id
                 setReport(null)
                 api
-                  .getExportReport(selected.id)
-                  .then(setReport)
-                  .catch(() => setReport(null))
-                api.projectCost(selected.id).then(setCost).catch(() => setCost(null))
+                  .getExportReport(projectId)
+                  .then((value) => {
+                    if (reportToken.current === token) setReport(value)
+                  })
+                  .catch(() => {
+                    if (reportToken.current === token) setReport(null)
+                  })
+                api
+                  .projectCost(projectId)
+                  .then((value) => {
+                    if (reportToken.current === token) setCost(value)
+                  })
+                  .catch(() => {
+                    if (reportToken.current === token) setCost(null)
+                  })
               }}
             />
           )}

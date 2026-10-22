@@ -367,6 +367,23 @@ def get_snapshot(session: Session, snapshot_id: str) -> dict:
     }
 
 
+def _unique_backup_name(session: Session, project_id: str, name: str) -> str:
+    """同一份快照可以被回滚多次，每次都要有自己的备份名。
+
+    固定名字会让「回滚过一次之后再回滚同一份」撞重名 —— 而作者最需要的
+    恰恰是「退回刚才那一步」。加序号，从 1 开始，够用就停。
+    """
+    base = f"{AUTO_PREFIX}（{name}）"
+    if _find_by_name(session, project_id, base) is None:
+        return base
+    index = 2
+    while True:
+        candidate = f"{AUTO_PREFIX} {index}（{name}）"
+        if _find_by_name(session, project_id, candidate) is None:
+            return candidate
+        index += 1
+
+
 def _snapshot(session: Session, snapshot_id: str) -> ProjectSnapshot:
     row = session.get(ProjectSnapshot, snapshot_id)
     if row is None:
@@ -396,7 +413,7 @@ def restore_snapshot(session: Session, snapshot_id: str) -> dict:
         else create_snapshot(
             session,
             project_id,
-            f"{AUTO_PREFIX}（{row.name}）",
+            _unique_backup_name(session, project_id, row.name),
             note=f"回滚到「{row.name}」之前的自动备份",
         )
     )
@@ -406,6 +423,9 @@ def restore_snapshot(session: Session, snapshot_id: str) -> dict:
     #    带走。而它们是**日志**，回滚作品不该回滚日志（§1.2）。先抄出来，
     #    重建场景之后再按原 id 插回去。
     preserved = _preserve_attachments(session, project_id)
+    # 快照之后的锁定也要留住：作者锁住的东西不该因为回滚而解锁（§4.1），
+    # 而解锁是静默的 —— 作者不会发现 AI 下次能动了。
+    current_locks = _preserve_locks(session, project_id)
 
     _clear_structure(session, project_id)
     session.expire_all()
@@ -414,6 +434,7 @@ def restore_snapshot(session: Session, snapshot_id: str) -> dict:
     _rebuild(session, project_id, data)
     session.flush()
     _restore_attachments(session, preserved)
+    _apply_current_locks(session, project_id, current_locks)
     session.flush()
 
     idea = session.scalars(
@@ -453,6 +474,93 @@ def restore_snapshot(session: Session, snapshot_id: str) -> dict:
 
 def _current_dump(session: Session, project_id: str) -> dict:
     return dump_project(session, project_id)
+
+
+def _preserve_locks(session: Session, project_id: str) -> dict:
+    """抄下当前的锁定状态，回滚后与快照里的取并集。"""
+    from app.db.models import Architecture
+
+    arch = session.scalars(
+        select(Architecture).where(Architecture.project_id == project_id)
+    ).first()
+    scene_paragraphs = {
+        row.id: list(row.locked_paragraphs_json or [])
+        for row in session.scalars(
+            select(Scene)
+            .join(Chapter, Scene.chapter_id == Chapter.id)
+            .join(Volume, Chapter.volume_id == Volume.id)
+            .where(Volume.project_id == project_id)
+        ).all()
+    }
+    return {
+        "architecture": bool(arch.locked) if arch is not None else False,
+        "entries": {
+            row.id for row in session.scalars(
+                select(SettingEntry).where(
+                    SettingEntry.project_id == project_id, SettingEntry.locked.is_(True)
+                )
+            )
+        },
+        "volumes": {
+            row.id for row in session.scalars(
+                select(Volume).where(
+                    Volume.project_id == project_id, Volume.locked.is_(True)
+                )
+            )
+        },
+        "chapters": {
+            row.id for row in session.scalars(
+                select(Chapter)
+                .join(Volume, Chapter.volume_id == Volume.id)
+                .where(Volume.project_id == project_id, Chapter.locked.is_(True))
+            )
+        },
+        "scenes": {
+            row.id for row in session.scalars(
+                select(Scene)
+                .join(Chapter, Scene.chapter_id == Chapter.id)
+                .join(Volume, Chapter.volume_id == Volume.id)
+                .where(Volume.project_id == project_id, Scene.locked.is_(True))
+            )
+        },
+        "paragraphs": scene_paragraphs,
+    }
+
+
+def _apply_current_locks(session: Session, project_id: str, locks: dict) -> None:
+    """重建后仍存在的对象，锁定取「快照值 or 当前值」。
+
+    只对**重建后还在**的对象生效：被快照回滚掉的条目不该因为「它曾经被锁」
+    而让回滚失败，也不该凭空复活。
+    """
+    from app.db.models import Architecture
+
+    if locks["architecture"]:
+        arch = session.scalars(
+            select(Architecture).where(Architecture.project_id == project_id)
+        ).first()
+        if arch is not None:
+            arch.locked = True
+    _lock_rows(session, SettingEntry, locks["entries"])
+    _lock_rows(session, Volume, locks["volumes"])
+    _lock_rows(session, Chapter, locks["chapters"])
+    _lock_rows(session, Scene, locks["scenes"])
+    for scene_id, paragraphs in locks["paragraphs"].items():
+        scene = session.get(Scene, scene_id)
+        if scene is None or not paragraphs:
+            continue
+        merged = list(scene.locked_paragraphs_json or [])
+        for text in paragraphs:
+            if text not in merged:
+                merged.append(text)
+        scene.locked_paragraphs_json = merged
+
+
+def _lock_rows(session: Session, model, ids: set[str]) -> None:
+    if not ids:
+        return
+    for row in session.scalars(select(model).where(model.id.in_(ids))).all():
+        row.locked = True
 
 
 def _preserve_attachments(session: Session, project_id: str) -> dict:
@@ -544,9 +652,13 @@ def _preserve_attachments(session: Session, project_id: str) -> dict:
 
 
 def _restore_attachments(session: Session, preserved: dict) -> None:
-    from app.db.models import AuditIssue
+    from app.db.models import AuditIssue, SettingEntry
 
     scene_ids = {row.id for row in session.query(Scene).all()}
+    # 问题可能指向一个不在快照里的设定条目（快照之后新建的）。那条已被
+    # 回滚删掉，原样写回 target_entry_id 会撞外键、让整次回滚失败 ——
+    # 而审计问题是日志，不该有能力挡住回滚。沿用既有 FK 语义置空。
+    entry_ids = {row.id for row in session.query(SettingEntry).all()}
     for row in preserved["revisions"]:
         if row["scene_id"] not in scene_ids:
             continue
@@ -592,7 +704,11 @@ def _restore_attachments(session: Session, preserved: dict) -> None:
             explanation=row["explanation"],
             reader_impact=row["reader_impact"],
             options_json=row["options_json"],
-            target_entry_id=row["target_entry_id"],
+            target_entry_id=(
+                row["target_entry_id"]
+                if row["target_entry_id"] in entry_ids
+                else None
+            ),
             fingerprint=row["fingerprint"],
             status=row["status"],
             resolution=row["resolution"],

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.chapter_types import normalize_status
 from app.db.models import Chapter, Project, Scene, Volume
 from app.services import (
+    change_service,
     chapter_service,
     lock_service,
     review_service,
@@ -416,6 +417,20 @@ def write_chapter_plan(    session: Session,
                     )
                 )
         search_service.mark_dirty(session, project.id)
+        # 替换写入会整批删掉旧结构 —— 这正是「三卷十章被删」那种后悔操作，
+        # 历史里必须查得到。
+        change_service.record(
+            session,
+            project_id,
+            target_type="project",
+            target_id=project_id,
+            target_label=project.name,
+            action="update" if mode == "append" else "delete",
+            summary=(
+                f"{'追加' if mode == 'append' else '替换'}章纲："
+                f"{len(prepared)} 卷 / {sum(len(v['chapters']) for v in prepared)} 章"
+            ),
+        )
         session.commit()
     except Exception:
         session.rollback()
