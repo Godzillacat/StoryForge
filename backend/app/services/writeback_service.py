@@ -11,7 +11,13 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.db.models import Chapter, Foreshadow, Scene, SettingEntry
-from app.services import agent_service, foreshadow_service, text_service, world_service
+from app.services import (
+    agent_service,
+    foreshadow_service,
+    lock_service,
+    text_service,
+    world_service,
+)
 from app.services.runtime_service import RuntimeService
 
 
@@ -211,8 +217,15 @@ def apply(session: Session, scene_id: str, payload: dict) -> dict:
         raise ValueError("场景的章节结构已损坏")
 
     summary = payload.get("chapter_summary")
+    skipped: list[dict] = []
+    # 回写只跳过**锁定**的目标，其余照常应用 —— 一次回写里通常混着多种
+    # 目标，因为其中一条被锁就让整次作废，作者得重复勾选。
+    chapter_lock = lock_service.effective_chapter_lock(session, chapter)
     if summary is not None:
-        chapter.summary = str(summary).strip()
+        if chapter_lock["locked"]:
+            skipped.append({"type": "chapter_summary", "reason": chapter_lock["label"] + "已锁定"})
+        else:
+            chapter.summary = str(summary).strip()
 
     applied_characters: list[dict] = []
     for update in payload.get("character_updates") or []:
@@ -227,6 +240,11 @@ def apply(session: Session, scene_id: str, payload: dict) -> dict:
             raise ValueError(f"人物不属于这个项目：{entry_id}")
         if entry.type != "character":
             raise ValueError(f"不是人物条目：{entry_id}")
+        if entry.locked:
+            skipped.append(
+                {"type": "character", "name": entry.name, "reason": "设定条目已锁定"}
+            )
+            continue
         entry.current_state = state
         applied_characters.append({"entry_id": entry.id, "name": entry.name, "current_state": state})
 
@@ -250,4 +268,5 @@ def apply(session: Session, scene_id: str, payload: dict) -> dict:
         "chapter_summary": chapter.summary,
         "character_updates": applied_characters,
         "foreshadow_pays": applied_foreshadows,
+        "skipped": skipped,
     }

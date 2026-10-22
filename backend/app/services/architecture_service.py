@@ -19,6 +19,10 @@ def get_architecture(session: Session, project_id: str) -> tuple[Architecture | 
 def adopt(session: Session, project_id: str, payload: dict) -> tuple[Architecture, list[Act]]:
     """作者确认故事圣经后写入项目结构。重复采纳则原地更新。"""
     arch, existing_acts = get_architecture(session, project_id)
+    if arch is not None and arch.locked:
+        raise ValueError(
+            "故事圣经已锁定，AI 不会改动它。要重新采纳请先在架构页解锁。"
+        )
     if arch is None:
         arch = Architecture(project_id=project_id)
         session.add(arch)

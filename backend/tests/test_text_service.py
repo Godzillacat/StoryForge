@@ -124,3 +124,79 @@ def test_revisions_are_scoped_to_the_scene(session):
 
     with pytest.raises(ValueError, match="修订不存在"):
         text_service.get_revision(session, scene.id, revision["id"])
+
+
+# ---- 锁定对 AI 写路径的强制（P4a）----
+
+def test_adopt_is_rejected_when_the_scene_is_locked(session):
+    scene = _scene(session)
+    session.add(SceneDraft(scene_id=scene.id, content="草稿正文。"))
+    scene.locked = True
+    session.commit()
+
+    with pytest.raises(ValueError, match="已锁定"):
+        text_service.adopt_draft(session, scene.id)
+
+    session.expire_all()
+    assert session.get(Scene, scene.id).body is None
+
+
+def test_adopt_is_rejected_when_the_chapter_is_locked(session):
+    scene = _scene(session)
+    session.add(SceneDraft(scene_id=scene.id, content="草稿正文。"))
+    chapter = session.get(Chapter, scene.chapter_id)
+    chapter.locked = True
+    session.commit()
+
+    with pytest.raises(ValueError, match="已锁定"):
+        text_service.adopt_draft(session, scene.id)
+
+
+def test_adopt_still_works_when_nothing_is_locked(session):
+    scene = _scene(session)
+    session.add(SceneDraft(scene_id=scene.id, content="草稿正文。"))
+    session.commit()
+
+    assert text_service.adopt_draft(session, scene.id)["body"] == "草稿正文。"
+
+
+def test_adopt_rejects_a_draft_that_drops_a_locked_paragraph(session):
+    scene = _scene(session)
+    scene.locked_paragraphs_json = ["必须保留的一段。"]
+    session.add(SceneDraft(scene_id=scene.id, content="完全不同的正文。"))
+    session.commit()
+
+    with pytest.raises(ValueError, match="必须保留的一段"):
+        text_service.adopt_draft(session, scene.id)
+
+
+def test_adopt_accepts_a_draft_that_keeps_the_locked_paragraph(session):
+    scene = _scene(session)
+    scene.locked_paragraphs_json = ["必须保留的一段。"]
+    session.add(
+        SceneDraft(scene_id=scene.id, content="新的开头。\n\n必须保留的一段。\n\n新的结尾。")
+    )
+    session.commit()
+
+    body = text_service.adopt_draft(session, scene.id)["body"]
+    assert "必须保留的一段。" in body
+
+
+def test_save_body_is_never_blocked_by_a_lock(session):
+    """锁只约束 AI。作者手工保存永远可行 —— 这是产品立场，不是遗漏。"""
+    scene = _scene(session)
+    scene.locked = True
+    session.commit()
+
+    assert text_service.save_body(session, scene.id, "作者自己写的。")["body"] == "作者自己写的。"
+
+
+def test_prepare_generation_is_rejected_before_any_run_record(session):
+    scene = _scene(session)
+    scene.locked = True
+    session.commit()
+
+    with pytest.raises(ValueError, match="已锁定"):
+        text_service.prepare_generation(session, scene.id)
+
+    assert session.query(GenerationRun).count() == 0

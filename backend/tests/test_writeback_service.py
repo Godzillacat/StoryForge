@@ -232,6 +232,7 @@ def test_apply_empty_payload_changes_nothing(session):
         "chapter_summary": chapter.summary,
         "character_updates": [],
         "foreshadow_pays": [],
+        "skipped": [],
     }
     assert chapter.summary == "旧摘要"
     assert character.current_state == "仍在找录音带"
@@ -290,3 +291,67 @@ def test_apply_rejects_unknown_ids(session):
 def test_missing_scene(session):
     with pytest.raises(ValueError, match="场景不存在"):
         writeback_service.suggest(session, "nope")
+
+
+# ---- 锁定（P4a）----
+
+def test_apply_skips_a_locked_character_and_applies_the_rest(session):
+    project, scene, character, foreshadow = _seed(session)
+    character.locked = True
+    session.commit()
+
+    result = writeback_service.apply(
+        session,
+        scene.id,
+        {
+            "chapter_summary": "陈默拿到了录音带。",
+            "character_updates": [
+                {"entry_id": character.id, "current_state": "拿到了录音带"}
+            ],
+            "foreshadow_pays": [{"foreshadow_id": foreshadow.id}],
+        },
+    )
+
+    session.refresh(character)
+    session.refresh(foreshadow)
+    chapter = session.get(Chapter, scene.chapter_id)
+    assert chapter.summary == "陈默拿到了录音带。"
+    assert character.current_state == "仍在找录音带"
+    assert foreshadow.actual_pay_scene_id == scene.id
+    assert result["character_updates"] == []
+    assert result["skipped"] == [
+        {"type": "character", "name": "陈默", "reason": "设定条目已锁定"}
+    ]
+
+
+def test_apply_skips_the_chapter_summary_when_the_chapter_is_locked(session):
+    project, scene, character, foreshadow = _seed(session)
+    chapter = session.get(Chapter, scene.chapter_id)
+    chapter.locked = True
+    session.commit()
+
+    result = writeback_service.apply(
+        session, scene.id, {"chapter_summary": "陈默拿到了录音带。"}
+    )
+
+    session.refresh(chapter)
+    assert chapter.summary == "旧摘要"
+    assert result["skipped"][0]["type"] == "chapter_summary"
+
+
+def test_apply_does_not_skip_a_locked_scene(session):
+    """回写改的是章节摘要 / 人物状态 / 伏笔，不碰正文 —— 场景锁不该挡住它。"""
+    project, scene, character, foreshadow = _seed(session)
+    scene.locked = True
+    character.locked = False
+    session.commit()
+
+    result = writeback_service.apply(
+        session,
+        scene.id,
+        {"character_updates": [{"entry_id": character.id, "current_state": "拿到了录音带"}]},
+    )
+
+    session.refresh(character)
+    assert character.current_state == "拿到了录音带"
+    assert result["skipped"] == []

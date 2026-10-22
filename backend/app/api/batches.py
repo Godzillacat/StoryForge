@@ -35,7 +35,9 @@ def create_batch(
         )
     except ValueError as exc:
         raise _value_error(exc) from exc
-    return batch_service.serialize_job(job)
+    return batch_service.serialize_job(
+        job, batch_service.skipped_locked(session, job)
+    )
 
 
 @router.get("/projects/{project_id}/batches/latest")

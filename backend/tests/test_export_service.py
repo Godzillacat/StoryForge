@@ -183,3 +183,33 @@ def test_build_export_returns_media_types(session):
         assert content
         assert actual_type == media_type
         assert actual_ext == extension
+
+
+# ---- 锁定与待复核（P4a）----
+
+def test_report_counts_locked_objects(session):
+    project, *_rest = _seed(session)
+    volume = session.query(Volume).filter_by(project_id=project.id).first()
+    chapter = session.query(Chapter).filter_by(volume_id=volume.id, seq=0).first()
+    scene = session.query(Scene).filter_by(chapter_id=chapter.id, seq=0).first()
+    volume.locked = True
+    chapter.locked = True
+    scene.locked = True
+    session.commit()
+
+    report = export_service.build_report(session, project.id)
+
+    assert report["locked_counts"]["volumes"] == 1
+    assert report["locked_counts"]["chapters"] == 1
+    assert report["locked_counts"]["scenes"] == 1
+
+
+def test_report_counts_review_marks(session):
+    from app.db.models import ReviewMark
+
+    project, *_rest = _seed(session)
+    volume = session.query(Volume).filter_by(project_id=project.id).first()
+    session.add(ReviewMark(project_id=project.id, target_type="volume", target_id=volume.id))
+    session.commit()
+
+    assert export_service.build_report(session, project.id)["review_marks"] == 1

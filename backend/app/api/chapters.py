@@ -64,6 +64,10 @@ def _chapter_out(chapter) -> dict:
 
 
 def _bad_request(exc: ValueError) -> HTTPException:
+    # 锁定是「当前状态不允许这个操作」，不是参数写错了 —— 与「已有进行中的
+    # 运行」同一类语义，用 409 让前端能把它与真正的输入错误区分开。
+    if "已锁定" in str(exc):
+        return HTTPException(status_code=409, detail=str(exc))
     return HTTPException(status_code=400, detail=str(exc))
 
 

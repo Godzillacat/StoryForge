@@ -15,7 +15,9 @@ from app.api import (
     export,
     foreshadows,
     ideas,
+    impact,
     logic,
+    locks,
     pipeline,
     projects,
     providers,
@@ -76,5 +78,7 @@ for module in (
     batches,
     export,
     pipeline,
+    locks,
+    impact,
 ):
     app.include_router(module.router)

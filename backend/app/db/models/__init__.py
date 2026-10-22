@@ -7,6 +7,7 @@ from app.db.models.config_models import ModelPrice, Provider, Setting
 from app.db.models.idea import Idea
 from app.db.models.pipeline import Pipeline, PipelineNode, PipelineRun, PipelineRunNode
 from app.db.models.project import Project
+from app.db.models.review import ReviewMark
 from app.db.models.run import GenerationRun
 from app.db.models.search import SearchIndexState
 from app.db.models.text import SceneDraft, SceneRevision
@@ -33,6 +34,7 @@ __all__ = [
     "PipelineRunNode",
     "Project",
     "Provider",
+    "ReviewMark",
     "Scene",
     "SceneDraft",
     "SceneRevision",

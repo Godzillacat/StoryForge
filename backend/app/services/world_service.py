@@ -14,7 +14,7 @@ from app.db.models import (
     TimelineEvent,
     Volume,
 )
-from app.services import search_service
+from app.services import review_service, search_service
 from app.world_types import CHARACTER_FIELDS, normalize_hardness, normalize_type
 
 # 服务层说领域名（aliases / tags），存储层的 *_json 后缀不往上传 ——
@@ -130,6 +130,8 @@ def delete_entry(session: Session, entry_id: str) -> None:
                 cid for cid in character_ids if cid != entry_id
             ]
     session.delete(entry)
+    # 标记指向的是一个已经不存在的对象；留着只会让作者点进一条死链。
+    review_service.clear_for_target(session, entry.project_id, "entry", entry_id)
     search_service.mark_dirty(session, entry.project_id)
     session.commit()
 
