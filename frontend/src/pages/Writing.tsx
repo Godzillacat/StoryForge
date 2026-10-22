@@ -7,6 +7,7 @@ import {
   type AuditResolution,
   type BatchJob,
   type ContextPreview as ContextPreviewData,
+  type ChangeRow,
   type LockState,
   type LogicStage,
   type Project,
@@ -19,6 +20,7 @@ import {
 import AuditPanel from '../components/writing/AuditPanel'
 import BatchPanel from '../components/writing/BatchPanel'
 import ContextPreview from '../components/writing/ContextPreview'
+import { ChangeList } from '../components/Snapshots'
 import ParagraphLocks from '../components/writing/ParagraphLocks'
 import DiffPanel from '../components/writing/DiffPanel'
 import GenerationStream from '../components/writing/GenerationStream'
@@ -66,6 +68,7 @@ export default function Writing() {
   // 提前把按钮关掉并说清为什么，让作者不用点一次才知道。
   const [sceneLock, setSceneLock] = useState<LockState | null>(null)
   const [paragraphLocks, setParagraphLocks] = useState<string[]>([])
+  const [sceneChanges, setSceneChanges] = useState<ChangeRow[]>([])
   const [text, setText] = useState<SceneTextState | null>(null)
   const [preview, setPreview] = useState<ContextPreviewData | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -246,6 +249,19 @@ export default function Writing() {
     setProjectId(nextId)
   }
 
+  async function refreshSceneChanges(sceneId: string, token: number) {
+    try {
+      const body = await api.listChanges(projectId, {
+        target_type: 'scene',
+        target_id: sceneId,
+        limit: 20,
+      })
+      if (sceneToken.current === token) setSceneChanges(body.changes)
+    } catch {
+      // 历史是辅助信息，取不到不影响写作。
+    }
+  }
+
   const loadScene = async (sceneId: string) => {
     const token = ++sceneToken.current
     const logicSeq = ++logicToken.current
@@ -256,6 +272,7 @@ export default function Writing() {
     // 先清空上一场的锁定状态：留着会让新场景短暂地显示上一场的横幅。
     setSceneLock(null)
     setParagraphLocks([])
+    setSceneChanges([])
     setAuditIssues([])
     setAuditLastAt(null)
     setAuditWarning('')
@@ -275,6 +292,7 @@ export default function Writing() {
       if (sceneToken.current !== token) return
       setSceneLock(lockResult.status === 'fulfilled' ? lockResult.value : null)
       setParagraphLocks(paraResult.status === 'fulfilled' ? paraResult.value.paragraphs : [])
+      void refreshSceneChanges(sceneId, token)
       if (stateResult.status === 'fulfilled') {
         const state = stateResult.value
         setText(state)
@@ -412,6 +430,7 @@ export default function Writing() {
       if (sceneToken.current !== token) return
       setText(state)
       setBodyDraft(state.body ?? '')
+      void refreshSceneChanges(sceneId, token)
       // 服务端会把旧问题标为 superseded；本地也立即清掉，避免对旧文本处理问题。
       setAuditIssues([])
       setAuditWarning('')
@@ -491,6 +510,7 @@ export default function Writing() {
           : '已采纳，已生成修订快照',
       )
       void refreshTree()
+      void refreshSceneChanges(sceneId, token)
     } catch (error) {
       if (sceneToken.current === token) setNotice((error as Error).message)
     } finally {
@@ -916,6 +936,7 @@ export default function Writing() {
       if (sceneToken.current !== token) return
       setText(state)
       setBodyDraft(state.body ?? '')
+      void refreshSceneChanges(sceneId, token)
       setMode('body')
       setRevision(null)
       setAuditIssues([])
@@ -1224,6 +1245,12 @@ export default function Writing() {
           </section>
 
           <aside className="min-w-0 space-y-4">
+            {selectedSceneId && sceneChanges.length > 0 && (
+              <section className="space-y-2 rounded border border-slate-800 p-3">
+                <h3 className="text-sm font-medium text-slate-300">这一场的改动</h3>
+                <ChangeList projectId={projectId} changes={sceneChanges} />
+              </section>
+            )}
             {selectedSceneId && (
               <ParagraphLocks
                 sceneId={selectedSceneId}

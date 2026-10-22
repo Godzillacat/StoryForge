@@ -360,3 +360,8 @@ class ReviewMarkCreate(BaseModel):
 
 class ReviewMarkClear(ReviewMarkCreate):
     pass
+
+
+class SnapshotCreate(BaseModel):
+    name: str = ""
+    note: str = ""

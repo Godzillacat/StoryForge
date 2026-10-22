@@ -23,6 +23,7 @@ from app.api import (
     providers,
     runs,
     search,
+    snapshots,
     slots,
     text,
     timeline,
@@ -80,5 +81,6 @@ for module in (
     pipeline,
     locks,
     impact,
+    snapshots,
 ):
     app.include_router(module.router)

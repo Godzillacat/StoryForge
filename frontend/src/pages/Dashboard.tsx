@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, type CostSummary, type ExportReport, type Project, type Settings } from '../api/client'
+import {
+  api,
+  type ChangeRow,
+  type CostSummary,
+  type ExportReport,
+  type Project,
+  type Settings,
+  type SnapshotView,
+} from '../api/client'
+import { ChangeList, SnapshotPanel } from '../components/Snapshots'
 
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
@@ -9,6 +18,8 @@ export default function Dashboard() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [name, setName] = useState('')
   const [notice, setNotice] = useState('')
+  const [snapshots, setSnapshots] = useState<SnapshotView[]>([])
+  const [changes, setChanges] = useState<ChangeRow[]>([])
   const reportToken = useRef(0)
 
   useEffect(() => {
@@ -27,6 +38,9 @@ export default function Dashboard() {
       return
     }
     setReport(null)
+    setSnapshots([])
+    setChanges([])
+    loadSnapshots(selected.id, token)
     api
       .projectCost(selected.id)
       .then((value) => {
@@ -44,6 +58,30 @@ export default function Dashboard() {
         if (reportToken.current === token) setNotice((error as Error).message)
       })
   }, [selected])
+
+  function loadSnapshots(projectId: string, token: number) {
+    api
+      .listSnapshots(projectId)
+      .then((rows) => {
+        if (reportToken.current === token) setSnapshots(rows)
+      })
+      .catch(() => {
+        if (reportToken.current === token) setSnapshots([])
+      })
+    api
+      .listChanges(projectId, { limit: 20 })
+      .then((body) => {
+        if (reportToken.current === token) setChanges(body.changes)
+      })
+      .catch(() => {
+        if (reportToken.current === token) setChanges([])
+      })
+  }
+
+  function reloadSnapshots() {
+    if (!selected) return
+    loadSnapshots(selected.id, reportToken.current)
+  }
 
   async function create() {
     if (!name.trim()) return
@@ -206,6 +244,49 @@ export default function Dashboard() {
               </>
             ) : (
               <p className="text-sm text-slate-500">选一个项目查看成品报告。</p>
+            )}
+          </section>
+          {selected && (
+            <SnapshotPanel
+              projectId={selected.id}
+              snapshots={snapshots}
+              onReload={reloadSnapshots}
+              onRestored={() => {
+                // 回滚改了整份结构：报告与费用都过期了，重新拉一遍。
+                // 持令牌守卫 —— 回滚途中切了项目时，这批响应属于旧项目。
+                const token = reportToken.current
+                const projectId = selected.id
+                setReport(null)
+                api
+                  .getExportReport(projectId)
+                  .then((value) => {
+                    if (reportToken.current === token) setReport(value)
+                  })
+                  .catch(() => {
+                    if (reportToken.current === token) setReport(null)
+                  })
+                api
+                  .projectCost(projectId)
+                  .then((value) => {
+                    if (reportToken.current === token) setCost(value)
+                  })
+                  .catch(() => {
+                    if (reportToken.current === token) setCost(null)
+                  })
+              }}
+            />
+          )}
+
+          <section className="space-y-3 rounded border border-slate-800 p-4">
+            <h3 className="text-sm font-medium text-slate-300">最近改动</h3>
+            {selected ? (
+              <ChangeList
+                projectId={selected.id}
+                changes={changes}
+                emptyHint="这个项目还没有改动记录。"
+              />
+            ) : (
+              <p className="text-sm text-slate-500">选一个项目查看改动历史。</p>
             )}
           </section>
         </div>

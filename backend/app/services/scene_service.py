@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.chapter_types import normalize_status
 from app.db.models import Chapter, Foreshadow, Scene, SettingEntry
 from app.services import (
+    change_service,
     chapter_service,
     foreshadow_service,
     lock_service,
@@ -310,6 +311,20 @@ def update_scene(session: Session, scene_id: str, **fields) -> Scene:
                 replaced_scene_ids={scene.id},
             )
         search_service.mark_dirty(session, project.id)
+        chapter = session.get(Chapter, scene.chapter_id)
+        change_service.record(
+            session,
+            project.id,
+            target_type="scene",
+            target_id=scene.id,
+            target_label=(
+                f"第{chapter.seq + 1}章 场景{scene.seq + 1}"
+                if chapter is not None
+                else f"场景{scene.seq + 1}"
+            ),
+            action="update",
+            summary="编辑场景卡",
+        )
         session.commit()
     except Exception:
         session.rollback()
@@ -323,8 +338,23 @@ def delete_scene(session: Session, scene_id: str) -> None:
         raise ValueError(f"场景不存在：{scene_id}")
     project = chapter_service.get_project_for_chapter(session, scene.chapter_id)
     review_service.clear_for_target(session, project.id, "scene", scene_id)
+    chapter = session.get(Chapter, scene.chapter_id)
+    label = (
+        f"第{chapter.seq + 1}章 场景{scene.seq + 1}"
+        if chapter is not None
+        else f"场景{scene.seq + 1}"
+    )
     session.delete(scene)
     search_service.mark_dirty(session, project.id)
+    change_service.record(
+        session,
+        project.id,
+        target_type="scene",
+        target_id=scene_id,
+        target_label=label,
+        action="delete",
+        summary="删除场景",
+    )
     session.commit()
 
 
