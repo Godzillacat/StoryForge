@@ -293,3 +293,24 @@ def _only_snapshot_for(session, project_id: str, name: str) -> ProjectSnapshot:
         .filter_by(project_id=project_id, name=name)
         .first()
     )
+
+
+def test_restoring_an_automatic_backup_does_not_make_another_backup(session):
+    """回滚一份自动备份时不再备份 —— 否则名字会层层嵌套。"""
+    project, _volume, _chapter, scene, _shen = _seed(session)
+    snapshot_service.create_snapshot(session, project.id, "初稿")
+    session.get(Scene, scene.id).body = "改过的正文"
+    session.commit()
+
+    first = snapshot_service.restore_snapshot(
+        session, _only_snapshot(session, "初稿").id
+    )
+    second = snapshot_service.restore_snapshot(session, first["backup"]["id"])
+
+    assert second["backup"] is None
+    nested = [
+        row
+        for row in snapshot_service.list_snapshots(session, project.id)
+        if row["name"].count(snapshot_service.AUTO_PREFIX) > 1
+    ]
+    assert nested == []

@@ -172,3 +172,20 @@ def test_history_is_newest_first(session):
     rows = _rows(session, project.id)
 
     assert rows[0]["target_type"] == "scene"
+
+
+def test_deleting_a_scene_chapter_and_volume_is_recorded(session):
+    project, volume, chapter, scene = _seed(session)
+    extra = Scene(chapter_id=chapter.id, seq=1, goal="第二场")
+    session.add(extra)
+    session.commit()
+
+    scene_service.delete_scene(session, extra.id)
+    chapter_service.delete_chapter(session, chapter.id)
+    chapter_service.delete_volume(session, volume.id)
+
+    rows = _rows(session, project.id)
+    deleted = [row for row in rows if row["action"] == "delete"]
+    assert {row["target_type"] for row in deleted} == {"scene", "chapter", "volume"}
+    # 对象已删，历史仍带当时的名称 —— 否则作者看到的是一串裸 UUID。
+    assert all(row["target_label"] for row in deleted)

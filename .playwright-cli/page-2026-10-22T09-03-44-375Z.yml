@@ -1,0 +1,193 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - heading "StoryForge" [level=1] [ref=e5]
+    - navigation [ref=e6]:
+      - link "故事仪表盘" [ref=e7] [cursor=pointer]:
+        - /url: /dashboard
+      - link "灵感与解析" [ref=e8] [cursor=pointer]:
+        - /url: /idea
+      - link "架构推荐" [ref=e9] [cursor=pointer]:
+        - /url: /architecture
+      - link "世界观" [ref=e10] [cursor=pointer]:
+        - /url: /world
+      - link "关系网" [ref=e11] [cursor=pointer]:
+        - /url: /relations
+      - link "时间线" [ref=e12] [cursor=pointer]:
+        - /url: /timeline
+      - link "术语表" [ref=e13] [cursor=pointer]:
+        - /url: /terms
+      - link "章节设计" [ref=e14] [cursor=pointer]:
+        - /url: /chapters
+      - link "写作台" [ref=e15] [cursor=pointer]:
+        - /url: /write
+      - link "管线编排" [ref=e16] [cursor=pointer]:
+        - /url: /pipeline
+      - link "智能体工作室" [ref=e17] [cursor=pointer]:
+        - /url: /studio
+      - link "模型与费用" [ref=e18] [cursor=pointer]:
+        - /url: /models
+  - main [ref=e19]:
+    - generic [ref=e20]:
+      - heading "故事仪表盘" [level=2] [ref=e21]
+      - generic [ref=e22]:
+        - textbox "新项目名称" [ref=e23]
+        - button "新建项目" [ref=e24] [cursor=pointer]
+      - generic [ref=e25]:
+        - button "走查项目 未定题材 · 未定调性" [active] [ref=e38] [cursor=pointer]:
+          - generic [ref=e39]: 走查项目
+          - generic [ref=e40]: 未定题材 · 未定调性
+        - generic [ref=e28]:
+          - generic [ref=e29]:
+            - heading "体检单" [level=3] [ref=e30]
+            - generic [ref=e41]:
+              - generic [ref=e42]:
+                - term [ref=e43]: 字数
+                - definition [ref=e44]: "0"
+              - generic [ref=e45]:
+                - term [ref=e46]: 已写场景
+                - definition [ref=e47]: 0 / 0
+              - generic [ref=e48]:
+                - term [ref=e49]: 未回收伏笔
+                - definition [ref=e50]: "0"
+              - generic [ref=e51]:
+                - term [ref=e52]: 未处理告警
+                - definition [ref=e53]: 审计 0 · 逻辑 0
+              - generic [ref=e54]:
+                - term [ref=e55]: 锁定对象
+                - definition [ref=e56]: "0"
+              - generic [ref=e57]:
+                - term [ref=e58]: 待复核
+                - definition [ref=e59]: "0"
+              - generic [ref=e60]:
+                - term [ref=e61]: 累计调用
+                - definition [ref=e62]: 0 次
+              - generic [ref=e63]:
+                - term [ref=e64]: 累计费用
+                - definition [ref=e65]: $0.0000
+          - generic [ref=e32]:
+            - heading "导出与成品报告" [level=3] [ref=e33]
+            - paragraph [ref=e66]: 共 0 字 · 1 卷 0 章 · 0 场
+            - generic [ref=e67]:
+              - link "Markdown" [ref=e68] [cursor=pointer]:
+                - /url: /api/projects/c557b849-bff4-493d-a02b-d574b447590b/export?format=md
+              - link "TXT" [ref=e69] [cursor=pointer]:
+                - /url: /api/projects/c557b849-bff4-493d-a02b-d574b447590b/export?format=txt
+              - link "EPUB" [ref=e70] [cursor=pointer]:
+                - /url: /api/projects/c557b849-bff4-493d-a02b-d574b447590b/export?format=epub
+          - generic [ref=e71]:
+            - heading "版本与快照" [level=3] [ref=e72]
+            - paragraph [ref=e73]: 快照记下结构与正文。灵感原话、运行记录与修订历史不在快照里，也不会被回滚。
+            - generic [ref=e74]:
+              - textbox "快照名称" [ref=e75]
+              - textbox "备注（可选）" [ref=e76]
+              - button "新建快照" [disabled] [ref=e77]
+            - list [ref=e78]:
+              - listitem [ref=e79]:
+                - generic [ref=e80]: 回滚前自动备份（回滚前自动备份（初稿））
+                - generic [ref=e81]: 自动备份
+                - generic [ref=e82]: 1 卷 / 1 章 / 1 场 / 8 字
+                - generic [ref=e83]: 2026/10/22 09:01:59
+                - generic [ref=e84]: 回滚到「回滚前自动备份（初稿）」之前的自动备份
+                - generic [ref=e85]:
+                  - button "回滚到此" [ref=e86] [cursor=pointer]
+                  - button "删除" [ref=e87] [cursor=pointer]
+              - listitem [ref=e88]:
+                - generic [ref=e89]: 回滚前自动备份（初稿）
+                - generic [ref=e90]: 自动备份
+                - generic [ref=e91]: 1 卷 / 0 章 / 0 场 / 0 字
+                - generic [ref=e92]: 2026/10/22 09:01:59
+                - generic [ref=e93]: 回滚到「初稿」之前的自动备份
+                - generic [ref=e94]:
+                  - button "回滚到此" [ref=e95] [cursor=pointer]
+                  - button "删除" [ref=e96] [cursor=pointer]
+          - generic [ref=e35]:
+            - heading "最近改动" [level=3] [ref=e36]
+            - list [ref=e97]:
+              - listitem [ref=e98]:
+                - generic [ref=e99]: 快照
+                - link "回滚前自动备份（初稿）" [ref=e100] [cursor=pointer]:
+                  - /url: /dashboard?project=c557b849-bff4-493d-a02b-d574b447590b
+                - generic [ref=e101]: 回滚
+                - generic [ref=e102]: 快照
+                - generic [ref=e103]: 回滚到「回滚前自动备份（初稿）」；回滚前已自动备份为「回滚前自动备份（回滚前自动备份（初稿））」
+                - generic [ref=e104]: 2026/10/22 09:01:59
+              - listitem [ref=e105]:
+                - generic [ref=e106]: 快照
+                - link "回滚前自动备份（回滚前自动备份（初稿））" [ref=e107] [cursor=pointer]:
+                  - /url: /dashboard?project=c557b849-bff4-493d-a02b-d574b447590b
+                - generic [ref=e108]: 新建
+                - generic [ref=e109]: 快照
+                - generic [ref=e110]: 1 卷 / 1 章 / 1 场 / 8 字
+                - generic [ref=e111]: 2026/10/22 09:01:59
+              - listitem [ref=e112]:
+                - generic [ref=e113]: 快照
+                - link "初稿" [ref=e114] [cursor=pointer]:
+                  - /url: /dashboard?project=c557b849-bff4-493d-a02b-d574b447590b
+                - generic [ref=e115]: 回滚
+                - generic [ref=e116]: 快照
+                - generic [ref=e117]: 回滚到「初稿」；回滚前已自动备份为「回滚前自动备份（初稿）」
+                - generic [ref=e118]: 2026/10/22 09:01:59
+              - listitem [ref=e119]:
+                - generic [ref=e120]: 快照
+                - link "回滚前自动备份（初稿）" [ref=e121] [cursor=pointer]:
+                  - /url: /dashboard?project=c557b849-bff4-493d-a02b-d574b447590b
+                - generic [ref=e122]: 新建
+                - generic [ref=e123]: 快照
+                - generic [ref=e124]: 1 卷 / 0 章 / 0 场 / 0 字
+                - generic [ref=e125]: 2026/10/22 09:01:59
+              - listitem [ref=e126]:
+                - generic [ref=e127]: 章
+                - link "第1章（第一章）" [ref=e128] [cursor=pointer]:
+                  - /url: /chapters?project=c557b849-bff4-493d-a02b-d574b447590b
+                - generic [ref=e129]: 删除
+                - generic [ref=e130]: 作者
+                - generic [ref=e131]: 删除整章
+                - generic [ref=e132]: 2026/10/22 09:01:59
+              - listitem [ref=e133]:
+                - generic [ref=e134]: 设定条目
+                - link "新势力" [ref=e135] [cursor=pointer]:
+                  - /url: /world?project=c557b849-bff4-493d-a02b-d574b447590b&entry=efca9734-5c2b-4403-9b38-4401d892d5fb
+                - generic [ref=e136]: 新建
+                - generic [ref=e137]: 作者
+                - generic [ref=e138]: 新建势力
+                - generic [ref=e139]: 2026/10/22 09:01:59
+              - listitem [ref=e140]:
+                - generic [ref=e141]: 卷
+                - link "第1卷（改名的卷）" [ref=e142] [cursor=pointer]:
+                  - /url: /chapters?project=c557b849-bff4-493d-a02b-d574b447590b
+                - generic [ref=e143]: 编辑
+                - generic [ref=e144]: 作者
+                - generic [ref=e145]: 修改：卷名
+                - generic [ref=e146]: 2026/10/22 09:01:58
+              - listitem [ref=e147]:
+                - generic [ref=e148]: 场景
+                - link "第1卷 第1章 场景1" [ref=e149] [cursor=pointer]:
+                  - /url: /write?project=c557b849-bff4-493d-a02b-d574b447590b&scene=6c6d59e9-2bb8-40d3-8dce-0e7f5fe89d86
+                - generic [ref=e150]: 编辑
+                - generic [ref=e151]: 作者
+                - generic [ref=e152]: 正文 8 字
+                - generic [ref=e153]: 2026/10/22 09:01:58
+              - listitem [ref=e154]:
+                - generic [ref=e155]: 快照
+                - link "初稿" [ref=e156] [cursor=pointer]:
+                  - /url: /dashboard?project=c557b849-bff4-493d-a02b-d574b447590b
+                - generic [ref=e157]: 新建
+                - generic [ref=e158]: 作者
+                - generic [ref=e159]: 1 卷 / 1 章 / 1 场 / 8 字
+                - generic [ref=e160]: 2026/10/22 09:01:58
+              - listitem [ref=e161]:
+                - generic [ref=e162]: 场景
+                - link "第1卷 第1章 场景1" [ref=e163] [cursor=pointer]:
+                  - /url: /write?project=c557b849-bff4-493d-a02b-d574b447590b&scene=6c6d59e9-2bb8-40d3-8dce-0e7f5fe89d86
+                - generic [ref=e164]: 编辑
+                - generic [ref=e165]: 作者
+                - generic [ref=e166]: 正文 8 字
+                - generic [ref=e167]: 2026/10/22 09:01:58
+              - listitem [ref=e168]:
+                - generic [ref=e169]: 设定条目
+                - link "沈砚" [ref=e170] [cursor=pointer]:
+                  - /url: /world?project=c557b849-bff4-493d-a02b-d574b447590b&entry=8679dc60-19dc-49da-906e-e5eedf426ba0
+                - generic [ref=e171]: 新建
+                - generic [ref=e172]: 作者
+                - generic [ref=e173]: 新建人物
+                - generic [ref=e174]: 2026/10/22 09:01:58

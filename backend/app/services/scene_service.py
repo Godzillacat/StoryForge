@@ -338,8 +338,23 @@ def delete_scene(session: Session, scene_id: str) -> None:
         raise ValueError(f"场景不存在：{scene_id}")
     project = chapter_service.get_project_for_chapter(session, scene.chapter_id)
     review_service.clear_for_target(session, project.id, "scene", scene_id)
+    chapter = session.get(Chapter, scene.chapter_id)
+    label = (
+        f"第{chapter.seq + 1}章 场景{scene.seq + 1}"
+        if chapter is not None
+        else f"场景{scene.seq + 1}"
+    )
     session.delete(scene)
     search_service.mark_dirty(session, project.id)
+    change_service.record(
+        session,
+        project.id,
+        target_type="scene",
+        target_id=scene_id,
+        target_label=label,
+        action="delete",
+        summary="删除场景",
+    )
     session.commit()
 
 

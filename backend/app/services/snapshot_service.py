@@ -386,15 +386,21 @@ def restore_snapshot(session: Session, snapshot_id: str) -> dict:
     """把项目结构恢复到快照当时。回滚前先自动备份，所以回滚本身可撤销。"""
     row = _snapshot(session, snapshot_id)
     project_id = row.project_id
-    data = row.data_json or {}
 
-    # 1. 自动备份：独立提交，回滚失败时它仍然在。
-    backup = create_snapshot(
-        session,
-        project_id,
-        f"{AUTO_PREFIX}（{row.name}）",
-        note=f"回滚到「{row.name}」之前的自动备份",
+    # 回滚一份**自动备份**时不再备份：那份备份本身就是上一次回滚的后路，
+    # 再备份一次只会让名字层层嵌套（「回滚前自动备份（回滚前自动备份（初稿））」），
+    # 而作者真正需要的是「按原样退回去」，不是又一层历史。
+    backup = (
+        None
+        if row.name.startswith(AUTO_PREFIX)
+        else create_snapshot(
+            session,
+            project_id,
+            f"{AUTO_PREFIX}（{row.name}）",
+            note=f"回滚到「{row.name}」之前的自动备份",
+        )
     )
+    data = row.data_json or {}
 
     # 2. 修订与草稿挂在场景上、写了 ON DELETE CASCADE —— 删场景会把它们一起
     #    带走。而它们是**日志**，回滚作品不该回滚日志（§1.2）。先抄出来，
@@ -424,7 +430,11 @@ def restore_snapshot(session: Session, snapshot_id: str) -> dict:
         target_label=row.name,
         action="rollback",
         source="snapshot",
-        summary=f"回滚到「{row.name}」；回滚前已自动备份为「{backup.name}」",
+        summary=(
+            f"回滚到「{row.name}」"
+            if backup is None
+            else f"回滚到「{row.name}」；回滚前已自动备份为「{backup.name}」"
+        ),
     )
     session.commit()
 
@@ -435,7 +445,8 @@ def restore_snapshot(session: Session, snapshot_id: str) -> dict:
 
     return {
         "snapshot": serialize_snapshot(row),
-        "backup": serialize_snapshot(backup),
+        # 回滚一份自动备份时没有新备份 —— 返回 None，界面据此不说「已备份」。
+        "backup": None if backup is None else serialize_snapshot(backup),
         "scale": _scale(_current_dump(session, project_id)),
     }
 

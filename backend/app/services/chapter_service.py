@@ -197,8 +197,19 @@ def delete_volume(session: Session, volume_id: str) -> None:
         review_service.clear_for_target(session, volume.project_id, "chapter", chapter.id)
         session.delete(chapter)
     review_service.clear_for_target(session, volume.project_id, "volume", volume_id)
+    label = f"第{volume.seq + 1}卷（{volume.name}）"
+    project_id = volume.project_id
     session.delete(volume)
-    search_service.mark_dirty(session, volume.project_id)
+    search_service.mark_dirty(session, project_id)
+    change_service.record(
+        session,
+        project_id,
+        target_type="volume",
+        target_id=volume_id,
+        target_label=label,
+        action="delete",
+        summary="删除整卷",
+    )
     session.commit()
 
 
@@ -315,8 +326,18 @@ def delete_chapter(session: Session, chapter_id: str) -> None:
     for scene in _ordered_scenes(session, chapter_id):
         review_service.clear_for_target(session, project.id, "scene", scene.id)
     review_service.clear_for_target(session, project.id, "chapter", chapter_id)
+    label = f"第{chapter.seq + 1}章（{chapter.title}）"
     session.delete(chapter)
     search_service.mark_dirty(session, project.id)
+    change_service.record(
+        session,
+        project.id,
+        target_type="chapter",
+        target_id=chapter_id,
+        target_label=label,
+        action="delete",
+        summary="删除整章",
+    )
     session.commit()
 
 

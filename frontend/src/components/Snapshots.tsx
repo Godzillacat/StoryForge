@@ -45,7 +45,11 @@ export function SnapshotPanel({
     setNotice('')
     try {
       const result = await api.restoreSnapshot(row.id)
-      setNotice(`已回滚；回滚前自动备份为「${result.backup.name}」`)
+      setNotice(
+        result.backup
+          ? `已回滚；回滚前自动备份为「${result.backup.name}」`
+          : '已回滚（回滚的是一份自动备份，不再另存备份）',
+      )
       onReload()
       onRestored?.()
     } catch (error) {

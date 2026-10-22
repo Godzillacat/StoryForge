@@ -436,7 +436,11 @@ export const api = {
   getSnapshot: (snapshotId: string) =>
     request<SnapshotDetail>(`/api/snapshots/${snapshotId}`),
   restoreSnapshot: (snapshotId: string) =>
-    request<{ snapshot: SnapshotView; backup: SnapshotView; scale: Record<string, number> }>(
+    request<{
+      snapshot: SnapshotView
+      backup: SnapshotView | null
+      scale: Record<string, number>
+    }>(
       `/api/snapshots/${snapshotId}/restore`,
       { method: 'POST' },
     ),
