@@ -425,6 +425,35 @@ export const api = {
     ),
   clearReviewMark: (markId: string) =>
     request<void>(`/api/review-marks/${markId}`, { method: 'DELETE' }),
+  listSnapshots: (projectId: string) =>
+    request<SnapshotView[]>(`/api/projects/${projectId}/snapshots`),
+  createSnapshot: (projectId: string, body: { name: string; note?: string }) =>
+    request<SnapshotView>(`/api/projects/${projectId}/snapshots`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  getSnapshot: (snapshotId: string) =>
+    request<SnapshotDetail>(`/api/snapshots/${snapshotId}`),
+  restoreSnapshot: (snapshotId: string) =>
+    request<{ snapshot: SnapshotView; backup: SnapshotView; scale: Record<string, number> }>(
+      `/api/snapshots/${snapshotId}/restore`,
+      { method: 'POST' },
+    ),
+  deleteSnapshot: (snapshotId: string) =>
+    request<void>(`/api/snapshots/${snapshotId}`, { method: 'DELETE' }),
+  listChanges: (
+    projectId: string,
+    params?: { target_type?: string; target_id?: string; limit?: number; offset?: number },
+  ) => {
+    const query = new URLSearchParams()
+    if (params?.target_type) query.set('target_type', params.target_type)
+    if (params?.target_id) query.set('target_id', params.target_id)
+    if (params?.limit) query.set('limit', String(params.limit))
+    if (params?.offset) query.set('offset', String(params.offset))
+    const suffix = query.toString()
+    return request<ChangeList>(`/api/projects/${projectId}/changes${suffix ? `?${suffix}` : ''}`)
+  },
   clearReviewMarks: (
     projectId: string,
     items: { target_type: string; target_id: string }[],
@@ -1241,4 +1270,48 @@ export interface ReviewMark {
   reason: string
   path: string
   created_at: string
+}
+
+export interface SnapshotView {
+  id: string
+  project_id: string
+  name: string
+  note: string
+  volumes: number
+  chapters: number
+  scenes: number
+  words: number
+  auto: boolean
+  created_at: string
+}
+
+export interface SnapshotDetail extends SnapshotView {
+  preview: {
+    entries: number
+    relations: number
+    timeline: number
+    foreshadows: number
+    has_architecture: boolean
+    volume_names: string[]
+  }
+}
+
+export interface ChangeRow {
+  id: string
+  project_id: string
+  target_type: string
+  target_type_label: string
+  target_id: string
+  target_label: string
+  action: string
+  action_label: string
+  source: string
+  source_label: string
+  summary: string
+  created_at: string
+}
+
+export interface ChangeList {
+  changes: ChangeRow[]
+  target_types: { key: string; label: string }[]
 }

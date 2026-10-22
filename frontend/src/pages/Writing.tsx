@@ -7,6 +7,7 @@ import {
   type AuditResolution,
   type BatchJob,
   type ContextPreview as ContextPreviewData,
+  type ChangeRow,
   type LockState,
   type LogicStage,
   type Project,
@@ -19,6 +20,7 @@ import {
 import AuditPanel from '../components/writing/AuditPanel'
 import BatchPanel from '../components/writing/BatchPanel'
 import ContextPreview from '../components/writing/ContextPreview'
+import { ChangeList } from '../components/Snapshots'
 import ParagraphLocks from '../components/writing/ParagraphLocks'
 import DiffPanel from '../components/writing/DiffPanel'
 import GenerationStream from '../components/writing/GenerationStream'
@@ -66,6 +68,7 @@ export default function Writing() {
   // 提前把按钮关掉并说清为什么，让作者不用点一次才知道。
   const [sceneLock, setSceneLock] = useState<LockState | null>(null)
   const [paragraphLocks, setParagraphLocks] = useState<string[]>([])
+  const [sceneChanges, setSceneChanges] = useState<ChangeRow[]>([])
   const [text, setText] = useState<SceneTextState | null>(null)
   const [preview, setPreview] = useState<ContextPreviewData | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -256,6 +259,7 @@ export default function Writing() {
     // 先清空上一场的锁定状态：留着会让新场景短暂地显示上一场的横幅。
     setSceneLock(null)
     setParagraphLocks([])
+    setSceneChanges([])
     setAuditIssues([])
     setAuditLastAt(null)
     setAuditWarning('')
@@ -275,6 +279,16 @@ export default function Writing() {
       if (sceneToken.current !== token) return
       setSceneLock(lockResult.status === 'fulfilled' ? lockResult.value : null)
       setParagraphLocks(paraResult.status === 'fulfilled' ? paraResult.value.paragraphs : [])
+      api
+        .listChanges(projectId, {
+          target_type: 'scene',
+          target_id: sceneId,
+          limit: 20,
+        })
+        .then((body) => {
+          if (sceneToken.current === token) setSceneChanges(body.changes)
+        })
+        .catch(() => undefined)
       if (stateResult.status === 'fulfilled') {
         const state = stateResult.value
         setText(state)
@@ -1224,6 +1238,12 @@ export default function Writing() {
           </section>
 
           <aside className="min-w-0 space-y-4">
+            {selectedSceneId && sceneChanges.length > 0 && (
+              <section className="space-y-2 rounded border border-slate-800 p-3">
+                <h3 className="text-sm font-medium text-slate-300">这一场的改动</h3>
+                <ChangeList projectId={projectId} changes={sceneChanges} />
+              </section>
+            )}
             {selectedSceneId && (
               <ParagraphLocks
                 sceneId={selectedSceneId}
