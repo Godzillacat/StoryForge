@@ -35,3 +35,6 @@ dist/
 
 # Claude Code 工作区（worktrees、本地设置）
 .claude/
+
+# Playwright CLI 走查产物（快照、控制台日志）
+.playwright-cli/
