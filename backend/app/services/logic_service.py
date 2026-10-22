@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import logic_chain as chain_lib
 from app.audit_rules import RuleIssue
 from app.audit_types import normalize_severity
 from app.db.models import AuditIssue, Scene
@@ -268,4 +269,26 @@ def list_logic_check(session: Session, scene_id: str, stage: str) -> dict:
             serialize_issue(session, row) for row in _open_issues(session, scene_id, stage)
         ],
         "last_checked_at": latest.isoformat() if latest else None,
+    }
+
+
+def logic_chain(session: Session, scene_id: str) -> dict:
+    """把正文里已有的因果 / 转折 / 揭示摆出来。**不调用模型、不做判断。**
+
+    链是材料，问题是判断 —— 后者是 `run_logic_check`。两者在界面上并列但
+    绝不混在一起。
+    """
+    scene = _scene(session, scene_id)
+    body = scene.body or ""
+    if not body.strip():
+        return {
+            "chain": [],
+            "summary": {"total": 0, "cause": 0, "turn": 0, "reveal": 0},
+            "reason": "这一场还没有已采纳正文。",
+        }
+    chain = chain_lib.extract_chain(body)
+    return {
+        "chain": chain,
+        "summary": chain_lib.summarize(chain),
+        "reason": "" if chain else "正文里没有明显的因果连接词。",
     }

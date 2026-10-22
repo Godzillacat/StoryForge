@@ -43,3 +43,12 @@ def get_logic_check(
         return logic_service.list_logic_check(session, scene_id, stage)
     except ValueError as exc:
         raise _value_error(exc) from exc
+
+
+@router.get("/scenes/{scene_id}/logic-chain")
+def logic_chain(scene_id: str, session: Session = Depends(get_session)) -> dict:
+    """把正文里已有的因果 / 转折 / 揭示摆出来。**不调用模型、不做判断。**"""
+    try:
+        return logic_service.logic_chain(session, scene_id)
+    except ValueError as exc:
+        raise _value_error(exc) from exc

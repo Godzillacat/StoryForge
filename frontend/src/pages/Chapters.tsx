@@ -5,6 +5,7 @@ import {
   type ChapterPlanResponse,
   type ChapterStatusOption,
   type Foreshadow,
+  type ForeshadowSummary,
   type PlanScene,
   type PlanVolume,
   type Project,
@@ -49,6 +50,10 @@ export default function Chapters() {
   // 只有 entriesProjectId === projectId 时，场景编辑器才敢用 entries 映射名称。
   const [entriesProjectId, setEntriesProjectId] = useState('')
   const [foreshadows, setForeshadows] = useState<Foreshadow[]>([])
+  // 伏笔的生命周期词表与章节状态**不是同一份**（章节的 confirmed 与伏笔的
+  // paid 语义不同），各自从后端拉，界面不硬编。
+  const [foreshadowStatuses, setForeshadowStatuses] = useState<ChapterStatusOption[]>([])
+  const [foreshadowSummary, setForeshadowSummary] = useState<ForeshadowSummary | null>(null)
   const [selected, setSelected] = useState<Selection | null>(null)
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -84,6 +89,8 @@ export default function Chapters() {
     }).catch((error) => setNotice((error as Error).message))
     api.listChapterTypes().then((data) => setStatuses(data.statuses))
       .catch((error) => setNotice((error as Error).message))
+    api.listForeshadowTypes().then((data) => setForeshadowStatuses(data.statuses))
+      .catch((error) => setNotice((error as Error).message))
   }, [])
 
   useEffect(() => {
@@ -95,6 +102,7 @@ export default function Chapters() {
     setEntries([])
     setEntriesProjectId('')
     setForeshadows([])
+    setForeshadowSummary(null)
     setReviewMarks([])
     setDataProjectId('')
     runToken.current++
@@ -106,7 +114,8 @@ export default function Chapters() {
       api.getChapterTree(projectId),
       api.listForeshadows(projectId),
       api.listReviewMarks(projectId),
-    ]).then(([treeResult, foreshadowResult, markResult]) => {
+      api.foreshadowSummary(projectId),
+    ]).then(([treeResult, foreshadowResult, markResult, summaryResult]) => {
       if (dataRequestRef.current !== token) return
       const errors: string[] = []
       if (treeResult.status === 'fulfilled') {
@@ -118,6 +127,11 @@ export default function Chapters() {
         setForeshadows(foreshadowResult.value)
       } else {
         errors.push((foreshadowResult.reason as Error).message)
+      }
+      if (summaryResult.status === 'fulfilled') {
+        setForeshadowSummary(summaryResult.value)
+      } else {
+        errors.push((summaryResult.reason as Error).message)
       }
       if (markResult.status === 'fulfilled') {
         setReviewMarks(markResult.value)
@@ -150,11 +164,12 @@ export default function Chapters() {
     if (projectIdRef.current !== requestProjectId) return
     const token = ++dataRequestRef.current
     try {
-      const [tree, entryList, foreshadowList, marks] = await Promise.all([
+      const [tree, entryList, foreshadowList, marks, summary] = await Promise.all([
         api.getChapterTree(requestProjectId),
         api.listEntries(requestProjectId),
         api.listForeshadows(requestProjectId),
         api.listReviewMarks(requestProjectId),
+        api.foreshadowSummary(requestProjectId),
       ])
       // 期间切了项目（或又发起了一次刷新）：这批数据属于旧请求，整批丢弃。
       if (dataRequestRef.current !== token) return
@@ -163,6 +178,7 @@ export default function Chapters() {
       setEntries(entryList)
       setEntriesProjectId(requestProjectId)
       setForeshadows(foreshadowList)
+      setForeshadowSummary(summary)
       setReviewMarks(marks)
     } finally {
       // 当前项目的刷新无论成败都要结束加载态；旧项目不发结果，也不许碰它。
@@ -607,8 +623,12 @@ export default function Chapters() {
                 <ForeshadowLedger
                   volumes={volumes}
                   foreshadows={foreshadows}
-                  statuses={statuses}
+                  statuses={foreshadowStatuses}
+                  summary={foreshadowSummary}
                   onSelectScene={(id) => openInStructure({ kind: 'scene', id })}
+                  onChanged={refresh}
+                  onNotice={setNotice}
+                  busy={busy}
                 />
               )}
               {view === 'lanes' && (

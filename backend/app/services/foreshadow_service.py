@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.chapter_types import normalize_status
+from app.foreshadow_types import effective_status, normalize_status
 from app.db.models import Foreshadow, Scene
 
 
@@ -32,6 +32,36 @@ def find_or_create(
     session.add(foreshadow)
     session.flush()
     return foreshadow
+
+
+def ledger_summary(session: Session, project_id: str) -> dict:
+    """四类计数与回收率。
+
+    `dropped` **不进分母**：作者放弃的伏笔不该拉低回收率 —— 那不是「没收」，
+    是「不收了」。分母为 0 时回收率为 0，不是 NaN。
+    """
+    rows = list_foreshadows(session, project_id)
+    counts = {"planned": 0, "planted": 0, "paid": 0, "dropped": 0}
+    for row in rows:
+        counts[effective_status(row)] += 1
+    denominator = counts["paid"] + counts["planted"] + counts["planned"]
+    rate = round(counts["paid"] / denominator, 3) if denominator else 0.0
+    return {"total": len(rows), **counts, "rate": rate}
+
+
+def is_unrecovered(row: Foreshadow) -> bool:
+    """账本与成品报告共用的「未回收」口径。
+
+    - `paid` 不算（已收）；
+    - `dropped` 不算 —— 作者放弃了，那不是「没收」，是「不收了」；
+    - 既无埋设也无计划回收的不算 —— 它还没进入进度，没什么可收的。
+
+    只此一处定义：账本计数、成品报告、影响面三处都调它，否则同一个词在三处
+    会各自漂移。
+    """
+    if effective_status(row) in ("paid", "dropped"):
+        return False
+    return bool(row.plant_scene_id or row.plan_pay_scene_id)
 
 
 def list_foreshadows(session: Session, project_id: str) -> list[Foreshadow]:

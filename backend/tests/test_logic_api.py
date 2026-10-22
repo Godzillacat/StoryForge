@@ -165,3 +165,45 @@ def test_get_empty_and_invalid_stage(client):
 
     invalid = client.get(f"/api/scenes/{scene_id}/logic-check?stage=draft")
     assert invalid.status_code == 400
+
+
+def test_logic_chain_extracts_three_kinds_with_paragraph_numbers(client):
+    body = (
+        "雨停在午夜。\n\n"
+        "因为他听见了脚步声，所以他停下了。\n\n"
+        "他以为安全了。但是门外有人。\n\n"
+        "他推开门。原来屋里一直有人。"
+    )
+    _project_id, scene_id = _create_scene(client, body=body)
+
+    response = client.get(f"/api/scenes/{scene_id}/logic-chain")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert [item["kind"] for item in data["chain"]] == ["cause", "turn", "reveal"]
+    assert [item["paragraph"] for item in data["chain"]] == [2, 3, 4]
+    assert data["summary"] == {"total": 3, "cause": 1, "turn": 1, "reveal": 1}
+    assert data["reason"] == ""
+
+
+def test_logic_chain_without_body_explains_instead_of_going_blank(client):
+    _project_id, scene_id = _create_scene(client, body=None)
+
+    data = client.get(f"/api/scenes/{scene_id}/logic-chain").json()
+
+    assert data["chain"] == []
+    assert data["summary"]["total"] == 0
+    assert "还没有已采纳正文" in data["reason"]
+
+
+def test_logic_chain_without_connectives_does_not_invent_one(client):
+    _project_id, scene_id = _create_scene(client, body="雨停了。他走出门。天很蓝。")
+
+    data = client.get(f"/api/scenes/{scene_id}/logic-chain").json()
+
+    assert data["chain"] == []
+    assert "没有明显" in data["reason"]
+
+
+def test_logic_chain_for_an_unknown_scene_is_404(client):
+    assert client.get("/api/scenes/nope/logic-chain").status_code == 404

@@ -81,13 +81,24 @@ export interface LedgerLocation {
   fullLabel: string
 }
 
-export type LedgerFilter = 'all' | 'missing_plant' | 'missing_pay' | 'unpaid'
+export type LedgerFilter =
+  | 'all'
+  | 'missing_plant'
+  | 'missing_pay'
+  | 'unpaid'
+  | 'dropped'
 
 export interface LedgerRow {
   id: string
   name: string
   note: string
   status: string
+  /** 位置字段反映的事实；显式 `dropped` 例外。界面显示的是这个。 */
+  effectiveStatus: string
+  statusLabel: string
+  statusIsDerived: boolean
+  /** 存量数据里的旧词表值（`confirmed`），界面要标出来。 */
+  statusIsLegacy: boolean
   plant: LedgerLocation | null
   pay: LedgerLocation | null
   actualPay: LedgerLocation | null
@@ -169,19 +180,30 @@ export function buildForeshadowLedger(
     const actualPay = foreshadow.actual_pay_scene_id
       ? index.get(foreshadow.actual_pay_scene_id) ?? null
       : null
+    const effectiveStatus = foreshadow.effective_status ?? foreshadow.status
     return {
       id: foreshadow.id,
       name: foreshadow.name,
       note: foreshadow.note,
       status: foreshadow.status,
+      effectiveStatus,
+      statusLabel: foreshadow.status_label ?? effectiveStatus,
+      statusIsDerived: foreshadow.status_is_derived ?? false,
+      statusIsLegacy: foreshadow.status_is_legacy ?? false,
       plant,
       pay,
       actualPay,
       missingPlant: plant === null,
       missingPay: pay === null,
-      // 未回收：还没有实际回收场景，且确实埋设或计划回收过。
-      // 完全没安排的伏笔不计入 —— 与成品报告的口径一致。
-      unpaid: actualPay === null && (plant !== null || pay !== null),
+      // 未回收：还没收，也不是作者放弃的，且确实埋设或计划回收过。
+      // 完全没安排的伏笔不计入 —— 与成品报告的 `is_unrecovered` 同一口径。
+      // 位置与状态**都要看**：`effective_status` 缺失时（旧响应 / 测试夹具）
+      // 只看状态会漏掉「实际回收位置已经有了」这个事实。
+      unpaid:
+        actualPay === null &&
+        effectiveStatus !== 'paid' &&
+        effectiveStatus !== 'dropped' &&
+        (plant !== null || pay !== null),
       sameScene: plant !== null && pay !== null && plant.sceneId === pay.sceneId,
     }
   })
@@ -192,6 +214,9 @@ export function filterLedger(rows: LedgerRow[], filter: LedgerFilter): LedgerRow
   if (filter === 'missing_plant') return rows.filter((row) => row.missingPlant)
   if (filter === 'missing_pay') return rows.filter((row) => row.missingPay)
   if (filter === 'unpaid') return rows.filter((row) => row.unpaid)
+  if (filter === 'dropped') {
+    return rows.filter((row) => row.effectiveStatus === 'dropped')
+  }
   return rows
 }
 

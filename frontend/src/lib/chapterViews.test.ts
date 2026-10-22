@@ -245,6 +245,60 @@ describe('buildForeshadowLedger', () => {
   it('空伏笔返回空表', () => {
     expect(buildForeshadowLedger(ledgerVolumes(), [])).toEqual([])
   })
+
+  it('已弃的伏笔不进「未回收」，单独可筛', () => {
+    const foreshadows = [
+      makeForeshadow('d1', '放弃的线', {
+        plant_scene_id: 's1',
+        status: 'dropped',
+        effective_status: 'dropped',
+        status_label: '已弃',
+      }),
+      makeForeshadow('u1', '还没收的线', {
+        plant_scene_id: 's1',
+        effective_status: 'planted',
+        status_label: '已埋',
+        status_is_derived: true,
+      }),
+    ]
+
+    const rows = buildForeshadowLedger(ledgerVolumes(), foreshadows)
+
+    expect(filterLedger(rows, 'dropped').map((row) => row.id)).toEqual(['d1'])
+    expect(filterLedger(rows, 'unpaid').map((row) => row.id)).toEqual(['u1'])
+  })
+
+  it('显示派生状态，并保留服务端给出的标签与旧值标记', () => {
+    const rows = buildForeshadowLedger(ledgerVolumes(), [
+      makeForeshadow('a', '派生', {
+        plant_scene_id: 's1',
+        effective_status: 'planted',
+        status_label: '已埋',
+        status_is_derived: true,
+      }),
+      makeForeshadow('b', '旧值', {
+        status: 'confirmed',
+        effective_status: 'planned',
+        status_label: '规划中',
+        status_is_legacy: true,
+      }),
+    ])
+    const byId = new Map(rows.map((row) => [row.id, row]))
+
+    expect(byId.get('a')!.effectiveStatus).toBe('planted')
+    expect(byId.get('a')!.statusIsDerived).toBe(true)
+    expect(byId.get('b')!.statusIsLegacy).toBe(true)
+  })
+
+  it('响应里没有派生字段时退回 status，不崩', () => {
+    const rows = buildForeshadowLedger(ledgerVolumes(), [
+      makeForeshadow('c', '老响应', { status: 'paid' }),
+    ])
+
+    expect(rows[0]!.effectiveStatus).toBe('paid')
+    expect(rows[0]!.statusLabel).toBe('paid')
+    expect(rows[0]!.statusIsDerived).toBe(false)
+  })
 })
 
 function swimlaneVolumes(): VolumeNode[] {

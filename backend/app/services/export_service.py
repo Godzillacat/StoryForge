@@ -21,6 +21,7 @@ from app.db.models import (
     SettingEntry,
     Volume,
 )
+from app.services import foreshadow_service
 from app.text_stats import count_words
 
 _MEDIA_TYPES = {
@@ -108,9 +109,7 @@ def build_report(session: Session, project_id: str) -> dict:
     for row in session.scalars(
         select(Foreshadow).where(Foreshadow.project_id == project_id)
     ).all():
-        if row.actual_pay_scene_id:
-            continue
-        if not row.plant_scene_id and not row.plan_pay_scene_id:
+        if not foreshadow_service.is_unrecovered(row):
             continue
         unrecovered.append(
             {
