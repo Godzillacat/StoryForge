@@ -7,6 +7,7 @@ import {
   type AuditResolution,
   type BatchJob,
   type ContextPreview as ContextPreviewData,
+  type BranchDetail,
   type ChangeRow,
   type LockState,
   type LogicStage,
@@ -20,6 +21,7 @@ import {
 import AuditPanel from '../components/writing/AuditPanel'
 import BatchPanel from '../components/writing/BatchPanel'
 import ContextPreview from '../components/writing/ContextPreview'
+import BranchPanel, { BranchBodyEditor } from '../components/writing/BranchPanel'
 import { ChangeList } from '../components/Snapshots'
 import ParagraphLocks from '../components/writing/ParagraphLocks'
 import DiffPanel from '../components/writing/DiffPanel'
@@ -69,6 +71,11 @@ export default function Writing() {
   const [sceneLock, setSceneLock] = useState<LockState | null>(null)
   const [paragraphLocks, setParagraphLocks] = useState<string[]>([])
   const [sceneChanges, setSceneChanges] = useState<ChangeRow[]>([])
+  // 正文目标：null = 主版，否则是某条分支。分支与主版各自一条正文，
+  // 界面必须始终显示出「你正在看哪一条」。
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [branch, setBranch] = useState<BranchDetail | null>(null)
+  const [branchBusy, setBranchBusy] = useState(false)
   const [text, setText] = useState<SceneTextState | null>(null)
   const [preview, setPreview] = useState<ContextPreviewData | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -249,6 +256,30 @@ export default function Writing() {
     setProjectId(nextId)
   }
 
+  async function loadBranch(id: string) {
+    setBranchBusy(true)
+    try {
+      const row = await api.getBranch(id)
+      setBranch(row)
+    } catch (error) {
+      setNotice((error as Error).message)
+      setBranch(null)
+      setBranchId(null)
+    } finally {
+      setBranchBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!branchId) {
+      setBranch(null)
+      return
+    }
+    void loadBranch(branchId)
+    // loadBranch 是闭包，只按 branchId 触发。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId])
+
   async function refreshSceneChanges(sceneId: string, token: number) {
     try {
       const body = await api.listChanges(projectId, {
@@ -273,6 +304,8 @@ export default function Writing() {
     setSceneLock(null)
     setParagraphLocks([])
     setSceneChanges([])
+    setBranchId(null)
+    setBranch(null)
     setAuditIssues([])
     setAuditLastAt(null)
     setAuditWarning('')
@@ -1195,6 +1228,27 @@ export default function Writing() {
 
                     <GenerationStream text={streamText} generating={generating} />
 
+                    {branch && (
+                      <>
+                        <BranchBodyEditor
+                          branch={branch}
+                          busy={branchBusy || busy}
+                          onChange={(content) =>
+                            setBranch((current) =>
+                              current ? { ...current, content } : current,
+                            )
+                          }
+                          onSaved={() => void loadBranch(branch.id)}
+                        />
+                        <DiffPanel oldText={text.body ?? ''} newText={branch.content} />
+                        <p className="text-xs text-slate-500">
+                          与主版对比在上面。要换掉主版正文，用右栏「合入」。
+                        </p>
+                      </>
+                    )}
+
+                    {!branch && (
+                      <>
                     <div className="flex gap-2">
                       <button
                         type="button"
@@ -1238,6 +1292,8 @@ export default function Writing() {
                     {text.draft && !generating && (
                       <DiffPanel oldText={text.body ?? ''} newText={aiDraft} />
                     )}
+                      </>
+                    )}
                   </>
                 )}
               </>
@@ -1250,6 +1306,19 @@ export default function Writing() {
                 <h3 className="text-sm font-medium text-slate-300">这一场的改动</h3>
                 <ChangeList projectId={projectId} changes={sceneChanges} />
               </section>
+            )}
+            {selectedSceneId && (
+              <BranchPanel
+                sceneId={selectedSceneId}
+                selectedBranchId={branchId}
+                onSelect={setBranchId}
+                onMerged={() => {
+                  void refreshText(selectedSceneId)
+                  void refreshSceneChanges(selectedSceneId, sceneToken.current)
+                  void refreshTree()
+                }}
+                disabled={busy || generating}
+              />
             )}
             {selectedSceneId && (
               <ParagraphLocks
