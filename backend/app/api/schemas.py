@@ -365,3 +365,13 @@ class ReviewMarkClear(ReviewMarkCreate):
 class SnapshotCreate(BaseModel):
     name: str = ""
     note: str = ""
+
+
+class BranchCreate(BaseModel):
+    name: str = ""
+    note: str = ""
+
+
+class BranchUpdate(BaseModel):
+    name: str | None = None
+    note: str | None = None

@@ -425,6 +425,45 @@ export const api = {
     ),
   clearReviewMark: (markId: string) =>
     request<void>(`/api/review-marks/${markId}`, { method: 'DELETE' }),
+  listBranches: (sceneId: string) =>
+    request<BranchSummary[]>(`/api/scenes/${sceneId}/branches`),
+  createBranch: (sceneId: string, body: { name: string; note?: string }) =>
+    request<BranchDetail>(`/api/scenes/${sceneId}/branches`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  getBranch: (branchId: string) =>
+    request<BranchDetail>(`/api/branches/${branchId}`),
+  updateBranch: (branchId: string, body: Record<string, unknown>) =>
+    request<BranchDetail>(`/api/branches/${branchId}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  saveBranchBody: (branchId: string, content: string) =>
+    request<BranchDetail>(`/api/branches/${branchId}/body`, {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ content }),
+    }),
+  saveBranchDraft: (branchId: string, content: string) =>
+    request<BranchDetail>(`/api/branches/${branchId}/draft`, {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ content }),
+    }),
+  adoptBranchDraft: (branchId: string) =>
+    request<BranchDetail>(`/api/branches/${branchId}/adopt`, { method: 'POST' }),
+  mergeBranch: (branchId: string) =>
+    request<{ branch: BranchDetail; scene_id: string; body: string; chars: number }>(
+      `/api/branches/${branchId}/merge`,
+      { method: 'POST' },
+    ),
+  listBranchRevisions: (branchId: string) =>
+    request<BranchRevisionRow[]>(`/api/branches/${branchId}/revisions`),
+  discardBranch: (branchId: string) =>
+    request<void>(`/api/branches/${branchId}`, { method: 'DELETE' }),
   listSnapshots: (projectId: string) =>
     request<SnapshotView[]>(`/api/projects/${projectId}/snapshots`),
   createSnapshot: (projectId: string, body: { name: string; note?: string }) =>
@@ -1128,8 +1167,13 @@ export async function streamSceneGeneration(
   sceneId: string,
   handlers: GenerationHandlers,
   signal: AbortSignal,
+  branchId?: string,
 ): Promise<void> {
-  const response = await fetch(`/api/scenes/${sceneId}/generate`, {
+  // 分支与主版走同一条流式链路，只是 URL 不同 —— 事件与解析完全一样。
+  const url = branchId
+    ? `/api/branches/${branchId}/generate`
+    : `/api/scenes/${sceneId}/generate`
+  const response = await fetch(url, {
     method: 'POST',
     signal,
   })
@@ -1318,4 +1362,29 @@ export interface ChangeRow {
 export interface ChangeList {
   changes: ChangeRow[]
   target_types: { key: string; label: string }[]
+}
+
+export interface BranchSummary {
+  id: string
+  scene_id: string
+  name: string
+  note: string
+  chars: number
+  has_draft: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface BranchDetail extends BranchSummary {
+  content: string
+  draft: { content: string; run_id: string | null } | null
+}
+
+export interface BranchRevisionRow {
+  id: string
+  source: string
+  note: string
+  chars: number
+  created_at: string
+  preview: string
 }

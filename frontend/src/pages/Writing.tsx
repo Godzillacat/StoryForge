@@ -7,6 +7,7 @@ import {
   type AuditResolution,
   type BatchJob,
   type ContextPreview as ContextPreviewData,
+  type BranchDetail,
   type ChangeRow,
   type LockState,
   type LogicStage,
@@ -20,6 +21,7 @@ import {
 import AuditPanel from '../components/writing/AuditPanel'
 import BatchPanel from '../components/writing/BatchPanel'
 import ContextPreview from '../components/writing/ContextPreview'
+import BranchPanel, { BranchBodyEditor } from '../components/writing/BranchPanel'
 import { ChangeList } from '../components/Snapshots'
 import ParagraphLocks from '../components/writing/ParagraphLocks'
 import DiffPanel from '../components/writing/DiffPanel'
@@ -69,6 +71,13 @@ export default function Writing() {
   const [sceneLock, setSceneLock] = useState<LockState | null>(null)
   const [paragraphLocks, setParagraphLocks] = useState<string[]>([])
   const [sceneChanges, setSceneChanges] = useState<ChangeRow[]>([])
+  // 正文目标：null = 主版，否则是某条分支。分支与主版各自一条正文，
+  // 界面必须始终显示出「你正在看哪一条」。
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const [branch, setBranch] = useState<BranchDetail | null>(null)
+  const [branchBusy, setBranchBusy] = useState(false)
+  // 分支载入时的正文快照：用来判断「分支里有没有未保存的改动」。
+  const branchOriginal = useRef('')
   const [text, setText] = useState<SceneTextState | null>(null)
   const [preview, setPreview] = useState<ContextPreviewData | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -239,15 +248,51 @@ export default function Writing() {
     }
   }, [batchJob?.id, batchJob?.status])
 
+  // 分支正文也要算进来：在分支里改了字没保存就切场景 / 切项目 / 点「主版」，
+  // 那份改动会静默丢掉。branch 的 content 由编辑器直接改本地副本。
+  const branchDirty =
+    branch !== null && branch.content !== branchOriginal.current
   const hasUnsaved =
-    Boolean(text) &&
-    (bodyDraft !== (text?.body ?? '') || aiDraft !== (text?.draft?.content ?? ''))
+    (Boolean(text) &&
+      (bodyDraft !== (text?.body ?? '') || aiDraft !== (text?.draft?.content ?? ''))) ||
+    branchDirty
 
   const changeProject = (nextId: string) => {
     if (nextId === projectId) return
     if (hasUnsaved && !window.confirm('当前场景有未保存的修改，确定切换项目吗？')) return
     setProjectId(nextId)
   }
+
+  async function loadBranch(id: string) {
+    // 持场景令牌：切场景后迟到的响应不许把旧场景的分支挂到新场景上。
+    const token = sceneToken.current
+    setBranchBusy(true)
+    try {
+      const row = await api.getBranch(id)
+      if (sceneToken.current === token) {
+        setBranch(row)
+        branchOriginal.current = row.content
+      }
+    } catch (error) {
+      if (sceneToken.current === token) {
+        setNotice((error as Error).message)
+        setBranch(null)
+        setBranchId(null)
+      }
+    } finally {
+      if (sceneToken.current === token) setBranchBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!branchId) {
+      setBranch(null)
+      return
+    }
+    void loadBranch(branchId)
+    // loadBranch 是闭包，只按 branchId 触发。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId])
 
   async function refreshSceneChanges(sceneId: string, token: number) {
     try {
@@ -273,6 +318,9 @@ export default function Writing() {
     setSceneLock(null)
     setParagraphLocks([])
     setSceneChanges([])
+    setBranchId(null)
+    setBranch(null)
+    branchOriginal.current = ''
     setAuditIssues([])
     setAuditLastAt(null)
     setAuditWarning('')
@@ -1195,6 +1243,28 @@ export default function Writing() {
 
                     <GenerationStream text={streamText} generating={generating} />
 
+                    {branch && (
+                      <>
+                        <BranchBodyEditor
+                          branch={branch}
+                          sceneId={selectedSceneId}
+                          busy={branchBusy || busy}
+                          onChange={(content) =>
+                            setBranch((current) =>
+                              current ? { ...current, content } : current,
+                            )
+                          }
+                          onSaved={() => void loadBranch(branch.id)}
+                        />
+                        <DiffPanel oldText={text.body ?? ''} newText={branch.content} />
+                        <p className="text-xs text-slate-500">
+                          与主版对比在上面。要换掉主版正文，用右栏「合入」。
+                        </p>
+                      </>
+                    )}
+
+                    {!branch && (
+                      <>
                     <div className="flex gap-2">
                       <button
                         type="button"
@@ -1238,6 +1308,8 @@ export default function Writing() {
                     {text.draft && !generating && (
                       <DiffPanel oldText={text.body ?? ''} newText={aiDraft} />
                     )}
+                      </>
+                    )}
                   </>
                 )}
               </>
@@ -1250,6 +1322,33 @@ export default function Writing() {
                 <h3 className="text-sm font-medium text-slate-300">这一场的改动</h3>
                 <ChangeList projectId={projectId} changes={sceneChanges} />
               </section>
+            )}
+            {selectedSceneId && (
+              <BranchPanel
+                sceneId={selectedSceneId}
+                selectedBranchId={branchId}
+                onSelect={(next) => {
+                  // 离开分支时若有未保存的改动，先问一句 —— 分支正文的
+                  // 编辑器是本地副本，切走就没了。
+                  if (branchDirty && !window.confirm('这条分支有未保存的修改，确定离开吗？')) {
+                    return
+                  }
+                  setBranchId(next)
+                }}
+                onMerged={() => {
+                  // 合并请求在途时作者可能切了场景：捕获当时的令牌，
+                  // 迟到时用它比对，别把旧场景的正文写进新场景。
+                  const token = sceneToken.current
+                  const sceneId = selectedSceneId
+                  void refreshText(sceneId).then((state) => {
+                    if (state !== null && sceneToken.current === token) {
+                      void refreshSceneChanges(sceneId, token)
+                    }
+                  })
+                  void refreshTree()
+                }}
+                disabled={busy || generating}
+              />
             )}
             {selectedSceneId && (
               <ParagraphLocks

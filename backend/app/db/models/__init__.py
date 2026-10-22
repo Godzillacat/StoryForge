@@ -2,6 +2,7 @@ from app.db.models.agent import Agent, AgentVersion
 from app.db.models.architecture import Act, Architecture
 from app.db.models.audit import AuditIssue
 from app.db.models.batch import BatchJob
+from app.db.models.branch import BranchRevision, SceneBranch
 from app.db.models.chapter import Chapter, Foreshadow, Scene, Volume
 from app.db.models.config_models import ModelPrice, Provider, Setting
 from app.db.models.history import ChangeLog
@@ -24,6 +25,7 @@ __all__ = [
     "Architecture",
     "AuditIssue",
     "BatchJob",
+    "BranchRevision",
     "ChangeLog",
     "Chapter",
     "EntryRelation",
@@ -40,6 +42,7 @@ __all__ = [
     "Provider",
     "ReviewMark",
     "Scene",
+    "SceneBranch",
     "SceneDraft",
     "SceneRevision",
     "SearchIndexState",

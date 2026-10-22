@@ -445,8 +445,13 @@ def finalize_run(
     duration_ms: int,
     error: dict | None,
     usage_source: str = "estimated",
+    branch_id: str | None = None,
 ) -> str | None:
-    """幂等收尾：只有 running 的运行会更新；成功后覆盖草稿，失败只补空缺。"""
+    """幂等收尾：只有 running 的运行会更新；成功后覆盖草稿，失败只补空缺。
+
+    `branch_id` 非空时结果写进**分支的草稿**，不碰主版 —— 分支与主版各有
+    自己的一条草稿槽位，混写会让「采纳」与「合并」两个动作打架。
+    """
     with SessionLocal() as session:
         run = session.get(GenerationRun, run_id)
         if run is None or run.status != "running":
@@ -462,6 +467,18 @@ def finalize_run(
         run.error_json = error
 
         draft_id: str | None = None
+        if branch_id is not None:
+            from app.db.models import SceneBranch
+
+            branch = session.get(SceneBranch, branch_id)
+            if branch is not None and content.strip():
+                if status == "ok" or not (branch.draft_content or "").strip():
+                    branch.draft_content = content
+                    branch.draft_run_id = run_id
+                    draft_id = branch.id
+            session.commit()
+            return draft_id
+
         if content.strip():
             draft = session.scalars(
                 select(SceneDraft).where(SceneDraft.scene_id == scene_id)

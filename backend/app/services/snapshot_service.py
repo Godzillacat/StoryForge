@@ -564,8 +564,13 @@ def _lock_rows(session: Session, model, ids: set[str]) -> None:
 
 
 def _preserve_attachments(session: Session, project_id: str) -> dict:
-    """把修订、草稿与审计问题按平值抄出来，待结构重建后再插回。"""
-    from app.db.models import AuditIssue
+    """把修订、草稿、审计问题与**分支**按平值抄出来，重建后再插回。
+
+    分支不在快照里（§1.3：分支是实验材料，进快照会让回滚把实验也回滚掉），
+    但它挂在场景上、写了 ON DELETE CASCADE —— 删场景会把分支一起带走。
+    「不放进快照」不该等于「回滚时被删掉」。
+    """
+    from app.db.models import AuditIssue, SceneBranch
 
     scene_ids = [
         row
@@ -577,7 +582,7 @@ def _preserve_attachments(session: Session, project_id: str) -> dict:
         ).all()
     ]
     if not scene_ids:
-        return {"revisions": [], "drafts": [], "issues": []}
+        return {"revisions": [], "drafts": [], "issues": [], "branches": []}
     revisions = [
         {
             "id": row.id,
@@ -634,6 +639,22 @@ def _preserve_attachments(session: Session, project_id: str) -> dict:
             select(AuditIssue).where(AuditIssue.scene_id.in_(scene_ids))
         ).all()
     ]
+    branches = [
+        {
+            "id": row.id,
+            "scene_id": row.scene_id,
+            "name": row.name,
+            "content": row.content,
+            "draft_content": row.draft_content,
+            "draft_run_id": row.draft_run_id,
+            "note": row.note,
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
+        for row in session.scalars(
+            select(SceneBranch).where(SceneBranch.scene_id.in_(scene_ids))
+        ).all()
+    ]
     # 先删掉，别让 FK 级联在结构重建时再把它们带走一次。
     for row in session.scalars(
         select(SceneRevision).where(SceneRevision.scene_id.in_(scene_ids))
@@ -647,12 +668,21 @@ def _preserve_attachments(session: Session, project_id: str) -> dict:
         select(AuditIssue).where(AuditIssue.scene_id.in_(scene_ids))
     ).all():
         session.delete(row)
+    for row in session.scalars(
+        select(SceneBranch).where(SceneBranch.scene_id.in_(scene_ids))
+    ).all():
+        session.delete(row)
     session.flush()
-    return {"revisions": revisions, "drafts": drafts, "issues": issues}
+    return {
+        "revisions": revisions,
+        "drafts": drafts,
+        "issues": issues,
+        "branches": branches,
+    }
 
 
 def _restore_attachments(session: Session, preserved: dict) -> None:
-    from app.db.models import AuditIssue, SettingEntry
+    from app.db.models import AuditIssue, SceneBranch, SettingEntry
 
     scene_ids = {row.id for row in session.query(Scene).all()}
     # 问题可能指向一个不在快照里的设定条目（快照之后新建的）。那条已被
@@ -681,6 +711,21 @@ def _restore_attachments(session: Session, preserved: dict) -> None:
             scene_id=row["scene_id"],
             run_id=row["run_id"],
             content=row["content"],
+        )
+        item.created_at = row["created_at"]
+        item.updated_at = row["updated_at"]
+        session.add(item)
+    for row in preserved.get("branches") or []:
+        if row["scene_id"] not in scene_ids:
+            continue
+        item = SceneBranch(
+            id=row["id"],
+            scene_id=row["scene_id"],
+            name=row["name"],
+            content=row["content"],
+            draft_content=row["draft_content"],
+            draft_run_id=row["draft_run_id"],
+            note=row["note"],
         )
         item.created_at = row["created_at"]
         item.updated_at = row["updated_at"]
