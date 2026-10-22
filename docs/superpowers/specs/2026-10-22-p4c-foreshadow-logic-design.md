@@ -26,7 +26,7 @@ P4c 交付两件事：
    - 回收率 = `paid` /（`paid` + `planted` + `planned`），`dropped` 不进分母。
 2. **逻辑链文本视图**
    - 给定一个场景，从已采纳正文按段落抽取出**因果 / 转折 / 信息揭示**三类句子，按原文顺序列出，每句带段落序号。
-   - **纯规则、不调用模型**：靠连接词与句式（因为 / 所以 / 于是 / 但是 / 然而 / 原来 / 才发现 等）识别，识别不到就老实说「这一段没有明显的因果连接」。
+   - **纯规则、不调用模型**：靠连接词与句式（因为 / 所以 / 于是 / 但是 / 然而 / 原来 / 才发现 等）识别，识别不到就老实说「正文里没有明显的因果连接词。」
    - 视图与逻辑自检的问题清单并列展示，但**不混在一起**：链是「正文里写了什么」，问题是「哪里讲不通」。
 3. **基线**：后端既有 889 条全绿；前端 30 条全绿、`pnpm build` 干净。
 4. **本段不调用模型**。
@@ -43,7 +43,7 @@ P4c 交付两件事：
 
 | 决策 | 结论 | 理由 |
 |---|---|---|
-| 状态词表 | **新建 `FORESHADOW_STATUSES`**，不复用 `chapter_types` | 章节的 `confirmed` 与伏笔的 `paid` 是两种语义；复用会让「已确认的伏笔」与「已回收的伏笔」被同一个值表示 |
+| 状态词表 | **新建 `STATUS_VALUES` / `STATUS_LABELS`**，不复用 `chapter_types` | 章节的 `confirmed` 与伏笔的 `paid` 是两种语义；复用会让「已确认的伏笔」与「已回收的伏笔」被同一个值表示 |
 | 派生 vs 显式 | **位置字段（事实）优先于状态（判断），只有显式 `dropped` 例外** | 位置字段是事实、状态是判断。作者说「这条我不收了」，埋设位置还在不该把它翻回 `planted` —— 那是唯一让判断压过事实的地方。反过来，作者早先标过 `planted`、之后回写助手经他确认记下了实际回收，若还显示「已埋」，同一行里状态列与「实际回收位置」列会互相打架，所以事实应当赢 |
 | `dropped` 是否进回收率分母 | **不进** | 作者放弃的伏笔不该拉低回收率 |
 | 逻辑链的抽取方式 | **纯规则**（连接词 + 句子切分） | 不调用模型：这是「把正文里已有的结构摆出来」，不是「判断它讲不讲得通」。后者是逻辑自检 |
@@ -55,15 +55,20 @@ P4c 交付两件事：
 **无新表、无迁移。**
 
 - `foreshadow.status` 的取值由代码词表决定（`String(20)`），扩值不需要改表。
-- 存量数据：`planned` / `confirmed` 两种。`confirmed` 是旧词表下「作者确认过的规划」，迁移到新词表时**不自动改**（改数据是危险动作）；序列化时把 `confirmed` 归一为 `planned` 显示，并在账本里标一个琥珀色「旧值」徽标。**作者重选一次当前显示的值（「规划中」）就会把库里的值改写成 `planned`** —— 所以行内改状态的「没变就跳过」判定必须放行这一种情形，否则徽标永远去不掉。
+- 存量数据：`planned` / `confirmed` 两种。`confirmed` 是旧词表下「作者确认过的规划」，迁移到新词表时**不自动改**（改数据是危险动作）；序列化时把 `confirmed` 归一为 `planned` 显示，并在账本里给一个琥珀色「旧值 · 点此更新」**按钮**。
+  **为什么是按钮而不是「重选一次」**：下拉的当前值就是 `planned`，重选同一个 option **原生控件不触发 `change` 事件**，那条路径根本走不到。按钮显式调用同一个写入函数，才真的能把库里的值改写成 `planned`。
+  行内改状态的「没变就跳过」判定同时要放行 `statusIsLegacy`，否则按钮也会被早返回挡掉。
 
 ## 4. 服务设计
 
 ### 4.1 `foreshadow_types.py`
 
 ```
-FORESHADOW_STATUSES = {planned: 规划中, planted: 已埋, paid: 已收, dropped: 已弃}
-normalize_foreshadow_status(value, *, default="planned") -> str
+STATUS_VALUES = ("planned", "planted", "paid", "dropped")
+STATUS_LABELS = {planned: 规划中, planted: 已埋, paid: 已收, dropped: 已弃}
+LEGACY_VALUES = {"confirmed": "planned"}
+normalize_status(value, *, default="planned") -> str   # 中英文都收，旧值归一
+is_legacy(value) -> bool
 ```
 
 ### 4.2 派生与回收率（`foreshadow_service`）
@@ -74,7 +79,7 @@ ledger_summary(session, project_id) -> dict
     {total, planned, planted, paid, dropped, rate}
 ```
 
-`effective_status`：显式 `paid` / `dropped` 原样返回；显式 `planted` 但 `actual_pay_scene_id` 非空 → `paid`；`planned` 且 `actual_pay_scene_id` 非空 → `paid`；`planned` 且 `plant_scene_id` 非空 → `planted`。
+`effective_status`：显式 `dropped` → `dropped`；其余情况 `actual_pay_scene_id` 非空 → `paid`；显式 `paid` / `planted` 原样返回；`planned` 且 `plant_scene_id` 非空 → `planted`。
 
 ### 4.3 逻辑链（`logic_chain.py`，纯函数）
 
@@ -99,13 +104,14 @@ extract_chain(text: str) -> list[dict]
 |---|---|---|
 | GET | `/api/projects/{id}/foreshadows/summary` | 四类计数与回收率 |
 | GET | `/api/scenes/{id}/logic-chain` | 逻辑链（无正文时返回空列表与原因） |
+| GET | `/api/foreshadow-types` | 伏笔状态词表（形状同 `/api/chapter-types`，前端不硬编第二份） |
 
-`PATCH /api/foreshadows/{id}` 的 `status` 改用新词表。
+`PATCH /api/foreshadows/{id}` 的 `status` 改用新词表；**同时开放 `actual_pay_scene_id`** —— 回写助手匹配错场景时，那是作者唯一能撤销的路径（服务层校验场景属于同一项目，传 `null` 即清空）。
 
 ## 5. 前端
 
 - **伏笔账本**：顶部四个计数与回收率（**读 `/foreshadows/summary`，前端不重算规则**）；筛选增加「已弃」；每一行显示有效状态，**位置字段与显式状态不一致时标「派生」**（实施时把原文的正向「已手设」改成反向的「派生」：作者关心的不是「我设过」，而是「这一行现在显示的不是我设的那个值」）。作者可改状态；有实际回收位置的行提供「清掉实际回收」——回写助手匹配错场景时，那是作者唯一的退路。
-- **写作台**：右栏「逻辑链」面板（与逻辑自检问题清单并列），列出段落序号 / 类型 / 原句 / 连接词；空态说明「这一段没有明显的因果连接」。
+- **写作台**：右栏「逻辑链」面板（与逻辑自检问题清单并列），列出段落序号 / 类型 / 原句 / 连接词；空态说明「正文里没有明显的因果连接词。」
 
 ## 6. 测试策略
 
@@ -120,5 +126,5 @@ extract_chain(text: str) -> list[dict]
 
 ## 7. 风险
 
-- **`confirmed` 存量**：不改数据，归一为「规划中」显示并标「旧值」徽标 —— 静默改作者的数据比留一个略旧的标签糟。作者重选一次「规划中」即完成改写。
+- **`confirmed` 存量**：不改数据，归一为「规划中」显示并标「旧值 · 点此更新」按钮 —— 静默改作者的数据比留一个略旧的标签糟。点按钮即完成改写（不是「重选一次」：原生 select 重选同值不触发事件）。
 - **逻辑链的误报**：「但是」在口语里常不构成真正的转折。文本视图是材料不是判断，误报的代价只是多一句；不因此收紧规则，但**不把它接入任何自动检查**。

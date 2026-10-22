@@ -27,8 +27,11 @@ function hints(row: LedgerRow): string {
   if (row.missingPlant) out.push('缺埋设')
   if (row.missingPay) out.push('缺计划回收')
   if (row.effectiveStatus === 'dropped') out.push('作者已放弃')
-  else if (row.effectiveStatus === 'paid') out.push('已回收')
-  else if (!row.missingPay) out.push('已计划、未回收')
+  // 「已收」但没记位置：作者手设的，正文里还没落到具体场景。说清楚，
+  // 否则同一行的「实际回收位置」列写着「未安排」，两列看着互相打架。
+  else if (row.effectiveStatus === 'paid') {
+    out.push(row.actualPay ? '已回收' : '已收（未记录位置）')
+  } else if (!row.missingPay) out.push('已计划、未回收')
   if (row.sameScene) out.push('埋设与回收同一场')
   return out.join(' ')
 }
@@ -81,20 +84,24 @@ export default function ForeshadowLedger({
 
   async function changeStatus(row: LedgerRow, next: string) {
     // 旧值是唯一不能早返回的情形：库里存的是 `confirmed`，界面上显示的却是
-    // 「规划中」。作者照提示重选「规划中」，两者的派生值相等 —— 早返回会让
-    // 徽标永远去不掉；这一下正好把库里的值改写成 `planned`。
+    // 「规划中」。不跳过才能把库里的值改写成 `planned`。
     if (next === row.effectiveStatus && !row.statusIsLegacy) return
     setSavingId(row.id)
     onNotice('')
     try {
       await api.updateForeshadow(row.id, { status: next })
       await onChanged()
-      // 位置字段是事实：已有实际回收场景时，选「规划中 / 已埋」会被派生回
-      // 「已收」。不说明的话，作者会以为自己的选择没保存。
+      // 位置字段是事实，会在下一次显示时压过作者刚选的状态。不说明的话，
+      // 作者会以为自己的选择没保存 —— 这两种情形各说一句。
       if (next !== 'paid' && next !== 'dropped' && row.actualPay) {
         onNotice(
           `「${row.name}」的实际回收位置已记录，状态仍显示为「已收」。` +
             `要改回其他状态，先点这一行的「清掉实际回收」。`,
+        )
+      } else if (next === 'planned' && row.plant) {
+        onNotice(
+          `「${row.name}」的埋设位置已记录，状态仍显示为「已埋」。` +
+            `埋设位置在结构设计的场景编辑器里改。`,
         )
       }
     } catch (error) {
@@ -247,12 +254,14 @@ export default function ForeshadowLedger({
                       </span>
                     )}
                     {row.statusIsLegacy && (
-                      <span
-                        className="text-xs text-amber-400"
-                        title="旧版本用的是「已确认」，它已归入「规划中」。重新选一次即可更新。"
+                      <button
+                        className="text-xs text-amber-400 hover:underline disabled:opacity-50"
+                        disabled={busy || savingId !== ''}
+                        onClick={() => void changeStatus(row, row.effectiveStatus)}
+                        title="旧版本用的是「已确认」，它已归入「规划中」。点一下把库里的值改成「规划中」。"
                       >
-                        旧值
-                      </span>
+                        旧值 · 点此更新
+                      </button>
                     )}
                   </div>
                 </td>
