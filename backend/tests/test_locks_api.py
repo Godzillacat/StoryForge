@@ -1,6 +1,14 @@
 """锁定接口与段落锁。"""
 
-from app.db.models import Chapter, Project, Scene, SettingEntry, Volume
+from app.db.models import Chapter, Project, Scene, SceneDraft, SettingEntry, Volume
+from app.db.session import SessionLocal
+
+
+def _add_draft(scene_id: str, content: str) -> None:
+    """草稿由生成路径创建；这里直接插一条，只为走到采纳那一步。"""
+    with SessionLocal() as session:
+        session.add(SceneDraft(scene_id=scene_id, content=content))
+        session.commit()
 
 
 def _tree(client):
@@ -111,13 +119,17 @@ def test_generation_on_a_locked_scene_is_409(client):
 
 def test_adopting_a_draft_on_a_locked_scene_is_409(client):
     _project, _volume, _chapter, scene, _entry = _tree(client)
-    client.put(f"/api/scenes/{scene['id']}/draft", json={"content": "草稿正文。"})
+    _add_draft(scene["id"], "草稿正文。")
     client.patch(f"/api/locks/scene/{scene['id']}", json={"locked": True})
 
     response = client.post(f"/api/scenes/{scene['id']}/adopt")
 
     assert response.status_code == 409
     assert "已锁定" in response.json()["detail"]
+    # 草稿与正文都没被动过 —— 拒绝发生在写入之前。
+    state = client.get(f"/api/scenes/{scene['id']}/text").json()
+    assert state["body"] is None
+    assert state["draft"]["content"] == "草稿正文。"
 
 
 def test_replace_scene_write_on_a_locked_scene_is_409(client):
