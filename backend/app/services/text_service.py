@@ -21,7 +21,13 @@ from app.db.models import (
 from app.db.session import SessionLocal
 from app.runtime.context import SLOT_REGISTRY
 from app.runtime.pricing import estimate_tokens
-from app.services import agent_service, chapter_service, lock_service, search_service
+from app.services import (
+    agent_service,
+    change_service,
+    chapter_service,
+    lock_service,
+    search_service,
+)
 from app.services.runtime_service import PreparedExecution, RuntimeService
 from app.services.slot_source import scene_search_query
 from app.text_stats import count_words
@@ -147,8 +153,26 @@ def save_body(session: Session, scene_id: str, content: str) -> dict:
         )
         search_service.mark_dirty(session, project.id)
         _supersede_audit(session, scene.id)
+        change_service.record(
+            session,
+            project.id,
+            target_type="scene",
+            target_id=scene.id,
+            target_label=_scene_label(session, scene),
+            action="update",
+            source="author",
+            summary=f"正文 {count_words(new_content)} 字",
+        )
         session.commit()
     return _state(session, scene_id)
+
+
+def _scene_label(session: Session, scene: Scene) -> str:
+    chapter = session.get(Chapter, scene.chapter_id)
+    volume = session.get(Volume, chapter.volume_id) if chapter else None
+    if chapter is None or volume is None:
+        return f"场景{scene.seq + 1}"
+    return f"第{volume.seq + 1}卷 第{chapter.seq + 1}章 场景{scene.seq + 1}"
 
 
 def save_draft(session: Session, scene_id: str, content: str) -> dict:
@@ -214,6 +238,16 @@ def adopt_draft(session: Session, scene_id: str) -> dict:
     session.delete(draft)
     search_service.mark_dirty(session, project.id)
     _supersede_audit(session, scene.id)
+    change_service.record(
+        session,
+        project.id,
+        target_type="scene",
+        target_id=scene.id,
+        target_label=_scene_label(session, scene),
+        action="adopt",
+        source="ai",
+        summary=f"采纳 AI 草稿 {count_words(content)} 字",
+    )
     session.commit()
     return _state(session, scene_id)
 
@@ -254,6 +288,16 @@ def restore_revision(session: Session, scene_id: str, revision_id: str) -> dict:
     )
     search_service.mark_dirty(session, project.id)
     _supersede_audit(session, scene.id)
+    change_service.record(
+        session,
+        project.id,
+        target_type="scene",
+        target_id=scene.id,
+        target_label=_scene_label(session, scene),
+        action="restore",
+        source="author",
+        summary=f"恢复修订 {revision.id[:8]}（{count_words(content)} 字）",
+    )
     session.commit()
     return _state(session, scene_id)
 

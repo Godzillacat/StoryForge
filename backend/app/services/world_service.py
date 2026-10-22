@@ -14,7 +14,7 @@ from app.db.models import (
     TimelineEvent,
     Volume,
 )
-from app.services import review_service, search_service
+from app.services import change_service, review_service, search_service
 from app.world_types import CHARACTER_FIELDS, normalize_hardness, normalize_type
 
 # 服务层说领域名（aliases / tags），存储层的 *_json 后缀不往上传 ——
@@ -70,7 +70,18 @@ def create_entry(session: Session, project_id: str, **fields) -> SettingEntry:
     name = entry.name
     session.add(entry)
     try:
+        # 先 flush 拿到 id：改动历史要记 target_id，而它由数据库默认值生成。
+        session.flush()
         search_service.mark_dirty(session, project_id)
+        change_service.record(
+            session,
+            project_id,
+            target_type="entry",
+            target_id=entry.id,
+            target_label=entry.name,
+            action="create",
+            summary=f"新建{_type_label(entry.type)}",
+        )
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -96,6 +107,15 @@ def update_entry(session: Session, entry_id: str, **fields) -> SettingEntry:
     name = entry.name
     try:
         search_service.mark_dirty(session, entry.project_id)
+        change_service.record(
+            session,
+            entry.project_id,
+            target_type="entry",
+            target_id=entry.id,
+            target_label=entry.name,
+            action="update",
+            summary="编辑设定",
+        )
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -129,11 +149,30 @@ def delete_entry(session: Session, entry_id: str) -> None:
             scene.characters_json = [
                 cid for cid in character_ids if cid != entry_id
             ]
+    # 先把名字抄下来：删完就读不到了，而历史记的是**当时的**名称。
+    entry_name = entry.name
+    entry_type = entry.type
+    project_id = entry.project_id
     session.delete(entry)
     # 标记指向的是一个已经不存在的对象；留着只会让作者点进一条死链。
-    review_service.clear_for_target(session, entry.project_id, "entry", entry_id)
-    search_service.mark_dirty(session, entry.project_id)
+    review_service.clear_for_target(session, project_id, "entry", entry_id)
+    search_service.mark_dirty(session, project_id)
+    change_service.record(
+        session,
+        project_id,
+        target_type="entry",
+        target_id=entry_id,
+        target_label=entry_name,
+        action="delete",
+        summary=f"删除{_type_label(entry_type)}",
+    )
     session.commit()
+
+
+def _type_label(entry_type: str) -> str:
+    from app.world_types import ENTRY_TYPES
+
+    return ENTRY_TYPES.get(entry_type, "设定")
 
 
 def list_relations(session: Session, project_id: str) -> list[EntryRelation]:

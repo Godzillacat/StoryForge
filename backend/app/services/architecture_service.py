@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Act, Architecture
+from app.services import change_service
 
 
 def get_architecture(session: Session, project_id: str) -> tuple[Architecture | None, list[Act]]:
@@ -46,5 +47,14 @@ def adopt(session: Session, project_id: str, payload: dict) -> tuple[Architectur
         )
         session.add(act)
         acts.append(act)
+    change_service.record(
+        session,
+        project_id,
+        target_type="architecture",
+        target_id=arch.id,
+        target_label="故事圣经",
+        action="adopt",
+        summary=f"采纳故事圣经（{len(acts)} 幕）",
+    )
     session.commit()
     return arch, acts

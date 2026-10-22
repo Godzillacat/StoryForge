@@ -7,7 +7,33 @@ from sqlalchemy.orm import Session
 
 from app.chapter_types import normalize_status
 from app.db.models import Chapter, Foreshadow, Project, Scene, Volume
-from app.services import review_service, search_service
+from app.services import change_service, review_service, search_service
+
+
+_FIELD_LABELS = {
+    "name": "卷名",
+    "purpose": "目的",
+    "summary": "摘要",
+    "act_seq": "幕",
+    "target_words": "目标字数",
+    "status": "状态",
+    "title": "标题",
+    "pov": "视角",
+    "emotional_tone": "情绪",
+    "lines": "剧情线",
+    "hook": "钩子",
+    "conflict_level": "冲突",
+    "dialogue_ratio": "对话占比",
+    "hook_strength": "钩子强度",
+}
+
+
+def _fields_summary(fields: dict) -> str:
+    """只列改了什么，不复制全文 —— 历史列表要能一眼扫过去。"""
+    keys = [key for key in fields if key in _FIELD_LABELS]
+    if not keys:
+        return ""
+    return "修改：" + "、".join(_FIELD_LABELS[key] for key in keys)
 
 
 def _ordered_volumes(session: Session, project_id: str) -> list[Volume]:
@@ -141,6 +167,15 @@ def update_volume(session: Session, volume_id: str, **fields) -> Volume:
         if "source_run_id" in fields:
             volume.source_run_id = fields.get("source_run_id")
         search_service.mark_dirty(session, volume.project_id)
+        change_service.record(
+            session,
+            volume.project_id,
+            target_type="volume",
+            target_id=volume.id,
+            target_label=f"第{volume.seq + 1}卷（{volume.name}）",
+            action="update",
+            summary=_fields_summary(fields),
+        )
         session.commit()
     except Exception:
         session.rollback()
@@ -251,6 +286,20 @@ def update_chapter(session: Session, chapter_id: str, **fields) -> Chapter:
         if "source_run_id" in fields:
             chapter.source_run_id = fields.get("source_run_id")
         search_service.mark_dirty(session, project.id)
+        volume = session.get(Volume, chapter.volume_id)
+        change_service.record(
+            session,
+            project.id,
+            target_type="chapter",
+            target_id=chapter.id,
+            target_label=(
+                f"第{volume.seq + 1}卷 第{chapter.seq + 1}章（{chapter.title}）"
+                if volume is not None
+                else f"第{chapter.seq + 1}章（{chapter.title}）"
+            ),
+            action="update",
+            summary=_fields_summary(fields),
+        )
         session.commit()
     except Exception:
         session.rollback()
