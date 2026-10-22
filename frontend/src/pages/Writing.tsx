@@ -7,6 +7,7 @@ import {
   type AuditResolution,
   type BatchJob,
   type ContextPreview as ContextPreviewData,
+  type LockState,
   type LogicStage,
   type Project,
   type RevisionDetail,
@@ -18,6 +19,7 @@ import {
 import AuditPanel from '../components/writing/AuditPanel'
 import BatchPanel from '../components/writing/BatchPanel'
 import ContextPreview from '../components/writing/ContextPreview'
+import ParagraphLocks from '../components/writing/ParagraphLocks'
 import DiffPanel from '../components/writing/DiffPanel'
 import GenerationStream from '../components/writing/GenerationStream'
 import LogicPanel from '../components/writing/LogicPanel'
@@ -60,6 +62,10 @@ export default function Writing() {
   const [treeLoading, setTreeLoading] = useState(false)
   const [textLoading, setTextLoading] = useState(false)
   const [selectedSceneId, setSelectedSceneId] = useState('')
+  // 有效锁定（含卷 / 章继承）与段落锁：AI 写路径会被服务端拒绝，界面要
+  // 提前把按钮关掉并说清为什么，让作者不用点一次才知道。
+  const [sceneLock, setSceneLock] = useState<LockState | null>(null)
+  const [paragraphLocks, setParagraphLocks] = useState<string[]>([])
   const [text, setText] = useState<SceneTextState | null>(null)
   const [preview, setPreview] = useState<ContextPreviewData | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -247,6 +253,9 @@ export default function Writing() {
     setPreviewLoading(true)
     setPreviewError('')
     setPreview(null)
+    // 先清空上一场的锁定状态：留着会让新场景短暂地显示上一场的横幅。
+    setSceneLock(null)
+    setParagraphLocks([])
     setAuditIssues([])
     setAuditLastAt(null)
     setAuditWarning('')
@@ -254,14 +263,18 @@ export default function Writing() {
     setLogicLastAt(null)
     setLogicWarning('')
     try {
-      const [stateResult, contextResult, auditResult, logicResult] =
+      const [stateResult, contextResult, auditResult, logicResult, lockResult, paraResult] =
         await Promise.allSettled([
           api.getSceneText(sceneId),
           api.getSceneContextPreview(sceneId),
           api.getSceneAudit(sceneId),
           api.getSceneLogicCheck(sceneId, logicStage),
+          api.getLock('scene', sceneId),
+          api.getParagraphLocks(sceneId),
         ])
       if (sceneToken.current !== token) return
+      setSceneLock(lockResult.status === 'fulfilled' ? lockResult.value : null)
+      setParagraphLocks(paraResult.status === 'fulfilled' ? paraResult.value.paragraphs : [])
       if (stateResult.status === 'fulfilled') {
         const state = stateResult.value
         setText(state)
@@ -980,6 +993,13 @@ export default function Writing() {
               </p>
             ) : (
               <>
+                {sceneLock?.locked && (
+                  <p className="rounded border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-300">
+                    这一场已锁定（{sceneLock.label || '上级'}）：AI 不会生成或采纳正文。
+                    作者仍可手工编辑与保存。要重新生成，请先在章节页解锁。
+                  </p>
+                )}
+
                 <section className="space-y-1 rounded border border-slate-800 p-3 text-sm">
                   <p className="text-slate-300">
                     目标：{selected.scene.goal || '（未写目标）'}
@@ -1016,8 +1036,21 @@ export default function Writing() {
                         <button
                           type="button"
                           onClick={generate}
-                          disabled={busy || stopCooldown || auditLoading || logicLoading || writebackBusy}
-                          title={stopCooldown ? '生成刚结束，请稍候' : undefined}
+                          disabled={
+                            busy ||
+                            stopCooldown ||
+                            auditLoading ||
+                            logicLoading ||
+                            writebackBusy ||
+                            sceneLock?.locked === true
+                          }
+                          title={
+                            sceneLock?.locked
+                              ? '这一场已锁定，AI 不会改动它'
+                              : stopCooldown
+                                ? '生成刚结束，请稍候'
+                                : undefined
+                          }
                           className="rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
                         >
                           生成正文
@@ -1111,7 +1144,20 @@ export default function Writing() {
                       <button
                         type="button"
                         onClick={adopt}
-                        disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.draft}
+                        disabled={
+                          busy ||
+                          generating ||
+                          auditLoading ||
+                          logicLoading ||
+                          writebackBusy ||
+                          !text.draft ||
+                          sceneLock?.locked === true
+                        }
+                        title={
+                          sceneLock?.locked
+                            ? '这一场已锁定，AI 草稿不能采纳'
+                            : undefined
+                        }
                         className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
                       >
                         采纳为正文
@@ -1178,6 +1224,15 @@ export default function Writing() {
           </section>
 
           <aside className="min-w-0 space-y-4">
+            {selectedSceneId && (
+              <ParagraphLocks
+                sceneId={selectedSceneId}
+                body={text?.body ?? null}
+                locks={paragraphLocks}
+                disabled={busy || generating}
+                onChanged={setParagraphLocks}
+              />
+            )}
             <ContextPreview
               data={preview}
               loading={previewLoading}

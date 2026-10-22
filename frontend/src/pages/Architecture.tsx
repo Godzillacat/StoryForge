@@ -8,6 +8,7 @@ import {
   type RecommendResponse,
 } from '../api/client'
 import RunTrace from '../components/RunTrace'
+import { ImpactPanel, LockToggle } from '../components/Locking'
 
 interface DraftAct {
   seq: number
@@ -41,6 +42,8 @@ export default function Architecture() {
   const [manual, setManual] = useState(false)
   // 项目里已经写入过故事圣经 —— 这时编辑器要能回填并继续改
   const [hasSaved, setHasSaved] = useState(false)
+  const [archId, setArchId] = useState('')
+  const [archLocked, setArchLocked] = useState(false)
   // 作废在途推荐响应用的令牌：递增即代表「这次推荐的结果已经不要了」
   const runToken = useRef(0)
 
@@ -66,6 +69,8 @@ export default function Architecture() {
     setDraftActs([])
     setSavedActs([]) // 先清空，避免旧项目的幕挂在新项目标题下
     setHasSaved(false)
+    setArchId('')
+    setArchLocked(false)
 
     api
       .getArchitecture(projectId)
@@ -74,6 +79,8 @@ export default function Architecture() {
         const arch = data.architecture
         if (!arch) return
         setHasSaved(true)
+        setArchId(arch.id)
+        setArchLocked(arch.locked)
         setDraft({
           logline: arch.logline ?? '',
           theme: arch.theme ?? '',
@@ -182,6 +189,8 @@ export default function Architecture() {
       const saved = await api.adoptArchitecture(projectId, payload)
       setSavedActs(saved.acts)
       setHasSaved(true)
+      setArchId(saved.architecture.id)
+      setArchLocked(saved.architecture.locked)
       setMessage('已写入项目结构')
     } catch (error) {
       setMessage((error as Error).message)
@@ -346,13 +355,43 @@ export default function Architecture() {
             </ul>
           </div>
 
-          <button
-            className="rounded bg-emerald-700 px-4 py-2 text-sm disabled:opacity-50"
-            onClick={adopt}
-            disabled={!manual && !chosen && !hasSaved}
-          >
-            采纳并写入项目
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              className="rounded bg-emerald-700 px-4 py-2 text-sm disabled:opacity-50"
+              onClick={adopt}
+              disabled={(!manual && !chosen && !hasSaved) || archLocked}
+              title={archLocked ? '故事圣经已锁定，AI 不会改动它' : undefined}
+            >
+              采纳并写入项目
+            </button>
+            {archId && (
+              <LockToggle
+                targetType="architecture"
+                targetId={archId}
+                locked={archLocked}
+                onChanged={async () => {
+                  try {
+                    const data = await api.getArchitecture(projectId)
+                    setArchLocked(data.architecture?.locked === true)
+                  } catch (error) {
+                    setMessage((error as Error).message)
+                  }
+                }}
+              />
+            )}
+          </div>
+          {archLocked && (
+            <p className="text-xs text-amber-400">
+              故事圣经已锁定：可以继续编辑草稿，但写入项目会被拒绝，直到解锁。
+            </p>
+          )}
+          {archId && (
+            <ImpactPanel
+              projectId={projectId}
+              targetType="architecture"
+              targetId={archId}
+            />
+          )}
           {recommendation?.structured && !chosen && !manual && !hasSaved && (
             <p className="text-xs text-slate-500">先在上面选一套方案，再采纳。</p>
           )}

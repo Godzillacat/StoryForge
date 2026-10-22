@@ -8,11 +8,18 @@ import {
   type PlanScene,
   type PlanVolume,
   type Project,
+  type ReviewMark,
   type ScenePlanResponse,
   type SettingEntry,
   type VolumeNode,
 } from '../api/client'
 import RunTrace from '../components/RunTrace'
+import {
+  ImpactPanel,
+  LockToggle,
+  ReviewMarkBadge,
+  ReviewMarkList,
+} from '../components/Locking'
 import ChapterPlanDraft from '../components/chapters/ChapterPlanDraft'
 import ScenePlanDraft from '../components/chapters/ScenePlanDraft'
 import ChapterTree, { type Selection } from '../components/chapters/ChapterTree'
@@ -55,6 +62,7 @@ export default function Chapters() {
   } | null>(null)
   const [planning, setPlanning] = useState(false)
   const [view, setView] = useState<ViewTab>('structure')
+  const [reviewMarks, setReviewMarks] = useState<ReviewMark[]>([])
   // 数据属于哪个项目：用它与 projectId 的差异推导加载态，
   // 避免切项目时先闪一帧上一个项目的数据。
   const [dataProjectId, setDataProjectId] = useState('')
@@ -87,6 +95,7 @@ export default function Chapters() {
     setEntries([])
     setEntriesProjectId('')
     setForeshadows([])
+    setReviewMarks([])
     setDataProjectId('')
     runToken.current++
     setChapterPlan(null)
@@ -96,7 +105,8 @@ export default function Chapters() {
     Promise.allSettled([
       api.getChapterTree(projectId),
       api.listForeshadows(projectId),
-    ]).then(([treeResult, foreshadowResult]) => {
+      api.listReviewMarks(projectId),
+    ]).then(([treeResult, foreshadowResult, markResult]) => {
       if (dataRequestRef.current !== token) return
       const errors: string[] = []
       if (treeResult.status === 'fulfilled') {
@@ -108,6 +118,9 @@ export default function Chapters() {
         setForeshadows(foreshadowResult.value)
       } else {
         errors.push((foreshadowResult.reason as Error).message)
+      }
+      if (markResult.status === 'fulfilled') {
+        setReviewMarks(markResult.value)
       }
       if (errors.length > 0) setNotice(errors.join('；'))
       // 两份都已有结果就结束加载态：部分失败时显示已有数据 + 页头提示。
@@ -137,10 +150,11 @@ export default function Chapters() {
     if (projectIdRef.current !== requestProjectId) return
     const token = ++dataRequestRef.current
     try {
-      const [tree, entryList, foreshadowList] = await Promise.all([
+      const [tree, entryList, foreshadowList, marks] = await Promise.all([
         api.getChapterTree(requestProjectId),
         api.listEntries(requestProjectId),
         api.listForeshadows(requestProjectId),
+        api.listReviewMarks(requestProjectId),
       ])
       // 期间切了项目（或又发起了一次刷新）：这批数据属于旧请求，整批丢弃。
       if (dataRequestRef.current !== token) return
@@ -149,6 +163,7 @@ export default function Chapters() {
       setEntries(entryList)
       setEntriesProjectId(requestProjectId)
       setForeshadows(foreshadowList)
+      setReviewMarks(marks)
     } finally {
       // 当前项目的刷新无论成败都要结束加载态；旧项目不发结果，也不许碰它。
       if (
@@ -372,6 +387,14 @@ export default function Chapters() {
         {notice && <span className="text-sm text-slate-400">{notice}</span>}
       </div>
 
+      {projectId && reviewMarks.length > 0 && (
+        <ReviewMarkList
+          projectId={projectId}
+          marks={reviewMarks}
+          onReload={refresh}
+        />
+      )}
+
       <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-2">
         {TABS.map((tab) => (
           <button
@@ -448,6 +471,56 @@ export default function Chapters() {
                 <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
                   从左边选一卷、一章或一个场景开始编辑；也可以先手工建卷。
                 </p>
+              )}
+              {selected && (volume || chapter || scene) && (
+                <div className="space-y-2 rounded border border-slate-800 p-3">
+                  <div className="flex flex-wrap items-center gap-3 text-sm">
+                    {(() => {
+                      const mark = reviewMarks.find(
+                        (row) =>
+                          row.target_type === selected.kind && row.target_id === selected.id,
+                      )
+                      return mark ? (
+                        <ReviewMarkBadge
+                          marked
+                          reason={mark.reason}
+                          onClick={async () => {
+                            await api.clearReviewMark(mark.id)
+                            await refresh()
+                          }}
+                        />
+                      ) : null
+                    })()}
+                    <span className="text-slate-400">锁定</span>
+                    <LockToggle
+                      targetType={selected.kind}
+                      targetId={selected.id}
+                      locked={
+                        (volume ?? chapter ?? scene)?.locked === true
+                      }
+                      inheritedLabel={
+                        // 只有 scene 会出现「继承」：卷锁了章与场景都算锁。
+                        selected.kind === 'scene' &&
+                        scene?.locked === false &&
+                        parentChapter &&
+                        (parentChapter.locked ||
+                          volumes.find((v) => v.id === parentChapter.volume_id)
+                            ?.locked)
+                          ? '上一级'
+                          : undefined
+                      }
+                      onChanged={refresh}
+                    />
+                  </div>
+                  {projectId && (
+                    <ImpactPanel
+                      projectId={projectId}
+                      targetType={selected.kind}
+                      targetId={selected.id}
+                      onMarksChanged={refresh}
+                    />
+                  )}
+                </div>
               )}
               {volume && (
                 <VolumeEditor
