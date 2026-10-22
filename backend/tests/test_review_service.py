@@ -174,3 +174,44 @@ def test_a_mark_whose_target_vanished_shows_as_deleted(session):
     rows = review_service.list_marks(session, project.id)
 
     assert rows[0]["label"] == "（对象已删除）"
+
+
+def test_one_conflict_does_not_drop_the_other_marks_in_the_batch(session):
+    """并发撞唯一约束时只回滚这一条 —— 整会话回滚会丢掉同批前面已插入的。"""
+    project, _volume, _chapter, scene, entry = _seed(session)
+    # 先标记一条，让同批里再出现它时走冲突分支。
+    review_service.add_marks(
+        session, project.id, [{"target_type": "scene", "target_id": scene.id}]
+    )
+
+    added = review_service.add_marks(
+        session,
+        project.id,
+        [
+            {"target_type": "entry", "target_id": entry.id, "reason": "条目"},
+            {"target_type": "scene", "target_id": scene.id, "reason": "冲突的一条"},
+        ],
+    )
+
+    assert added == 1
+    rows = {row["target_type"]: row for row in review_service.list_marks(session, project.id)}
+    assert rows["entry"]["reason"] == "条目"
+    assert rows["scene"]["reason"] == "冲突的一条"
+
+
+def test_a_batch_of_marks_that_is_all_new_keeps_every_row(session):
+    project, volume, chapter, scene, entry = _seed(session)
+
+    added = review_service.add_marks(
+        session,
+        project.id,
+        [
+            {"target_type": "volume", "target_id": volume.id},
+            {"target_type": "chapter", "target_id": chapter.id},
+            {"target_type": "scene", "target_id": scene.id},
+            {"target_type": "entry", "target_id": entry.id},
+        ],
+    )
+
+    assert added == 4
+    assert len(review_service.list_marks(session, project.id)) == 4

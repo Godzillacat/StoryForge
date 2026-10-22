@@ -507,7 +507,9 @@ def _scene_path(session: Session, project_id: str, scene_id: str) -> dict:
                             "id": draft.id,
                             "label": "AI 草稿",
                             "detail": f"{len(draft.content or '')} 字",
-                            "locked": state["locked"],
+                            # 草稿与修订本身不是可锁对象；不填 locked，
+                            # 免得 totals.locked 里混进无法「标为待复核」的项。
+                            "locked": False,
                             "path": f"/write?scene={scene_id}",
                         }
                         for draft in drafts
@@ -522,7 +524,7 @@ def _scene_path(session: Session, project_id: str, scene_id: str) -> dict:
                                 "restore": "恢复快照",
                             }.get(revision.source, revision.source),
                             "detail": f"{len(revision.content or '')} 字",
-                            "locked": state["locked"],
+                            "locked": False,
                             "path": f"/write?scene={scene_id}",
                         }
                         for revision in revisions

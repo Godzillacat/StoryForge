@@ -227,3 +227,15 @@ def test_totals_aggregate_every_group(session):
 
     assert body["totals"]["all"] == sum(group["total"] for group in body["groups"])
     assert body["totals"]["locked"] == sum(group["locked"] for group in body["groups"])
+
+
+def test_drafts_and_revisions_are_not_counted_as_locked(session):
+    """草稿与修订不是可锁目标，不该混进 totals.locked。"""
+    project, _arch, _volume, _chapter, first, _second, _shen, _city = _seed(session)
+    first.locked = True
+    session.commit()
+
+    body = impact_service.analyze(session, project.id, "scene", first.id)
+
+    drafts = next(group for group in body["groups"] if group["key"] == "drafts")
+    assert drafts["locked"] == 0

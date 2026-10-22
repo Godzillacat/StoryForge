@@ -411,6 +411,7 @@ def write_scenes(
     try:
         if mode == "replace":
             for scene in existing:
+                review_service.clear_for_target(session, project.id, "scene", scene.id)
                 session.delete(scene)
             session.flush()
             # FK SET NULL 是在库里发生的；identity map 里的旧伏笔对象仍带着

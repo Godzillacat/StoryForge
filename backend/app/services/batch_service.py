@@ -94,7 +94,15 @@ def skipped_locked(session: Session, job: BatchJob) -> int:
     锁定的场景在任务创建时就已排除，不在那个列表里；按范围重算才能把
     「本来该跑、但因为锁着没跑」如实报出来。
     """
-    scope_ids = _scope_scene_ids(session, job.project_id, job.scope_type, job.scope_id)
+    try:
+        scope_ids = _scope_scene_ids(
+            session, job.project_id, job.scope_type, job.scope_id
+        )
+    except ValueError:
+        # 任务创建后它的章 / 卷被删了：范围已经不存在，跳过数就是 0。
+        # 让这里抛错会把轮询与暂停/继续/取消一起变成 404 —— 一个只用来
+        # 显示的数字不该有这种权力。
+        return 0
     return len(lock_service.locked_scene_ids(session, scope_ids))
 
 

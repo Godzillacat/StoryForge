@@ -49,6 +49,7 @@ def add_marks(session: Session, project_id: str, items: list[dict]) -> int:
         target_id = str(item.get("target_id") or "").strip()
         if not target_id:
             raise ValueError("标为待复核需要指定对象")
+        reason = str(item.get("reason") or "").strip()
         existing = session.scalars(
             select(ReviewMark).where(
                 ReviewMark.project_id == project_id,
@@ -56,23 +57,23 @@ def add_marks(session: Session, project_id: str, items: list[dict]) -> int:
                 ReviewMark.target_id == target_id,
             )
         ).first()
-        reason = str(item.get("reason") or "").strip()
         if existing is not None:
             existing.reason = reason
             continue
-        session.add(
-            ReviewMark(
-                project_id=project_id,
-                target_type=kind,
-                target_id=target_id,
-                reason=reason,
-            )
-        )
         try:
-            session.flush()
+            # 每条一个 SAVEPOINT：并发插入撞唯一约束时只回滚这一条。
+            # 整会话 rollback 会把同批前面已经插入的那些一起丢掉，而 added
+            # 已经数过它们 —— 一批 10 项丢 9 条还报 10，是最坏的那种静默错。
+            with session.begin_nested():
+                session.add(
+                    ReviewMark(
+                        project_id=project_id,
+                        target_type=kind,
+                        target_id=target_id,
+                        reason=reason,
+                    )
+                )
         except IntegrityError:
-            # 并发标记同一对象时唯一约束是最后一道防线；输的一方当成已存在。
-            session.rollback()
             existing = session.scalars(
                 select(ReviewMark).where(
                     ReviewMark.project_id == project_id,

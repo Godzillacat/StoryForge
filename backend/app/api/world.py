@@ -125,6 +125,7 @@ def _entry_out(entry) -> dict:
         "description": entry.description,
         "hardness": entry.hardness,
         "source_run_id": entry.source_run_id,
+        "locked": entry.locked,
         # 人物八项从唯一真相派生（同 world_service 的 _FIELD_TO_COLUMN）：
         # 手抄第二份清单的话，加第九项会在这里静默漏掉。
         **{key: getattr(entry, key) for key in CHARACTER_FIELDS},

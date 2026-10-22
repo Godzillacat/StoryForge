@@ -392,3 +392,13 @@ def test_an_unlocked_scene_still_generates(session, monkeypatch):
     session.commit()
 
     assert batch_service.advance_job(session, job.id) == "ok"
+
+
+def test_skipped_locked_falls_back_to_zero_when_the_scope_is_gone(session):
+    """任务创建后范围被删：只用来显示的数字不该把轮询变成 404。"""
+    project, _volume, chapter, first, _written, _drafted = _seed(session)
+    job = batch_service.create_job(session, project.id, "chapter", chapter.id)
+    session.delete(session.get(Chapter, chapter.id))
+    session.commit()
+
+    assert batch_service.skipped_locked(session, job) == 0

@@ -495,20 +495,25 @@ export default function Chapters() {
                     <LockToggle
                       targetType={selected.kind}
                       targetId={selected.id}
-                      locked={
-                        (volume ?? chapter ?? scene)?.locked === true
-                      }
-                      inheritedLabel={
-                        // 只有 scene 会出现「继承」：卷锁了章与场景都算锁。
-                        selected.kind === 'scene' &&
-                        scene?.locked === false &&
-                        parentChapter &&
-                        (parentChapter.locked ||
-                          volumes.find((v) => v.id === parentChapter.volume_id)
-                            ?.locked)
-                          ? '上一级'
-                          : undefined
-                      }
+                      locked={(volume ?? chapter ?? scene)?.locked === true}
+                      inheritedLabel={(() => {
+                        // 有效锁定向下继承，界面必须与之一致：章被卷锁住时若
+                        // 仍显示可点的「锁定」，作者点它只会写一条冗余的章锁，
+                        // 之后「解锁」也解不掉那份有效锁。
+                        const own = volume ?? chapter ?? scene
+                        if (!own || own.locked) return undefined
+                        if (selected.kind === 'chapter' || selected.kind === 'scene') {
+                          const owner =
+                            selected.kind === 'scene'
+                              ? volumes.find((v) => v.id === parentChapter?.volume_id)
+                              : volumes.find((v) => v.id === chapter?.volume_id)
+                          if (owner?.locked) return `第${owner.seq + 1}卷（${owner.name}）`
+                        }
+                        if (selected.kind === 'scene' && parentChapter?.locked) {
+                          return `第${parentChapter.seq + 1}章（${parentChapter.title}）`
+                        }
+                        return undefined
+                      })()}
                       onChanged={refresh}
                     />
                   </div>
