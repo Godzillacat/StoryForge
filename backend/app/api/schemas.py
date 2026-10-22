@@ -302,6 +302,9 @@ class ForeshadowUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     note: str | None = None
     plan_pay_scene_id: str | None = None
+    # 回写助手会写它，但作者也得能改：匹配错场景时，「已收」会一直派生下去，
+    # 而状态下拉改不回其他值。清空它（传 null）是唯一能退回的办法。
+    actual_pay_scene_id: str | None = None
     status: str | None = None
 
 

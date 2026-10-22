@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import ForeshadowCreate, ForeshadowUpdate
 from app.db.session import get_session
+from app.foreshadow_types import STATUS_LABELS, effective_status, is_legacy
 from app.services import foreshadow_service
 
 router = APIRouter(prefix="/api", tags=["foreshadows"])
@@ -24,7 +25,27 @@ def _out(row) -> dict:
         "plan_pay_scene_id": row.plan_pay_scene_id,
         "actual_pay_scene_id": row.actual_pay_scene_id,
         "status": row.status,
+        # 派生值：位置字段反映的事实。作者看到的应该是「它走到哪一步」，
+        # 而不是「他最后一次手动点的是哪个值」。
+        "effective_status": effective_status(row),
+        "status_is_derived": effective_status(row) != (row.status or "planned"),
+        "status_is_legacy": is_legacy(row.status),
+        "status_label": STATUS_LABELS.get(effective_status(row), effective_status(row)),
         "source_run_id": row.source_run_id,
+    }
+
+
+@router.get("/foreshadow-types")
+def list_foreshadow_types() -> dict:
+    """状态词表的唯一真相在 app/foreshadow_types.py；前端不硬编第二份。
+
+    与 `/api/chapter-types` 同一形状，但**是另一份词表**：章节的 `confirmed`
+    与伏笔的 `paid` 不是一回事。
+    """
+    return {
+        "statuses": [
+            {"key": key, "label": label} for key, label in STATUS_LABELS.items()
+        ]
     }
 
 
@@ -33,6 +54,11 @@ def list_foreshadows(
     project_id: str, session: Session = Depends(get_session)
 ) -> list[dict]:
     return [_out(row) for row in foreshadow_service.list_foreshadows(session, project_id)]
+
+
+@router.get("/projects/{project_id}/foreshadows/summary")
+def summary(project_id: str, session: Session = Depends(get_session)) -> dict:
+    return foreshadow_service.ledger_summary(session, project_id)
 
 
 @router.post("/projects/{project_id}/foreshadows", status_code=201)

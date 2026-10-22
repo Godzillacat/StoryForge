@@ -24,10 +24,10 @@ def test_create_list_update_delete(session):
     assert [row.id for row in foreshadow_service.list_foreshadows(session, project.id)] == [created.id]
 
     updated = foreshadow_service.update_foreshadow(
-        session, created.id, name="录音带", status="confirmed"
+        session, created.id, name="录音带", status="planted"
     )
     assert updated.name == "录音带"
-    assert updated.status == "confirmed"
+    assert updated.status == "planted"
 
     foreshadow_service.delete_foreshadow(session, created.id)
     assert foreshadow_service.list_foreshadows(session, project.id) == []

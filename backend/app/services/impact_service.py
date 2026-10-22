@@ -25,7 +25,7 @@ from app.db.models import (
     Volume,
 )
 from app.lock_types import LOCK_TARGETS, normalize_target_type
-from app.services import lock_service
+from app.services import foreshadow_service, lock_service
 
 
 def scene_label(volume: Volume, chapter: Chapter, seq: int) -> str:
@@ -159,9 +159,7 @@ def _architecture_path(session: Session, project_id: str) -> dict:
             scenes.append(_scene_item(session, volume, chapter, scene))
 
     foreshadows = [
-        row
-        for row in _foreshadows(session, project_id)
-        if row.actual_pay_scene_id is None and (row.plant_scene_id or row.plan_pay_scene_id)
+        row for row in _foreshadows(session, project_id) if foreshadow_service.is_unrecovered(row)
     ]
     unrecovered = [
         {
@@ -340,7 +338,7 @@ def _volume_path(session: Session, project_id: str, volume_id: str) -> dict:
     foreshadows = [
         row
         for row in _foreshadows(session, project_id)
-        if row.actual_pay_scene_id is None
+        if foreshadow_service.is_unrecovered(row)
         and (row.plant_scene_id in scene_ids or row.plan_pay_scene_id in scene_ids)
     ]
     issues = _open_issues(session, scene_ids)
@@ -398,7 +396,7 @@ def _chapter_path(session: Session, project_id: str, chapter_id: str) -> dict:
     foreshadows = [
         row
         for row in _foreshadows(session, project_id)
-        if row.actual_pay_scene_id is None
+        if foreshadow_service.is_unrecovered(row)
         and (row.plant_scene_id in scene_ids or row.plan_pay_scene_id in scene_ids)
     ]
     issues = _open_issues(session, scene_ids)
