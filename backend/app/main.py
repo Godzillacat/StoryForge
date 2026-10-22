@@ -11,6 +11,7 @@ from app.api import (
     architecture,
     audit,
     batches,
+    branches,
     chapters,
     export,
     foreshadows,
@@ -77,10 +78,12 @@ for module in (
     logic,
     writeback,
     batches,
+    branches,
     export,
     pipeline,
     locks,
     impact,
     snapshots,
+    branches,
 ):
     app.include_router(module.router)
