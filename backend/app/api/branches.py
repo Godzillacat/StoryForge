@@ -96,6 +96,14 @@ def save_draft(
         raise _value_error(exc) from exc
 
 
+@router.get("/branches/{branch_id}/revisions")
+def list_revisions(branch_id: str, session: Session = Depends(get_session)) -> list[dict]:
+    try:
+        return branch_service.list_branch_revisions(session, branch_id)
+    except ValueError as exc:
+        raise _value_error(exc) from exc
+
+
 @router.post("/branches/{branch_id}/adopt")
 def adopt_draft(branch_id: str, session: Session = Depends(get_session)) -> dict:
     try:

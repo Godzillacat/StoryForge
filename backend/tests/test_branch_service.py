@@ -241,3 +241,76 @@ def test_missing_scene_and_branch_are_reported(session):
         branch_service.create_branch(session, "nope", "A 案")
     with pytest.raises(ValueError, match="分支不存在"):
         branch_service.get_branch(session, "nope")
+
+
+def test_saving_a_branch_body_records_a_revision(session):
+    _project, scene = _seed(session)
+    row = branch_service.create_branch(session, scene.id, "A 案")
+
+    branch_service.save_branch_body(session, row.id, "第二版。")
+
+    rows = branch_service.list_branch_revisions(session, row.id)
+    assert [item["source"] for item in rows] == ["author"]
+    assert rows[0]["chars"] == len("第二版。")
+
+
+def test_saving_an_unchanged_branch_body_records_nothing(session):
+    _project, scene = _seed(session)
+    row = branch_service.create_branch(session, scene.id, "A 案")
+
+    branch_service.save_branch_body(session, row.id, row.content)
+
+    assert branch_service.list_branch_revisions(session, row.id) == []
+
+
+def test_adopting_a_branch_draft_records_an_ai_revision(session):
+    _project, scene = _seed(session)
+    row = branch_service.create_branch(session, scene.id, "A 案")
+    branch_service.save_branch_draft(session, row.id, "AI 写的。")
+
+    branch_service.adopt_branch_draft(session, row.id)
+
+    rows = branch_service.list_branch_revisions(session, row.id)
+    assert [item["source"] for item in rows] == ["ai"]
+
+
+def test_branch_revisions_are_separate_from_scene_revisions(session):
+    _project, scene = _seed(session)
+    row = branch_service.create_branch(session, scene.id, "A 案")
+    branch_service.save_branch_body(session, row.id, "分支的改动。")
+
+    assert session.query(SceneRevision).filter_by(scene_id=scene.id).count() == 0
+    assert len(branch_service.list_branch_revisions(session, row.id)) == 1
+
+
+def test_merging_clears_the_stale_main_draft(session):
+    """合并后主版正文变了，旧草稿是针对旧正文的 —— 留着会被误采纳。"""
+    from app.db.models import SceneDraft
+
+    _project, scene = _seed(session)
+    session.add(SceneDraft(scene_id=scene.id, content="主版旧草稿"))
+    session.commit()
+    row = branch_service.create_branch(session, scene.id, "A 案")
+    branch_service.save_branch_body(session, row.id, "合入的正文。")
+
+    branch_service.merge_branch(session, row.id)
+
+    session.expire_all()
+    assert session.query(SceneDraft).filter_by(scene_id=scene.id).count() == 0
+
+
+def test_rolling_back_a_snapshot_keeps_the_branches(session):
+    """分支不进快照，但也不该被回滚删掉 —— 它是实验材料，不是快照的一部分。"""
+    from app.services import snapshot_service
+
+    project, scene = _seed(session)
+    row = branch_service.create_branch(session, scene.id, "A 案")
+    branch_service.save_branch_body(session, row.id, "实验正文。")
+    snap = snapshot_service.create_snapshot(session, project.id, "初稿")
+
+    snapshot_service.restore_snapshot(session, snap.id)
+
+    session.expire_all()
+    kept = branch_service.get_branch(session, row.id)
+    assert kept["name"] == "A 案"
+    assert kept["content"] == "实验正文。"

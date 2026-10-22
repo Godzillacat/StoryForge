@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import Scene, SceneBranch, SceneRevision
+from app.db.models import BranchRevision, Scene, SceneBranch, SceneDraft, SceneRevision
 from app.services import change_service, search_service
 from app.text_stats import count_words
 
@@ -156,9 +156,46 @@ def update_branch(
 def save_branch_body(session: Session, branch_id: str, content: str) -> dict:
     """作者手工保存：**不受锁限制** —— 锁只约束 AI。"""
     row = _branch(session, branch_id)
-    row.content = content or ""
-    session.commit()
+    new_content = content or ""
+    if (row.content or "") != new_content:
+        _add_revision(session, row, new_content, "author")
+        row.content = new_content
+        session.commit()
     return serialize_branch_detail(row)
+
+
+def _add_revision(
+    session: Session, row: SceneBranch, content: str, source: str
+) -> BranchRevision:
+    revision = BranchRevision(
+        branch_id=row.id, content=content or "", source=source
+    )
+    session.add(revision)
+    return revision
+
+
+def list_branch_revisions(session: Session, branch_id: str) -> list[dict]:
+    row = _branch(session, branch_id)
+    rows = session.scalars(
+        select(BranchRevision)
+        .where(BranchRevision.branch_id == row.id)
+        .order_by(BranchRevision.created_at.desc(), BranchRevision.id.desc())
+    ).all()
+    return [
+        {
+            "id": item.id,
+            "source": item.source,
+            "note": item.note,
+            "chars": count_words(item.content),
+            "created_at": item.created_at.isoformat() if item.created_at else "",
+            "preview": (
+                item.content
+                if len(item.content) <= 80
+                else item.content[:80] + "…"
+            ),
+        }
+        for item in rows
+    ]
 
 
 def save_branch_draft(session: Session, branch_id: str, content: str) -> dict:
@@ -189,6 +226,8 @@ def adopt_branch_draft(session: Session, branch_id: str) -> dict:
     if not content.strip():
         raise ValueError("分支没有可采纳的草稿")
     _reject_missing_paragraphs(scene, content)
+    if (row.content or "") != content:
+        _add_revision(session, row, content, "ai")
     row.content = content
     row.draft_content = ""
     row.draft_run_id = None
@@ -220,6 +259,14 @@ def merge_branch(session: Session, branch_id: str) -> dict:
             )
         )
     scene.body = content
+    # 主版正文刚被整份替换，旧草稿是「针对旧正文生成、还没采纳」的材料。
+    # 留着它，作者下次点「采纳为正文」就会把刚合入的正文顶掉 —— 那不是
+    # 他此刻的意图。合并本身就意味着「这一版我定了」。
+    stale = session.scalars(
+        select(SceneDraft).where(SceneDraft.scene_id == scene.id)
+    ).first()
+    if stale is not None:
+        session.delete(stale)
     search_service.mark_dirty(session, project_id)
     _supersede_audit(session, scene.id)
     change_service.record(

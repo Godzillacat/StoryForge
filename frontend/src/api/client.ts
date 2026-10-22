@@ -460,6 +460,8 @@ export const api = {
       `/api/branches/${branchId}/merge`,
       { method: 'POST' },
     ),
+  listBranchRevisions: (branchId: string) =>
+    request<BranchRevisionRow[]>(`/api/branches/${branchId}/revisions`),
   discardBranch: (branchId: string) =>
     request<void>(`/api/branches/${branchId}`, { method: 'DELETE' }),
   listSnapshots: (projectId: string) =>
@@ -1165,8 +1167,13 @@ export async function streamSceneGeneration(
   sceneId: string,
   handlers: GenerationHandlers,
   signal: AbortSignal,
+  branchId?: string,
 ): Promise<void> {
-  const response = await fetch(`/api/scenes/${sceneId}/generate`, {
+  // 分支与主版走同一条流式链路，只是 URL 不同 —— 事件与解析完全一样。
+  const url = branchId
+    ? `/api/branches/${branchId}/generate`
+    : `/api/scenes/${sceneId}/generate`
+  const response = await fetch(url, {
     method: 'POST',
     signal,
   })
@@ -1371,4 +1378,13 @@ export interface BranchSummary {
 export interface BranchDetail extends BranchSummary {
   content: string
   draft: { content: string; run_id: string | null } | null
+}
+
+export interface BranchRevisionRow {
+  id: string
+  source: string
+  note: string
+  chars: number
+  created_at: string
+  preview: string
 }

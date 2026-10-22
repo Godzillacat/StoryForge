@@ -1,5 +1,11 @@
-import { useEffect, useState } from 'react'
-import { api, type BranchDetail, type BranchSummary } from '../../api/client'
+import { useEffect, useRef, useState } from 'react'
+import {
+  api,
+  streamSceneGeneration,
+  type BranchDetail,
+  type BranchRevisionRow,
+  type BranchSummary,
+} from '../../api/client'
 
 export default function BranchPanel({
   sceneId,
@@ -18,16 +24,21 @@ export default function BranchPanel({
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+  // 切场景时旧响应不许覆盖新列表 —— 列表会串成上一个场景的分支。
+  const token = useRef(0)
 
   async function reload() {
+    const current = token.current
     try {
-      setRows(await api.listBranches(sceneId))
+      const list = await api.listBranches(sceneId)
+      if (token.current === current) setRows(list)
     } catch (error) {
-      setNotice((error as Error).message)
+      if (token.current === current) setNotice((error as Error).message)
     }
   }
 
   useEffect(() => {
+    token.current += 1
     setRows([])
     setNotice('')
     void reload()
@@ -169,17 +180,63 @@ export default function BranchPanel({
 
 export function BranchBodyEditor({
   branch,
+  sceneId,
   busy,
   onChange,
   onSaved,
 }: {
   branch: BranchDetail
+  sceneId: string
   busy: boolean
   onChange: (content: string) => void
   onSaved: () => void
 }) {
   const [saving, setSaving] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [stream, setStream] = useState('')
   const [error, setError] = useState('')
+  const [revisions, setRevisions] = useState<BranchRevisionRow[]>([])
+  const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    setRevisions([])
+    setStream('')
+    setError('')
+    api
+      .listBranchRevisions(branch.id)
+      .then(setRevisions)
+      .catch(() => undefined)
+  }, [branch.id])
+
+  // 分支的 AI 与主版的 AI 是同一条链路：锁定、段落锁、记账全部照旧。
+  async function generate() {
+    setGenerating(true)
+    setError('')
+    setStream('')
+    const controller = new AbortController()
+    abortRef.current = controller
+    try {
+      await streamSceneGeneration(
+        sceneId,
+        {
+          onDelta: (text) => setStream((current) => current + text),
+          onError: (data) => setError(data.message),
+        },
+        controller.signal,
+        branch.id,
+      )
+      onSaved()
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') setError((e as Error).message)
+    } finally {
+      setGenerating(false)
+      abortRef.current = null
+    }
+  }
+
+  function stop() {
+    abortRef.current?.abort()
+  }
 
   async function save() {
     setSaving(true)
@@ -194,28 +251,119 @@ export function BranchBodyEditor({
     }
   }
 
+  async function saveDraft() {
+    if (!branch.draft) return
+    setSaving(true)
+    setError('')
+    try {
+      await api.saveBranchDraft(branch.id, branch.draft.content)
+      onSaved()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function adopt() {
+    setSaving(true)
+    setError('')
+    try {
+      await api.adoptBranchDraft(branch.id)
+      onSaved()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const disabled = busy || saving || generating
+
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
           正在看：分支「{branch.name}」
         </span>
+        {generating ? (
+          <button
+            className="rounded bg-amber-600 px-3 py-1 text-xs text-white"
+            onClick={stop}
+          >
+            停止
+          </button>
+        ) : (
+          <button
+            className="rounded bg-indigo-600 px-3 py-1 text-xs text-white disabled:opacity-50"
+            onClick={generate}
+            disabled={disabled}
+          >
+            生成到这条分支
+          </button>
+        )}
         <button
           className="rounded border border-slate-700 px-3 py-1 text-xs disabled:opacity-50"
           onClick={save}
-          disabled={busy || saving}
+          disabled={disabled}
         >
           保存分支正文
         </button>
         {error && <span className="text-xs text-red-400">{error}</span>}
       </div>
+
       <textarea
         className="h-96 w-full rounded border border-slate-700 bg-slate-950 p-3 font-mono text-sm leading-7"
         value={branch.content}
         onChange={(e) => onChange(e.target.value)}
-        disabled={busy || saving}
+        disabled={disabled}
         placeholder="这条分支的正文。"
       />
+
+      {branch.draft && (
+        <div className="space-y-2 rounded border border-emerald-900 bg-emerald-950/20 p-2">
+          <div className="flex items-center gap-2 text-xs text-emerald-300">
+            <span>分支草稿</span>
+            <button
+              className="rounded border border-emerald-800 px-2 py-0.5 disabled:opacity-50"
+              onClick={saveDraft}
+              disabled={disabled}
+            >
+              保存草稿
+            </button>
+            <button
+              className="rounded bg-emerald-700 px-2 py-0.5 text-white disabled:opacity-50"
+              onClick={adopt}
+              disabled={disabled}
+            >
+              采纳为分支正文
+            </button>
+          </div>
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs text-slate-300">
+            {branch.draft.content}
+          </pre>
+        </div>
+      )}
+
+      {(stream || generating) && (
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950 p-2 text-xs text-slate-400">
+          {stream || '正在生成…'}
+        </pre>
+      )}
+
+      {revisions.length > 0 && (
+        <div className="space-y-1 text-xs text-slate-500">
+          <p>这条分支的修订（{revisions.length}）</p>
+          <ul className="space-y-0.5">
+            {revisions.slice(0, 10).map((item) => (
+              <li key={item.id}>
+                {item.source === 'ai' ? 'AI 采纳' : '作者保存'} · {item.chars} 字 ·{' '}
+                {new Date(item.created_at).toLocaleString()}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }

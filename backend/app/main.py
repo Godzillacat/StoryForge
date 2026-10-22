@@ -84,6 +84,5 @@ for module in (
     locks,
     impact,
     snapshots,
-    branches,
 ):
     app.include_router(module.router)

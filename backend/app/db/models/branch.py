@@ -29,3 +29,21 @@ class SceneBranch(IdMixin, TimestampMixin, Base):
         ForeignKey("generation_run.id", ondelete="SET NULL"), default=None
     )
     note: Mapped[str] = mapped_column(Text, default="")
+
+
+class BranchRevision(IdMixin, TimestampMixin, Base):
+    """分支正文的修订快照：不可变，来源 `author` / `ai`。
+
+    与 `scene_revision` 分开：主版的修订历史回答「这个场景曾经是什么」，
+    分支的修订历史回答「这条分支曾经是什么」，两者混在一张表里，作者在
+    写作台看到的会是两条线交织。
+    """
+
+    __tablename__ = "branch_revision"
+
+    branch_id: Mapped[str] = mapped_column(
+        ForeignKey("scene_branch.id", ondelete="CASCADE"), index=True
+    )
+    content: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(20), default="author")
+    note: Mapped[str] = mapped_column(Text, default="")
