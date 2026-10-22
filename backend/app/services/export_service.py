@@ -10,7 +10,17 @@ from io import BytesIO
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import AuditIssue, Chapter, Foreshadow, Project, Scene, Volume
+from app.db.models import (
+    Architecture,
+    AuditIssue,
+    Chapter,
+    Foreshadow,
+    Project,
+    ReviewMark,
+    Scene,
+    SettingEntry,
+    Volume,
+)
 from app.text_stats import count_words
 
 _MEDIA_TYPES = {
@@ -116,6 +126,8 @@ def build_report(session: Session, project_id: str) -> dict:
             AuditIssue.project_id == project_id, AuditIssue.status == "open"
         )
     ).all()
+    locked = _locked_counts(session, project_id, volumes)
+    review_marks = session.query(ReviewMark).filter_by(project_id=project_id).count()
     return {
         "project_id": project.id,
         "project_name": project.name,
@@ -127,8 +139,42 @@ def build_report(session: Session, project_id: str) -> dict:
         "unrecovered_foreshadows": unrecovered,
         "open_audit_issues": sum(1 for row in open_issues if row.check_type == "consistency"),
         "open_logic_issues": sum(1 for row in open_issues if row.check_type == "logic"),
+        "locked_counts": locked,
+        "review_marks": review_marks,
         "exportable": True,
     }
+
+
+def _locked_counts(session: Session, project_id: str, volumes) -> dict:
+    """锁定对象一览。产品 §4.8 要求成品报告含锁定状态 —— 作者在导出前
+    该知道哪些部分是自己钉死的、不会再变。"""
+    counts = {
+        "architecture": 0,
+        "entries": 0,
+        "volumes": 0,
+        "chapters": 0,
+        "scenes": 0,
+    }
+    arch = session.scalars(
+        select(Architecture).where(Architecture.project_id == project_id)
+    ).first()
+    if arch is not None and arch.locked:
+        counts["architecture"] = 1
+    counts["entries"] = (
+        session.query(SettingEntry)
+        .filter_by(project_id=project_id, locked=True)
+        .count()
+    )
+    for volume in volumes:
+        if volume.locked:
+            counts["volumes"] += 1
+        for chapter in _ordered_chapters(session, volume.id):
+            if chapter.locked:
+                counts["chapters"] += 1
+            for scene in _ordered_scenes(session, chapter.id):
+                if scene.locked:
+                    counts["scenes"] += 1
+    return counts
 
 
 def _book_chapters(session: Session, project_id: str) -> list[tuple[str, str]]:

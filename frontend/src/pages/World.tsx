@@ -10,6 +10,7 @@ import {
 } from '../api/client'
 import CandidateList, { type CandidateRow } from '../components/CandidateList'
 import RunTrace from '../components/RunTrace'
+import { ImpactPanel, LockToggle } from '../components/Locking'
 import EntryEditor, {
   EMPTY_DRAFT,
   characterFieldsOf,
@@ -388,6 +389,25 @@ export default function World() {
         <div className="space-y-4">
           {(creating || selectedId) && (
             <section className="space-y-4 rounded border border-slate-800 p-4">
+              {selectedId && projectId && (
+                <div className="space-y-2 border-b border-slate-800 pb-3">
+                  <div className="flex items-center gap-3 text-sm">
+                    <span className="text-slate-400">锁定</span>
+                    <LockToggle
+                      targetType="entry"
+                      targetId={selectedId}
+                      locked={entries.find((e) => e.id === selectedId)?.locked === true}
+                      onChanged={refresh}
+                    />
+                  </div>
+                  <ImpactPanel
+                    projectId={projectId}
+                    targetType="entry"
+                    targetId={selectedId}
+                    onMarksChanged={refresh}
+                  />
+                </div>
+              )}
               <EntryEditor draft={draft} types={types} onChange={setDraft} />
               <div className="flex items-center gap-2">
                 <button className="rounded bg-indigo-600 px-4 py-2 text-sm" onClick={save}>

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IdMixin, TimestampMixin
@@ -32,6 +32,8 @@ class SettingEntry(IdMixin, TimestampMixin, Base):
     hardness: Mapped[str | None] = mapped_column(String(20), default=None)
     # 从哪次运行采纳来的；手工新建的为 None（D-03 可追溯）
     source_run_id: Mapped[str | None] = mapped_column(String(36), default=None)
+    # 锁定只约束 AI 写路径；作者手工编辑不受影响。
+    locked: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # 人物（type == "character"）的类型专属字段，其余类型一律 NULL。
     # 刻意**不**像 hardness 那样在类型改变时清空：这些是作者手写的长文本，

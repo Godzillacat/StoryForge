@@ -6,8 +6,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.chapter_types import normalize_status
-from app.db.models import Chapter, Project, Volume
-from app.services import chapter_service, scene_service, search_service
+from app.db.models import Chapter, Project, Scene, Volume
+from app.services import (
+    chapter_service,
+    lock_service,
+    review_service,
+    scene_service,
+    search_service,
+)
 
 
 def _text(value) -> str:
@@ -231,8 +237,66 @@ def _strict_ratio(value) -> float | None:
     return float(value)
 
 
-def write_chapter_plan(
-    session: Session,
+def _clear_marks_for_volume(session: Session, project_id: str, volume) -> None:
+    review_service.clear_for_target(session, project_id, "volume", volume.id)
+    for chapter in session.scalars(
+        select(Chapter).where(Chapter.volume_id == volume.id)
+    ):
+        review_service.clear_for_target(session, project_id, "chapter", chapter.id)
+        for scene in session.scalars(
+            select(Scene).where(Scene.chapter_id == chapter.id)
+        ):
+            review_service.clear_for_target(session, project_id, "scene", scene.id)
+
+
+def _reject_locked_replace(session: Session, project_id: str) -> None:
+    """替换章纲会删掉整个项目的卷章场景 —— 锁定的对象不能被这样抹掉。
+
+    在删除之前整次拒绝。锁在卷 / 章 / 场景任一层级都算：卷锁住时它的章与
+    场景一并受保护，而作者想保住的可能正是那个卷，所以要把最外层被锁的那个
+    说出来，作者才知道该去解锁哪一处。
+    """
+    volumes = list(
+        session.scalars(select(Volume).where(Volume.project_id == project_id))
+    )
+    locked_volumes = [v for v in volumes if v.locked]
+    if locked_volumes:
+        names = "、".join(f"第{v.seq + 1}卷（{v.name}）" for v in locked_volumes)
+        raise ValueError(
+            f"这些卷已锁定：{names}。替换写入会删掉它们，请先解锁，或改用「追加」。"
+        )
+    chapter_ids: list[str] = []
+    for volume in volumes:
+        chapter_ids.extend(
+            session.scalars(select(Chapter.id).where(Chapter.volume_id == volume.id)).all()
+        )
+    locked_chapters = lock_service.locked_chapter_ids(session, chapter_ids)
+    if locked_chapters:
+        rows = session.query(Chapter).filter(Chapter.id.in_(locked_chapters)).all()
+        names = "、".join(f"第{r.seq + 1}章（{r.title}）" for r in rows)
+        raise ValueError(
+            f"这些章已锁定：{names}。替换写入会删掉它们，请先解锁，或改用「追加」。"
+        )
+    scenes = (
+        list(
+            session.scalars(
+                select(Scene).where(Scene.chapter_id.in_(chapter_ids))
+            )
+        )
+        if chapter_ids
+        else []
+    )
+    locked_scenes = lock_service.locked_scene_ids(session, [s.id for s in scenes])
+    if locked_scenes:
+        names = "、".join(
+            f"场景{scene.seq + 1}" for scene in scenes if scene.id in locked_scenes
+        )
+        raise ValueError(
+            f"这些场景已锁定：{names}。替换写入会删掉它们，请先解锁，或改用「追加」。"
+        )
+
+
+def write_chapter_plan(    session: Session,
     project_id: str,
     volumes: list[dict],
     mode: str,
@@ -298,9 +362,13 @@ def write_chapter_plan(
 
     try:
         if mode == "replace":
+            _reject_locked_replace(session, project_id)
             for volume in session.scalars(
                 select(Volume).where(Volume.project_id == project_id)
             ):
+                # 替换把整棵树删掉，标记会指向不存在的对象。这里逐层清 ——
+                # 删除走的是直接 session.delete，绕过了 delete_* 里的清理。
+                _clear_marks_for_volume(session, project_id, volume)
                 session.delete(volume)
             session.flush()
             # FK 级联删场景、伏笔链接置空都发生在库里；过期掉 identity map。

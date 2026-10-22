@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, IdMixin, TimestampMixin
@@ -21,6 +21,8 @@ class Volume(IdMixin, TimestampMixin, Base):
     target_words: Mapped[int | None] = mapped_column(Integer, default=None)
     status: Mapped[str] = mapped_column(String(20), default="planned")
     source_run_id: Mapped[str | None] = mapped_column(String(36), default=None)
+    # 锁定向下继承：卷被锁，其下所有章与场景都算锁定。
+    locked: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Chapter(IdMixin, TimestampMixin, Base):
@@ -43,6 +45,7 @@ class Chapter(IdMixin, TimestampMixin, Base):
     hook_strength: Mapped[int | None] = mapped_column(Integer, default=None)
     status: Mapped[str] = mapped_column(String(20), default="planned")
     source_run_id: Mapped[str | None] = mapped_column(String(36), default=None)
+    locked: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Scene(IdMixin, TimestampMixin, Base):
@@ -66,6 +69,11 @@ class Scene(IdMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(20), default="planned")
     source_run_id: Mapped[str | None] = mapped_column(String(36), default=None)
     body: Mapped[str | None] = mapped_column(Text, default=None)
+    locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 段落锁存**段落完整文本**而不是行号或偏移：Markdown 编辑会让偏移立刻失效，
+    # 逐字文本在正文重排下仍然成立。代价是改一个字就等于换了一段 —— 那本来就是
+    # 作者锁这一段的意图。
+    locked_paragraphs_json: Mapped[list[str]] = mapped_column(JSON, default=list)
 
 
 class Foreshadow(IdMixin, TimestampMixin, Base):

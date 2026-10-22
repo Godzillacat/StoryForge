@@ -120,6 +120,39 @@ MIGRATIONS: tuple[Migration, ...] = (
             "ALTER TABLE generation_run ADD COLUMN usage_source VARCHAR(20) NOT NULL DEFAULT 'estimated'",
         ),
     ),
+    # 锁定（P4a）。存量对象一律未锁 —— 默认值就是「没锁」，不回填。
+    # **四张表分成四条迁移**，不合并成一条：存量库不保证每张表都在（P1b-2a
+    # 时代的库没有 volume / chapter，P1c 之前的库连 scene 都没有）。合并成一条
+    # 会让「部分缺表」触发拒绝启动 —— 与 v5 / v6 分开是同一条理由。
+    Migration(
+        version=8,
+        note="setting_entry 加锁定列",
+        requires=("setting_entry",),
+        statements=(
+            "ALTER TABLE setting_entry ADD COLUMN locked BOOLEAN NOT NULL DEFAULT 0",
+        ),
+    ),
+    Migration(
+        version=9,
+        note="volume 加锁定列",
+        requires=("volume",),
+        statements=("ALTER TABLE volume ADD COLUMN locked BOOLEAN NOT NULL DEFAULT 0",),
+    ),
+    Migration(
+        version=10,
+        note="chapter 加锁定列",
+        requires=("chapter",),
+        statements=("ALTER TABLE chapter ADD COLUMN locked BOOLEAN NOT NULL DEFAULT 0",),
+    ),
+    Migration(
+        version=11,
+        note="scene 加锁定列与段落锁",
+        requires=("scene",),
+        statements=(
+            "ALTER TABLE scene ADD COLUMN locked BOOLEAN NOT NULL DEFAULT 0",
+            "ALTER TABLE scene ADD COLUMN locked_paragraphs_json JSON NOT NULL DEFAULT '[]'",
+        ),
+    ),
 )
 
 BASELINE_VERSION = 0

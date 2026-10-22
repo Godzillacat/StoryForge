@@ -330,3 +330,19 @@ def test_tree_exposes_has_body_without_the_full_text(client):
     node = tree["volumes"][0]["chapters"][0]["scenes"][0]
     assert node["has_body"] is True
     assert "body" not in node
+
+
+def test_the_entry_list_exposes_locked(client):
+    """界面靠这个字段显示与解除锁定；不返回它等于无法解锁设定条目。"""
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    entry = client.post(
+        f"/api/projects/{project['id']}/entries",
+        json={"type": "character", "name": "沈砚"},
+    ).json()
+
+    assert entry["locked"] is False
+
+    client.patch(f"/api/locks/entry/{entry['id']}", json={"locked": True})
+
+    listed = client.get(f"/api/projects/{project['id']}/entries").json()
+    assert listed[0]["locked"] is True

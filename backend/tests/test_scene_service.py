@@ -233,3 +233,44 @@ def test_move_scene_and_delete(session):
     scene_service.delete_scene(session, a.id)
     with SessionLocal() as fresh:
         assert fresh.get(type(a), a.id) is None
+
+
+# ---- 锁定（P4a）----
+
+def test_replace_write_is_rejected_when_a_scene_is_locked(session):
+    project = _project(session)
+    chapter = _chapter(session, project)
+    first = scene_service.write_scenes(session, chapter.id, [{"goal": "开场"}], "replace")
+    first[0].locked = True
+    session.commit()
+
+    with pytest.raises(ValueError, match="已锁定的场景"):
+        scene_service.write_scenes(session, chapter.id, [{"goal": "新开场"}], "replace")
+
+    session.expire_all()
+    goals = [s.goal for s in session.query(type(first[0])).filter_by(chapter_id=chapter.id)]
+    assert goals == ["开场"]
+
+
+def test_append_write_is_not_blocked_by_a_locked_scene(session):
+    """追加不删任何东西，锁定的场景不受影响 —— 拦它只会白白挡住作者。"""
+    project = _project(session)
+    chapter = _chapter(session, project)
+    first = scene_service.write_scenes(session, chapter.id, [{"goal": "开场"}], "replace")
+    first[0].locked = True
+    session.commit()
+
+    created = scene_service.write_scenes(session, chapter.id, [{"goal": "追加"}], "append")
+
+    assert [s.goal for s in created] == ["追加"]
+
+
+def test_replace_write_is_rejected_when_the_chapter_is_locked(session):
+    project = _project(session)
+    chapter = _chapter(session, project)
+    scene_service.write_scenes(session, chapter.id, [{"goal": "开场"}], "replace")
+    chapter.locked = True
+    session.commit()
+
+    with pytest.raises(ValueError, match="已锁定的场景"):
+        scene_service.write_scenes(session, chapter.id, [{"goal": "新开场"}], "replace")

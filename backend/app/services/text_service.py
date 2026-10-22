@@ -21,7 +21,7 @@ from app.db.models import (
 from app.db.session import SessionLocal
 from app.runtime.context import SLOT_REGISTRY
 from app.runtime.pricing import estimate_tokens
-from app.services import agent_service, chapter_service, search_service
+from app.services import agent_service, chapter_service, lock_service, search_service
 from app.services.runtime_service import PreparedExecution, RuntimeService
 from app.services.slot_source import scene_search_query
 from app.text_stats import count_words
@@ -58,6 +58,19 @@ def _scene(session: Session, scene_id: str) -> Scene:
 
 def _project(session: Session, scene: Scene) -> Project:
     return chapter_service.get_project_for_chapter(session, scene.chapter_id)
+
+
+def _reject_locked(session: Session, scene: Scene) -> None:
+    """锁定只挡 AI 写路径；调用方都是 AI 入口（生成、采纳、批量）。
+
+    必须在**创建运行记录之前**判定 —— 已经花掉的 token 追不回来，而一个
+    被锁定拒绝的请求根本不该产生运行记录。
+    """
+    state = lock_service.effective_scene_lock(session, scene)
+    if state["locked"]:
+        raise ValueError(
+            f"{state['label']}已锁定，AI 不会改动它。要生成请先解锁。"
+        )
 
 
 def _draft(session: Session, scene_id: str) -> SceneDraft | None:
@@ -183,12 +196,14 @@ def discard_draft(session: Session, scene_id: str) -> None:
 
 def adopt_draft(session: Session, scene_id: str) -> dict:
     scene = _scene(session, scene_id)
+    _reject_locked(session, scene)
     draft = _draft(session, scene_id)
     if draft is None:
         raise ValueError("当前没有可采纳的草稿")
     content = draft.content or ""
     if not content.strip():
         raise ValueError("草稿为空，不能采纳")
+    _reject_missing_paragraphs(scene, content)
     project = _project(session, scene)
     scene.body = content
     session.add(
@@ -241,6 +256,22 @@ def restore_revision(session: Session, scene_id: str, revision_id: str) -> dict:
     _supersede_audit(session, scene.id)
     session.commit()
     return _state(session, scene_id)
+
+
+def _reject_missing_paragraphs(scene: Scene, content: str) -> None:
+    """段落锁只在**采纳 AI 草稿**时强制：草稿是 AI 的产物，采纳是它进入稿件的
+    唯一入口。生成时拒绝没有意义 —— 草稿本来就可以改。
+    """
+    locks = list(scene.locked_paragraphs_json or [])
+    missing = lock_service.missing_locks(content, locks)
+    if not missing:
+        return
+    listed = "；".join(f"「{text}」" for text in missing[:3])
+    more = f" 等 {len(missing)} 段" if len(missing) > 3 else ""
+    raise ValueError(
+        f"草稿缺少已锁定的段落：{listed}{more}。锁定的段落 AI 不得改动，"
+        "请先在草稿里把它们原样保留，或先解锁。"
+    )
 
 
 def _supersede_audit(session: Session, scene_id: str) -> None:
@@ -316,6 +347,7 @@ def context_preview(session: Session, scene_id: str) -> dict:
 
 def prepare_generation(session: Session, scene_id: str) -> GenerationSpec:
     scene = _scene(session, scene_id)
+    _reject_locked(session, scene)
     project, extra = scene_extra(session, scene)
     agent = agent_service.find_by_task_type(session, "write")
     if agent is None:

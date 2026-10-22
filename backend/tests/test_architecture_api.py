@@ -102,3 +102,54 @@ def test_a_present_story_bible_is_passed_through(client, monkeypatch):
 
     assert body["structured"] is True
     assert body["story_bible_v0"]["logline"] == "在待销毁档案里听见自己的声音"
+
+
+# ---- 锁定（P4a）----
+
+def _adopt_body():
+    return {
+        "logline": "在待销毁档案里听见自己的声音",
+        "acts": [{"seq": 1, "name": "第一幕", "purpose": "建置"}],
+    }
+
+
+def test_adopt_is_rejected_when_the_architecture_is_locked(client):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+
+    first = client.put(f"/api/projects/{project['id']}/architecture", json=_adopt_body())
+    assert first.status_code == 200
+    arch_id = first.json()["architecture"]["id"]
+
+    locked = client.patch(
+        f"/api/locks/architecture/{arch_id}", json={"locked": True}
+    )
+    assert locked.status_code == 200
+    assert locked.json()["locked"] is True
+
+    response = client.put(
+        f"/api/projects/{project['id']}/architecture",
+        json={**_adopt_body(), "logline": "改过的"},
+    )
+
+    assert response.status_code == 409
+    assert "已锁定" in response.json()["detail"]
+
+    stored = client.get(f"/api/projects/{project['id']}/architecture").json()
+    assert stored["architecture"]["logline"] == "在待销毁档案里听见自己的声音"
+
+
+def test_adopt_still_works_after_unlocking(client):
+    project = client.post("/api/projects", json={"name": "雾港"}).json()
+    arch_id = client.put(
+        f"/api/projects/{project['id']}/architecture", json=_adopt_body()
+    ).json()["architecture"]["id"]
+    client.patch(f"/api/locks/architecture/{arch_id}", json={"locked": True})
+    client.patch(f"/api/locks/architecture/{arch_id}", json={"locked": False})
+
+    response = client.put(
+        f"/api/projects/{project['id']}/architecture",
+        json={**_adopt_body(), "logline": "改过的"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["architecture"]["logline"] == "改过的"

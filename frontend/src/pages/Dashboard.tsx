@@ -127,6 +127,18 @@ export default function Dashboard() {
                   </dd>
                 </div>
                 <div className="flex justify-between">
+                  <dt className="text-slate-500">锁定对象</dt>
+                  <dd>
+                    {report?.locked_counts
+                      ? Object.values(report.locked_counts).reduce((a, b) => a + b, 0)
+                      : '—'}
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">待复核</dt>
+                  <dd>{report?.review_marks ?? 0}</dd>
+                </div>
+                <div className="flex justify-between">
                   <dt className="text-slate-500">累计调用</dt>
                   <dd>{cost?.runs ?? 0} 次</dd>
                 </div>
@@ -167,7 +179,8 @@ export default function Dashboard() {
                   <p className="rounded border border-amber-900 bg-amber-950/40 p-2 text-xs text-amber-300">
                     还有未闭环项：未写场景 {report.scenes_without_body.length}、未回收伏笔{' '}
                     {report.unrecovered_foreshadows.length}、未处理告警{' '}
-                    {report.open_audit_issues + report.open_logic_issues}。仍可导出。
+                    {report.open_audit_issues + report.open_logic_issues}、待复核{' '}
+                    {report.review_marks ?? 0}。仍可导出。
                   </p>
                 )}
                 <div className="flex flex-wrap gap-2 text-sm">

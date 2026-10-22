@@ -50,7 +50,11 @@ def recommend(project_id: str, session: Session = Depends(get_session)) -> dict:
 @router.put("/{project_id}/architecture")
 def adopt(project_id: str, payload: ArchitectureAdopt, session: Session = Depends(get_session)) -> dict:
     """作者确认后写入项目结构。这是「AI 出候选、作者拍板」的落点。"""
-    arch, acts = architecture_service.adopt(session, project_id, payload.model_dump())
+    try:
+        arch, acts = architecture_service.adopt(session, project_id, payload.model_dump())
+    except ValueError as exc:
+        # 锁定是「当前状态不允许」而不是参数错误，与「已在进行中」同一类语义。
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"architecture": _arch_out(arch), "acts": [_act_out(a) for a in acts]}
 
 

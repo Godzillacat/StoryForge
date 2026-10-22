@@ -382,6 +382,61 @@ export const api = {
     }),
   deleteModelPrice: (id: string) =>
     request<void>(`/api/model-prices/${id}`, { method: 'DELETE' }),
+
+  listLockTargets: () => request<LockTargetsResponse>('/api/lock-targets'),
+  getLock: (targetType: string, targetId: string) =>
+    request<LockState>(`/api/locks/${targetType}/${targetId}`),
+  setLock: (targetType: string, targetId: string, locked: boolean) =>
+    request<LockState>(`/api/locks/${targetType}/${targetId}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ locked }),
+    }),
+  getParagraphLocks: (sceneId: string) =>
+    request<{ scene_id: string; paragraphs: string[] }>(
+      `/api/scenes/${sceneId}/paragraph-locks`,
+    ),
+  setParagraphLocks: (sceneId: string, paragraphs: string[]) =>
+    request<{ scene_id: string; paragraphs: string[] }>(
+      `/api/scenes/${sceneId}/paragraph-locks`,
+      {
+        method: 'PUT',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ paragraphs }),
+      },
+    ),
+  getImpact: (projectId: string, targetType: string, targetId: string) =>
+    request<ImpactReport>(
+      `/api/projects/${projectId}/impact?target_type=${targetType}&target_id=${targetId}`,
+    ),
+  listReviewMarks: (projectId: string) =>
+    request<ReviewMark[]>(`/api/projects/${projectId}/review-marks`),
+  addReviewMarks: (
+    projectId: string,
+    items: { target_type: string; target_id: string; reason?: string }[],
+  ) =>
+    request<{ added: number; marks: ReviewMark[] }>(
+      `/api/projects/${projectId}/review-marks`,
+      {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ items }),
+      },
+    ),
+  clearReviewMark: (markId: string) =>
+    request<void>(`/api/review-marks/${markId}`, { method: 'DELETE' }),
+  clearReviewMarks: (
+    projectId: string,
+    items: { target_type: string; target_id: string }[],
+  ) =>
+    request<{ removed: number; marks: ReviewMark[] }>(
+      `/api/projects/${projectId}/review-marks/clear`,
+      {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ items }),
+      },
+    ),
 }
 
 export interface Project {
@@ -599,6 +654,7 @@ export interface SettingEntry {
   description: string
   hardness: string | null
   source_run_id: string | null
+  locked?: boolean
   appearance: string | null
   personality: string | null
   desire: string | null
@@ -690,6 +746,7 @@ export interface SceneNode {
   target_words_max: number | null
   status: string
   source_run_id: string | null
+  locked?: boolean
   has_body: boolean
   foreshadows: {
     plants: { id: string; name: string }[]
@@ -726,6 +783,7 @@ export interface ChapterNode {
   hook_strength: number | null
   status: string
   source_run_id: string | null
+  locked?: boolean
   scenes: SceneNode[]
 }
 
@@ -740,6 +798,7 @@ export interface VolumeNode {
   target_words: number | null
   status: string
   source_run_id: string | null
+  locked?: boolean
   chapters: ChapterNode[]
 }
 
@@ -988,6 +1047,14 @@ export interface ExportReport {
   }[]
   open_audit_issues: number
   open_logic_issues: number
+  locked_counts?: {
+    architecture: number
+    entries: number
+    volumes: number
+    chapters: number
+    scenes: number
+  }
+  review_marks?: number
   exportable: boolean
 }
 
@@ -1110,5 +1177,68 @@ export interface PipelineRun {
   cursor: number
   message: string
   nodes: PipelineRunNode[]
+  created_at: string
+}
+
+export interface LockTargetOption {
+  key: string
+  label: string
+}
+
+export interface LockTargetsResponse {
+  targets: LockTargetOption[]
+}
+
+export interface LockState {
+  target_type: string
+  target_id: string
+  own_locked: boolean
+  locked: boolean
+  source: string | null
+  source_id: string | null
+  label: string
+}
+
+export interface ImpactItem {
+  type: string
+  id: string
+  label: string
+  detail: string
+  locked: boolean
+  locked_by?: string
+  path: string
+}
+
+export interface ImpactGroup {
+  key: string
+  label: string
+  total: number
+  locked: number
+  items: ImpactItem[]
+  note: string
+}
+
+export interface ImpactReport {
+  project_id: string
+  target: {
+    type: string
+    type_label: string
+    id: string
+    label: string
+    locked: boolean
+  }
+  groups: ImpactGroup[]
+  totals: { all: number; locked: number }
+}
+
+export interface ReviewMark {
+  id: string
+  project_id: string
+  target_type: string
+  type_label: string
+  target_id: string
+  label: string
+  reason: string
+  path: string
   created_at: string
 }

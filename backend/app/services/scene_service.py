@@ -7,7 +7,13 @@ from sqlalchemy.orm import Session
 
 from app.chapter_types import normalize_status
 from app.db.models import Chapter, Foreshadow, Scene, SettingEntry
-from app.services import chapter_service, foreshadow_service, search_service
+from app.services import (
+    chapter_service,
+    foreshadow_service,
+    lock_service,
+    review_service,
+    search_service,
+)
 
 
 def _chapter(session: Session, chapter_id: str) -> Chapter:
@@ -316,6 +322,7 @@ def delete_scene(session: Session, scene_id: str) -> None:
     if scene is None:
         raise ValueError(f"场景不存在：{scene_id}")
     project = chapter_service.get_project_for_chapter(session, scene.chapter_id)
+    review_service.clear_for_target(session, project.id, "scene", scene_id)
     session.delete(scene)
     search_service.mark_dirty(session, project.id)
     session.commit()
@@ -363,6 +370,16 @@ def write_scenes(
         session.scalars(select(Scene).where(Scene.chapter_id == chapter_id))
     )
     replaced_ids = {scene.id for scene in existing} if mode == "replace" else set()
+    if mode == "replace":
+        # 替换会删掉本章所有场景 —— 锁定的场景不能这样被抹掉。
+        # 在删除之前判定，整次拒绝，而不是删一半。
+        locked = lock_service.locked_scene_ids(session, list(replaced_ids))
+        if locked:
+            labels = "、".join(f"场景{scene.seq + 1}" for scene in existing if scene.id in locked)
+            raise ValueError(
+                f"这一章里有已锁定的场景（{labels}），替换写入会删掉它们。"
+                "请先解锁，或改用「追加」。"
+            )
 
     prepared = []
     all_plant: list[str] = []
@@ -394,6 +411,7 @@ def write_scenes(
     try:
         if mode == "replace":
             for scene in existing:
+                review_service.clear_for_target(session, project.id, "scene", scene.id)
                 session.delete(scene)
             session.flush()
             # FK SET NULL 是在库里发生的；identity map 里的旧伏笔对象仍带着

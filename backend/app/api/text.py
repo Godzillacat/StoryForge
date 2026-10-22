@@ -23,7 +23,10 @@ def _value_error(exc: ValueError) -> HTTPException:
     message = str(exc)
     if message.startswith(("场景不存在", "修订不存在", "草稿已被替换或删除")):
         return HTTPException(status_code=404, detail=message)
-    if message.startswith(("当前没有可采纳的草稿", "场景的章节结构已损坏")):
+    if message.startswith(
+        ("当前没有可采纳的草稿", "场景的章节结构已损坏")
+    ) or "已锁定" in message or "已锁定的段落" in message:
+        # 锁定是「当前状态不允许这个操作」，与「没有可采纳的草稿」同一类语义。
         return HTTPException(status_code=409, detail=message)
     return HTTPException(status_code=400, detail=message)
 

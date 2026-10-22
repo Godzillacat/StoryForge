@@ -342,3 +342,63 @@ def test_save_generated_draft_refuses_to_overwrite(session):
     assert text_service.save_generated_draft(session, written.id, "覆盖") is False
     assert text_service.save_generated_draft(session, drafted.id, "覆盖") is False
     assert session.query(SceneDraft).filter_by(scene_id=first.id).one().content == "草稿"
+
+
+# ---- 锁定（P4a）----
+
+def test_create_job_excludes_locked_scenes(session):
+    project, _volume, chapter, first, _written, _drafted = _seed(session)
+    first.locked = True
+    session.commit()
+
+    with pytest.raises(ValueError, match="没有需要生成的场景"):
+        batch_service.create_job(session, project.id, "chapter", chapter.id)
+
+
+def test_create_job_reports_the_locked_count(session):
+    project, _volume, chapter, first, _written, _drafted = _seed(session)
+    second = Scene(chapter_id=chapter.id, seq=3, goal="第二场")
+    session.add(second)
+    session.commit()
+    second.locked = True
+    session.commit()
+
+    job = batch_service.create_job(session, project.id, "chapter", chapter.id)
+
+    assert job.scene_ids_json == [first.id]
+    assert batch_service.skipped_locked(session, job) == 1
+
+
+def test_a_scene_locked_mid_run_is_skipped(session):
+    project, _volume, chapter, first, _written, _drafted = _seed(session)
+    job = batch_service.create_job(session, project.id, "chapter", chapter.id)
+    job.status = "running"
+    session.commit()
+    first.locked = True
+    session.commit()
+
+    assert batch_service.advance_job(session, job.id) == "skipped"
+
+    session.expire_all()
+    assert session.get(Scene, first.id).body is None
+    assert session.get(BatchJob, job.id).cursor == 1
+
+
+def test_an_unlocked_scene_still_generates(session, monkeypatch):
+    project, _volume, chapter, first, _written, _drafted = _seed(session)
+    _patch_execute(monkeypatch, session, project, _result())
+    job = batch_service.create_job(session, project.id, "chapter", chapter.id)
+    job.status = "running"
+    session.commit()
+
+    assert batch_service.advance_job(session, job.id) == "ok"
+
+
+def test_skipped_locked_falls_back_to_zero_when_the_scope_is_gone(session):
+    """任务创建后范围被删：只用来显示的数字不该把轮询变成 404。"""
+    project, _volume, chapter, first, _written, _drafted = _seed(session)
+    job = batch_service.create_job(session, project.id, "chapter", chapter.id)
+    session.delete(session.get(Chapter, chapter.id))
+    session.commit()
+
+    assert batch_service.skipped_locked(session, job) == 0

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.chapter_types import normalize_status
 from app.db.models import Chapter, Foreshadow, Project, Scene, Volume
-from app.services import search_service
+from app.services import review_service, search_service
 
 
 def _ordered_volumes(session: Session, project_id: str) -> list[Volume]:
@@ -156,7 +156,12 @@ def delete_volume(session: Session, volume_id: str) -> None:
     # 里，已经加载进 session 的章对象不会被标成 deleted，调用方随后
     # `session.get(Chapter, ...)` 会拿到一个库中已不存在、却仍是旧值的对象。
     for chapter in _ordered_chapters(session, volume_id):
+        # 章里的场景也要清标记；级联删除发生在库里，标记清理得自己走一遍。
+        for scene in _ordered_scenes(session, chapter.id):
+            review_service.clear_for_target(session, volume.project_id, "scene", scene.id)
+        review_service.clear_for_target(session, volume.project_id, "chapter", chapter.id)
         session.delete(chapter)
+    review_service.clear_for_target(session, volume.project_id, "volume", volume_id)
     session.delete(volume)
     search_service.mark_dirty(session, volume.project_id)
     session.commit()
@@ -258,6 +263,9 @@ def delete_chapter(session: Session, chapter_id: str) -> None:
     if chapter is None:
         raise ValueError(f"章不存在：{chapter_id}")
     project = get_project_for_chapter(session, chapter_id)
+    for scene in _ordered_scenes(session, chapter_id):
+        review_service.clear_for_target(session, project.id, "scene", scene.id)
+    review_service.clear_for_target(session, project.id, "chapter", chapter_id)
     session.delete(chapter)
     search_service.mark_dirty(session, project.id)
     session.commit()
@@ -330,6 +338,7 @@ def build_tree(session: Session, project_id: str) -> list[dict]:
                     "target_words_max": scene.target_words_max,
                     "status": scene.status,
                     "source_run_id": scene.source_run_id,
+                    "locked": scene.locked,
                     "has_body": bool((scene.body or "").strip()),
                     "foreshadows": _scene_foreshadows(foreshadows, scene.id),
                 }
@@ -352,6 +361,7 @@ def build_tree(session: Session, project_id: str) -> list[dict]:
                     "hook_strength": chapter.hook_strength,
                     "status": chapter.status,
                     "source_run_id": chapter.source_run_id,
+                    "locked": chapter.locked,
                     "scenes": scenes,
                 }
             )
@@ -367,6 +377,7 @@ def build_tree(session: Session, project_id: str) -> list[dict]:
                 "target_words": volume.target_words,
                 "status": volume.status,
                 "source_run_id": volume.source_run_id,
+                "locked": volume.locked,
                 "chapters": chapters,
             }
         )

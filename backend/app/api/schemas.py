@@ -338,3 +338,25 @@ class WritebackApply(BaseModel):
 class BatchCreate(BaseModel):
     scope_type: str = ""
     scope_id: str = ""
+
+
+class LockUpdate(BaseModel):
+    locked: bool = False
+
+
+class ParagraphLocks(BaseModel):
+    paragraphs: list[str] = Field(default_factory=list)
+
+
+class ReviewMarkItem(BaseModel):
+    target_type: str = ""
+    target_id: str = ""
+    reason: str = ""
+
+
+class ReviewMarkCreate(BaseModel):
+    items: list[ReviewMarkItem] = Field(default_factory=list)
+
+
+class ReviewMarkClear(ReviewMarkCreate):
+    pass

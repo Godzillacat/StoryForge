@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import BatchJob, Chapter, Scene, SceneDraft, Volume
 from app.db.session import SessionLocal
-from app.services import agent_service, chapter_service, text_service
+from app.services import agent_service, chapter_service, lock_service, text_service
 from app.services.runtime_service import RuntimeService
 
 _SCOPE_TYPES = {"chapter", "volume"}
@@ -30,7 +30,8 @@ def _job(session: Session, job_id: str) -> BatchJob:
 
 
 def get_job(session: Session, job_id: str) -> dict:
-    return serialize_job(_job(session, job_id))
+    job = _job(session, job_id)
+    return serialize_job(job, skipped_locked(session, job))
 
 
 def _scope_scene_ids(session: Session, project_id: str, scope_type: str, scope_id: str) -> list[str]:
@@ -75,16 +76,37 @@ def _available(session: Session, scene_ids: list[str]) -> list[str]:
             select(SceneDraft.scene_id).where(SceneDraft.scene_id.in_(scene_ids))
         ).all()
     )
+    locked = lock_service.locked_scene_ids(session, scene_ids)
     return [
         scene_id
         for scene_id in scene_ids
         if scene_id in scenes
         and not (scenes[scene_id].body or "").strip()
         and scene_id not in drafted
+        and scene_id not in locked
     ]
 
 
-def serialize_job(job: BatchJob) -> dict:
+def skipped_locked(session: Session, job: BatchJob) -> int:
+    """本次任务范围内因锁定而被跳过的场景数。
+
+    按 `scope_type` / `scope_id` **重算范围**而不是数 `scene_ids_json`：
+    锁定的场景在任务创建时就已排除，不在那个列表里；按范围重算才能把
+    「本来该跑、但因为锁着没跑」如实报出来。
+    """
+    try:
+        scope_ids = _scope_scene_ids(
+            session, job.project_id, job.scope_type, job.scope_id
+        )
+    except ValueError:
+        # 任务创建后它的章 / 卷被删了：范围已经不存在，跳过数就是 0。
+        # 让这里抛错会把轮询与暂停/继续/取消一起变成 404 —— 一个只用来
+        # 显示的数字不该有这种权力。
+        return 0
+    return len(lock_service.locked_scene_ids(session, scope_ids))
+
+
+def serialize_job(job: BatchJob, skipped_locked_ids: int = 0) -> dict:
     scene_ids = list(job.scene_ids_json or [])
     total = len(scene_ids)
     cursor = min(job.cursor, total)
@@ -98,6 +120,8 @@ def serialize_job(job: BatchJob) -> dict:
         "total": total,
         "current_scene_id": scene_ids[cursor] if cursor < total else None,
         "failures": list(job.failures_json or []),
+        # 锁定的场景在创建时就已排除，所以这个数只能按当前状态现算。
+        "skipped_locked": skipped_locked_ids,
         "created_at": job.created_at.isoformat() if job.created_at else "",
         "updated_at": job.updated_at.isoformat() if job.updated_at else "",
     }
@@ -170,6 +194,13 @@ def advance_job(session: Session, job_id: str) -> str:
     if (scene.body or "").strip() or session.scalars(
         select(SceneDraft).where(SceneDraft.scene_id == scene_id)
     ).first() is not None:
+        job.cursor += 1
+        session.commit()
+        return "skipped"
+
+    # 运行中才被锁上的场景同样跳过：作者刚锁上就该立刻生效，
+    # 而不是等这一轮跑完才挡住。
+    if lock_service.effective_scene_lock(session, scene)["locked"]:
         job.cursor += 1
         session.commit()
         return "skipped"
@@ -269,7 +300,7 @@ def start_job(job_id: str) -> dict:
         job.status = "running"
         done = _finish_if_at_end(job)
         session.commit()
-        result = serialize_job(job)
+        result = serialize_job(job, skipped_locked(session, job))
     if not done:
         _spawn(job_id)
     return result
@@ -282,7 +313,7 @@ def pause_job(job_id: str) -> dict:
             raise ValueError("任务已结束")
         job.status = "paused"
         session.commit()
-        return serialize_job(job)
+        return serialize_job(job, skipped_locked(session, job))
 
 
 def resume_job(job_id: str) -> dict:
@@ -294,7 +325,7 @@ def resume_job(job_id: str) -> dict:
         job.status = "running"
         done = _finish_if_at_end(job)
         session.commit()
-        result = serialize_job(job)
+        result = serialize_job(job, skipped_locked(session, job))
     if not done:
         _spawn(job_id)
     return result
@@ -307,7 +338,7 @@ def cancel_job(job_id: str) -> dict:
             raise ValueError("任务已结束")
         job.status = "cancelled"
         session.commit()
-        return serialize_job(job)
+        return serialize_job(job, skipped_locked(session, job))
 
 
 def retry_failed(job_id: str) -> dict:
@@ -335,7 +366,7 @@ def retry_failed(job_id: str) -> dict:
         job.failures_json = []
         job.status = "running"
         session.commit()
-        result = serialize_job(job)
+        result = serialize_job(job, skipped_locked(session, job))
     _spawn(job_id)
     return result
 
@@ -346,7 +377,7 @@ def latest_job(session: Session, project_id: str) -> dict | None:
         .where(BatchJob.project_id == project_id)
         .order_by(BatchJob.created_at.desc())
     ).first()
-    return serialize_job(job) if job else None
+    return serialize_job(job, skipped_locked(session, job)) if job else None
 
 
 def recover_jobs() -> int:
