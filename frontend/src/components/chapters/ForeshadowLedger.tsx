@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import type {
-  ChapterStatusOption,
-  Foreshadow,
-  VolumeNode,
+import {
+  api,
+  type ChapterStatusOption,
+  type Foreshadow,
+  type ForeshadowSummary,
+  type VolumeNode,
 } from '../../api/client'
 import {
   buildForeshadowLedger,
@@ -17,13 +19,15 @@ const FILTERS: { key: LedgerFilter; label: string }[] = [
   { key: 'missing_plant', label: '缺埋设' },
   { key: 'missing_pay', label: '缺计划回收' },
   { key: 'unpaid', label: '未回收' },
+  { key: 'dropped', label: '已弃' },
 ]
 
 function hints(row: LedgerRow): string {
   const out: string[] = []
   if (row.missingPlant) out.push('缺埋设')
   if (row.missingPay) out.push('缺计划回收')
-  if (row.actualPay) out.push('已回收')
+  if (row.effectiveStatus === 'dropped') out.push('作者已放弃')
+  else if (row.actualPay) out.push('已回收')
   else if (!row.missingPay) out.push('已计划、未回收')
   if (row.sameScene) out.push('埋设与回收同一场')
   return out.join(' ')
@@ -52,15 +56,66 @@ export default function ForeshadowLedger({
   volumes,
   foreshadows,
   statuses,
+  summary,
   onSelectScene,
+  onChanged,
+  onNotice,
+  busy,
 }: {
   volumes: VolumeNode[]
   foreshadows: Foreshadow[]
+  /** 生命周期词表。由页面从 `/api/foreshadow-types` 拉取，界面不硬编第二份。 */
   statuses: ChapterStatusOption[]
+  /** 四类计数与回收率由后端算（`/foreshadows/summary`），前端不重算一遍规则。 */
+  summary: ForeshadowSummary | null
   onSelectScene: (id: string) => void
+  /** 改完状态后由页面刷新列表与汇总。 */
+  onChanged: () => Promise<void>
+  onNotice: (message: string) => void
+  busy: boolean
 }) {
   const [filter, setFilter] = useState<LedgerFilter>('all')
+  // 正在保存的那一行：防止双击连发两次 PATCH，也让作者看得出是哪一行在动。
+  const [savingId, setSavingId] = useState('')
   const rows = buildForeshadowLedger(volumes, foreshadows)
+
+  async function changeStatus(row: LedgerRow, next: string) {
+    if (next === row.effectiveStatus) return
+    setSavingId(row.id)
+    onNotice('')
+    try {
+      await api.updateForeshadow(row.id, { status: next })
+      await onChanged()
+      // 位置字段是事实：已有实际回收场景时，选「规划中 / 已埋」会被派生回
+      // 「已收」。不说明的话，作者会以为自己的选择没保存。
+      if (next !== 'paid' && next !== 'dropped' && row.actualPay) {
+        onNotice(
+          `「${row.name}」的实际回收位置已记录，状态仍显示为「已收」。` +
+            `要改回其他状态，先点这一行的「清掉实际回收」。`,
+        )
+      }
+    } catch (error) {
+      onNotice((error as Error).message)
+    } finally {
+      setSavingId('')
+    }
+  }
+
+  /** 回写助手可能把伏笔匹配到错误的场景；作者得能撤销那条事实。 */
+  async function clearActualPay(row: LedgerRow) {
+    setSavingId(row.id)
+    onNotice('')
+    try {
+      await api.updateForeshadow(row.id, { actual_pay_scene_id: null })
+      await onChanged()
+      onNotice(`已清掉「${row.name}」的实际回收位置。`)
+    } catch (error) {
+      onNotice((error as Error).message)
+    } finally {
+      setSavingId('')
+    }
+  }
+
   if (foreshadows.length === 0) {
     return (
       <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
@@ -68,22 +123,30 @@ export default function ForeshadowLedger({
       </p>
     )
   }
+
   const visible = filterLedger(rows, filter)
-  const labelByKey = new Map(
-    statuses.map((status): [string, string] => [status.key, status.label]),
-  )
-  const missingPlant = rows.filter((row) => row.missingPlant).length
-  const missingPay = rows.filter((row) => row.missingPay).length
-  const unpaid = rows.filter((row) => row.unpaid).length
+  const counts = summary ?? {
+    total: rows.length,
+    planned: 0,
+    planted: 0,
+    paid: 0,
+    dropped: 0,
+    rate: 0,
+  }
+  // 分母 = 未放弃的三类；`dropped` 不进分母（与后端同一口径）。
+  const denominator = counts.paid + counts.planted + counts.planned
 
   return (
     <div className="space-y-3">
       <div>
         <h3 className="text-sm font-medium text-slate-300">伏笔账本</h3>
         <p className="text-xs text-slate-500">
-          共 {rows.length} 条 · 缺埋设 {missingPlant} · 缺计划回收 {missingPay} · 未回收{' '}
-          {unpaid}
+          共 {counts.total} 条 · 已收 {counts.paid} · 已埋未收 {counts.planted} · 规划中{' '}
+          {counts.planned} · 已弃 {counts.dropped} · 回收率{' '}
+          {(counts.rate * 100).toFixed(0)}%
+          {denominator > 0 && `（${counts.paid}/${denominator}）`}
         </p>
+        <p className="text-xs text-slate-600">回收率不算已弃的伏笔。</p>
       </div>
       <div className="flex flex-wrap gap-2">
         {FILTERS.map((item) => (
@@ -109,7 +172,7 @@ export default function ForeshadowLedger({
               <th className="px-3 py-2">埋设位置</th>
               <th className="px-3 py-2">计划回收位置</th>
               <th className="px-3 py-2">实际回收位置</th>
-              <th className="px-3 py-2">规划状态</th>
+              <th className="px-3 py-2">状态</th>
               <th className="px-3 py-2">提示</th>
             </tr>
           </thead>
@@ -132,10 +195,57 @@ export default function ForeshadowLedger({
                   <LocationCell location={row.pay} onSelect={onSelectScene} />
                 </td>
                 <td className="px-3 py-2">
-                  <LocationCell location={row.actualPay} onSelect={onSelectScene} />
+                  <div className="space-y-1">
+                    <LocationCell location={row.actualPay} onSelect={onSelectScene} />
+                    {row.actualPay && (
+                      <button
+                        className="block text-xs text-slate-500 hover:text-red-300 hover:underline disabled:opacity-50"
+                        disabled={busy || savingId !== ''}
+                        onClick={() => void clearActualPay(row)}
+                        title="回写助手可能匹配错了场景；清掉后状态会退回按埋设位置派生"
+                      >
+                        清掉实际回收
+                      </button>
+                    )}
+                  </div>
                 </td>
-                <td className="px-3 py-2 text-slate-400">
-                  {labelByKey.get(row.status) ?? row.status}
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-1">
+                    <select
+                      className="rounded border border-slate-700 bg-slate-900 px-1 py-0.5 text-xs text-slate-200 disabled:opacity-50"
+                      value={row.effectiveStatus}
+                      disabled={busy || savingId !== ''}
+                      onChange={(event) => void changeStatus(row, event.target.value)}
+                      title="作者显式设置的状态；位置字段与它不一致时会显示派生值"
+                    >
+                      {statuses.map((status) => (
+                        <option key={status.key} value={status.key}>
+                          {status.label}
+                        </option>
+                      ))}
+                    </select>
+                    {savingId === row.id && (
+                      <span className="text-xs text-slate-500">保存中…</span>
+                    )}
+                    {/* 旧值那一行也「不等」，但那是词表归一、不是位置派生，
+                        两个标记同时出现会让作者以为位置字段改过。 */}
+                    {row.statusIsDerived && !row.statusIsLegacy && savingId !== row.id && (
+                      <span
+                        className="text-xs text-slate-500"
+                        title={`作者设的状态是「${row.status}」，位置字段显示它已经走到这一步`}
+                      >
+                        派生
+                      </span>
+                    )}
+                    {row.statusIsLegacy && (
+                      <span
+                        className="text-xs text-amber-400"
+                        title="旧版本用的是「已确认」，它已归入「规划中」。重新选一次即可更新。"
+                      >
+                        旧值
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-3 py-2 text-xs text-amber-300">
                   {hints(row)}
@@ -156,8 +266,9 @@ export default function ForeshadowLedger({
         </table>
       </div>
       <p className="text-xs text-slate-500">
-        规划状态只有「规划中 / 已确认」。实际回收由写作台「回写建议」经作者确认后写入，
-        不改规划状态；生命周期状态属 P4。本页只读，埋设与计划回收在结构设计的场景编辑器里改。
+        状态可以从位置字段派生（埋了就是「已埋」、正文里收了就是「已收」），只有「已弃」是作者判断、
+        不会被派生覆盖。实际回收由写作台「回写建议」经作者确认后写入。埋设与计划回收在结构设计的
+        场景编辑器里改。
       </p>
     </div>
   )

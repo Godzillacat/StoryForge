@@ -26,6 +26,7 @@ import { ChangeList } from '../components/Snapshots'
 import ParagraphLocks from '../components/writing/ParagraphLocks'
 import DiffPanel from '../components/writing/DiffPanel'
 import GenerationStream from '../components/writing/GenerationStream'
+import LogicChain from '../components/writing/LogicChain'
 import LogicPanel from '../components/writing/LogicPanel'
 import RevisionHistory from '../components/writing/RevisionHistory'
 import SceneTextView from '../components/writing/SceneTextView'
@@ -1374,6 +1375,9 @@ export default function Writing() {
               onRun={runAudit}
               onResolve={resolveIssue}
             />
+            {selectedSceneId && (
+              <LogicChain sceneId={selectedSceneId} body={text?.body} />
+            )}
             <LogicPanel
               stage={logicStage}
               issues={logicIssues}

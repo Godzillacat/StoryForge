@@ -142,6 +142,8 @@ export const api = {
     request<SuggestResponse>(`/api/projects/${projectId}/entries/suggest`, { method: 'POST' }),
 
   listChapterTypes: () => request<ChapterTypesResponse>('/api/chapter-types'),
+  listForeshadowTypes: () =>
+    request<ChapterTypesResponse>('/api/foreshadow-types'),
   getChapterTree: (projectId: string) =>
     request<{ volumes: VolumeNode[] }>(`/api/projects/${projectId}/chapters/tree`),
   createVolume: (projectId: string, body: Record<string, unknown>) =>
@@ -304,6 +306,10 @@ export const api = {
       body: JSON.stringify({ resolution }),
     }),
 
+  foreshadowSummary: (projectId: string) =>
+    request<ForeshadowSummary>(`/api/projects/${projectId}/foreshadows/summary`),
+  logicChain: (sceneId: string) =>
+    request<LogicChainResponse>(`/api/scenes/${sceneId}/logic-chain`),
   listForeshadows: (projectId: string) =>
     request<Foreshadow[]>(`/api/projects/${projectId}/foreshadows`),
   createForeshadow: (projectId: string, body: Record<string, unknown>) =>
@@ -827,6 +833,29 @@ export interface SceneNode {
   }
 }
 
+export interface ForeshadowSummary {
+  total: number
+  planned: number
+  planted: number
+  paid: number
+  dropped: number
+  rate: number
+}
+
+export interface LogicChainItem {
+  paragraph: number
+  sentence: string
+  kind: string
+  kind_label: string
+  marker: string
+}
+
+export interface LogicChainResponse {
+  chain: LogicChainItem[]
+  summary: { total: number; cause: number; turn: number; reveal: number }
+  reason: string
+}
+
 export interface Foreshadow {
   id: string
   project_id: string
@@ -836,6 +865,10 @@ export interface Foreshadow {
   plan_pay_scene_id: string | null
   actual_pay_scene_id: string | null
   status: string
+  effective_status?: string
+  status_is_derived?: boolean
+  status_is_legacy?: boolean
+  status_label?: string
   source_run_id: string | null
 }
 
