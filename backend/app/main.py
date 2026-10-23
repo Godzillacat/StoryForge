@@ -86,3 +86,10 @@ for module in (
     snapshots,
 ):
     app.include_router(module.router)
+
+
+# 同源托管前端产物。**必须放在所有 API 路由之后** —— 它的 catch-all 会把
+# 后注册的路由盖掉。
+from app import static_site  # noqa: E402  （顺序是语义的一部分）
+
+static_site.mount_site(app)

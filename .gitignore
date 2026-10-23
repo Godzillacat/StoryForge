@@ -22,7 +22,9 @@ settings.json
 # 构建产物
 build/
 dist/
+# PyInstaller 自动生成的 spec 是产物；我们手写的打包配置要入库。
 *.spec
+!backend/storyforge.spec
 
 # SDD 工作区（临时产物，git history 才是记录）
 .superpowers/
