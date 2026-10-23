@@ -82,6 +82,7 @@ def test_book_returns_the_whole_text_in_one_request(client):
     assert [row["title"] for row in chapters] == ["第一章"]
     assert "雨落在旧城。" in chapters[0]["content"]
     assert chapters[0]["word_count"] == body["total_words"]
+    assert body["written_chapters"] == 1
 
 
 def test_book_missing_project_is_404(client):

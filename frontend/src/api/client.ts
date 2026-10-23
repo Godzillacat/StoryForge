@@ -1429,7 +1429,9 @@ export interface BookChapter {
   seq: number
   title: string
   word_count: number
-  /** Markdown 原文；渲染交给前端。 */
+  /** 有没有已采纳正文。没有的章阅读器要标「未写」而不是藏起来。 */
+  has_body: boolean
+  /** Markdown 原文；没有正文时为空串。 */
   content: string
 }
 
@@ -1444,6 +1446,8 @@ export interface BookResponse {
   project_id: string
   project_name: string
   total_words: number
-  /** 只含有正文的章 —— 与导出口径一致。 */
+  written_chapters: number
+  total_chapters: number
+  /** 空章也在里面 —— 作者要看得见这本书还差哪几章。 */
   volumes: BookVolume[]
 }

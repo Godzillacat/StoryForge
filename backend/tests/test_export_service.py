@@ -215,16 +215,23 @@ def test_report_counts_review_marks(session):
     assert export_service.build_report(session, project.id)["review_marks"] == 1
 
 
-def test_book_keeps_only_chapters_with_body(session):
+def test_book_lists_unwritten_chapters_so_the_author_sees_the_shape(session):
+    """阅读器要看见「还差哪几章」；只列有正文的章会让半本没写的稿子看起来是完整的。
+
+    与导出**刻意不同** —— 导出是成品，阅读器还要看进度。
+    """
     project, _volume, _first, _second, _scene, _empty = _seed(session)
 
     book = export_service.build_book(session, project.id)
+    chapters = book["volumes"][0]["chapters"]
 
-    assert book["project_name"] == "雾港"
-    assert len(book["volumes"]) == 1
-    titles = [row["title"] for row in book["volumes"][0]["chapters"]]
-    assert titles == ["开端"]
-    assert book["volumes"][0]["chapters"][0]["content"].startswith("# 标题")
+    assert [row["title"] for row in chapters] == ["开端", "空章"]
+    blank = chapters[1]
+    assert blank["has_body"] is False
+    assert blank["content"] == ""
+    assert blank["word_count"] == 0
+    assert book["written_chapters"] == 1
+    assert book["total_chapters"] == 2
 
 
 def test_book_content_matches_the_markdown_export(session):
@@ -233,7 +240,8 @@ def test_book_content_matches_the_markdown_export(session):
 
     book = export_service.build_book(session, project.id)
     markdown = export_service.build_markdown(session, project.id)
-    content = book["volumes"][0]["chapters"][0]["content"]
+    written = [row for row in book["volumes"][0]["chapters"] if row["has_body"]]
+    content = written[0]["content"]
 
     assert content in markdown
 

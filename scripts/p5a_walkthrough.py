@@ -53,16 +53,24 @@ call("PUT", f"/api/scenes/{s3['id']}/body", {"content": "他推开门。"})
 # ---- 1. 整本一次取回 ----
 status, book = call("GET", f"/api/projects/{pid}/book")
 check("整本接口 200", status == 200, str(status))
+titles = [ch["title"] for vol in book["volumes"] for ch in vol["chapters"]]
 check(
-    "只收有正文的章（空章被跳过）",
-    [ch["title"] for vol in book["volumes"] for ch in vol["chapters"]]
-    == ["开端", "转折"],
-    str([ch["title"] for vol in book["volumes"] for ch in vol["chapters"]]),
+    "空章也列出来（作者要看得到还差哪几章）",
+    titles == ["开端", "空章", "转折"],
+    str(titles),
 )
 check(
-    "只保留有章的卷",
-    len(book["volumes"]) == 2 and all(vol["chapters"] for vol in book["volumes"]),
-    str([vol["name"] for vol in book["volumes"]]),
+    "空章标 has_body=False 且正文为空",
+    next(ch for vol in book["volumes"] for ch in vol["chapters"] if ch["title"] == "空章")[
+        "has_body"
+    ]
+    is False,
+    str(titles),
+)
+check(
+    "写完章数与总章数",
+    book["written_chapters"] == 2 and book["total_chapters"] == 3,
+    f"{book['written_chapters']}/{book['total_chapters']}",
 )
 
 # ---- 2. 章内正文按场景顺序拼接 ----
@@ -99,14 +107,21 @@ check(
 )
 check("不存在的项目 404", call("GET", "/api/projects/nope/book")[0] == 404)
 
-# ---- 6. 未采纳的草稿不进阅读器 ----
-# 直接写 body 是「作者保存」，走 adopt 才是 AI 草稿入稿；这里验证没有正文的场景不出现。
+# ---- 6. 未写的章不进正文，但仍出现在树里 ----
 s4 = call("POST", f"/api/chapters/{c2['id']}/scenes", {"goal": "空场"})[1]
 status, book2 = call("GET", f"/api/projects/{pid}/book")
+blank = next(
+    ch for vol in book2["volumes"] for ch in vol["chapters"] if ch["title"] == "空章"
+)
 check(
-    "只有空场景的章仍被跳过",
-    all(ch["title"] != "空章" for vol in book2["volumes"] for ch in vol["chapters"]),
+    "未写的章 has_body=False、正文为空、字数为 0",
+    blank["has_body"] is False and blank["content"] == "" and blank["word_count"] == 0,
     str(s4["id"][:8]),
+)
+check(
+    "空章的正文不出现在导出里",
+    "空章" not in text(f"/api/projects/{pid}/export?format=md"),
+    "export contains 空章",
 )
 
 failed = [row for row in results if not row[1]]

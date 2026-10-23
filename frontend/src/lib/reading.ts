@@ -1,7 +1,7 @@
 /** 朗读与检索的纯函数。UI 只负责「什么时候调」，逻辑都在这里，能被 vitest 覆盖。 */
 
 import type { MdBlock } from './markdown'
-import { blockText } from './markdown'
+import { blockText, parseMarkdown } from './markdown'
 
 /** 把正文块拍平成可朗读的段落。
  *
@@ -24,6 +24,81 @@ export function speechChunksOf(blocks: MdBlock[]): string[] {
     })
     .map((text) => text.trim())
     .filter((text) => text.length > 0)
+}
+
+/** 朗读队列的下标 → 正文块的下标。
+ *
+ * `speechChunksOf` 会把列表拆成逐项，所以两者不是一一对应；高亮跟随要的是
+ * 「现在念的是正文里的哪一块」。找不到时返回 null（分隔线不成段）。
+ */
+export function blockIndexOfChunk(blocks: MdBlock[], chunk: number): number | null {
+  if (chunk < 0) return null
+  let seen = 0
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index]
+    const size =
+      block.type === 'list' ? block.items.length : blockText(block).trim() ? 1 : 0
+    if (size === 0) continue
+    if (chunk < seen + size) return index
+    seen += size
+  }
+  return null
+}
+
+/** 当前滚动到第几块 —— 朗读从「作者看得见的地方」开始，而不是永远从第一段。
+ *
+ * `tops` 是每块的文档偏移（块顶距离页面顶部），`scrollTop` 是容器已滚动的距离。
+ * 取第一块底边还没滚过去的块。
+ */
+export function blockAtScroll(tops: number[], scrollTop: number): number {
+  if (tops.length === 0) return 0
+  for (let index = 0; index < tops.length; index += 1) {
+    if (tops[index] >= scrollTop - 8) return index
+  }
+  return tops.length - 1
+}
+
+export interface BookHit {
+  chapterId: string
+  chapterTitle: string
+  volumeName: string
+  /** 命中处在 `parseMarkdown(chapter.content)` 里的块序号。 */
+  block: number
+  snippet: string
+}
+
+export interface SearchableChapter {
+  id: string
+  title: string
+  content: string
+  volumeName: string
+}
+
+/** 整本检索：逐章在正文里找，返回章 + 块。
+ *
+ * **不复用 `/search`**：那个接口返回的是场景级命中（`entity_id` 是场景 id），
+ * 而阅读器要跳到「章里的第几段」。两者对不上，硬接还得再查一次场景属于哪一章、
+ * 那一章的场景顺序如何 —— 直接在已加载的正文里找更直接，且正文本来就全在手上。
+ *
+ * 每章每个命中块只报一次（同一块里出现三次不该列出三条）。
+ */
+export function findInBook(chapters: SearchableChapter[], query: string): BookHit[] {
+  const needle = query.trim()
+  if (!needle) return []
+  const hits: BookHit[] = []
+  for (const chapter of chapters) {
+    if (!chapter.content) continue
+    for (const hit of findMatches(parseMarkdown(chapter.content), needle)) {
+      hits.push({
+        chapterId: chapter.id,
+        chapterTitle: chapter.title,
+        volumeName: chapter.volumeName,
+        block: hit.block,
+        snippet: hit.snippet,
+      })
+    }
+  }
+  return hits
 }
 
 export interface MatchHit {

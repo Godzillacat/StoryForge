@@ -19,6 +19,11 @@ describe('parseMarkdown', () => {
     expect(blocks[0].type).toBe('paragraph')
   })
 
+  it('中文之间的软换行不补空格，英文之间补', () => {
+    expect(blockText(parseMarkdown('他说\n走吧')[0])).toBe('他说走吧')
+    expect(blockText(parseMarkdown('he said\nhello')[0])).toBe('he said hello')
+  })
+
   it('识别四级以内标题，更深的降为四级', () => {
     expect(parseMarkdown('# 一')[0]).toMatchObject({ type: 'heading', level: 1 })
     expect(parseMarkdown('### 三')[0]).toMatchObject({ type: 'heading', level: 3 })

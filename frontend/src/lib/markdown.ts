@@ -69,9 +69,27 @@ export function parseInline(text: string): MdInline[] {
   return spans
 }
 
-/** 把一段连续的行合并成一行：Markdown 里段内换行是软换行，不该断段。 */
-function joinSoft(line: string[]): string {
-  return line.map((row) => row.trim()).join('').trim()
+/** 把一段连续的行合并成一行：Markdown 里段内换行是软换行，不该断段。
+ *
+ * 软换行在 CommonMark 里渲染成一个空格。两行紧邻的英文没有空格会粘成一个
+ * 词；中文之间补空格反而难看，所以只在两侧都是非空白、且**至少一侧不是
+ * 中日韩字符**时补一个空格。
+ */
+const CJK = /[㐀-鿿豈-﫿　-〿＀-￯]/
+
+function joinSoft(lines: string[]): string {
+  let result = ''
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) continue
+    if (result) {
+      const left = result[result.length - 1]
+      const right = line[0]
+      if (!CJK.test(left) || !CJK.test(right)) result += ' '
+    }
+    result += line
+  }
+  return result.trim()
 }
 
 export function parseMarkdown(text: string | null | undefined): MdBlock[] {
