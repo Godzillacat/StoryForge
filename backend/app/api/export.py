@@ -30,7 +30,7 @@ def export_report(project_id: str, session: Session = Depends(get_session)) -> d
 
 @router.get("/projects/{project_id}/book")
 def read_book(project_id: str, session: Session = Depends(get_session)) -> dict:
-    """整本正文，供阅读器一次性取回（只收有正文的章）。"""
+    """整本正文，供阅读器一次性取回（空章也返回，标 has_body=false）。"""
     try:
         return export_service.build_book(session, project_id)
     except ValueError as exc:

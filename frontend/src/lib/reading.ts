@@ -14,7 +14,8 @@ export function speechChunksOf(blocks: MdBlock[]): string[] {
   return blocks
     .flatMap((block) => {
       // 列表逐项朗读：一条 utterance 里塞换行，某些系统会念成一个长句，
-      // 也没法在项与项之间暂停。
+      // 也没法在项与项之间暂停。**空列表项不念** —— 它会在 `chunkCountOf`
+      // 里被算作 0，这里也必须跳过，否则块↔段的下标会错位。
       if (block.type === 'list') {
         return block.items.map((item) =>
           item.map((span) => span.text).join(''),
@@ -35,14 +36,35 @@ export function blockIndexOfChunk(blocks: MdBlock[], chunk: number): number | nu
   if (chunk < 0) return null
   let seen = 0
   for (let index = 0; index < blocks.length; index += 1) {
-    const block = blocks[index]
-    const size =
-      block.type === 'list' ? block.items.length : blockText(block).trim() ? 1 : 0
+    const size = chunkCountOf(blocks[index])
     if (size === 0) continue
     if (chunk < seen + size) return index
     seen += size
   }
   return null
+}
+
+/** 一块正文会产生几段朗读。**必须与 `speechChunksOf` 用同一份规则**，
+ * 否则「从第几块起读」与「高亮第几块」会各算各的、越读越偏。
+ *
+ * 分隔线、空块不产生朗读段；列表逐项各算一段。
+ */
+export function chunkCountOf(block: MdBlock): number {
+  if (block.type === 'list') {
+    return block.items.filter((item) =>
+      item.some((span) => span.text.trim().length > 0),
+    ).length
+  }
+  return blockText(block).trim() ? 1 : 0
+}
+
+/** 第 `block` 块之前一共产生了几段朗读 —— 「从可见块起读」要用它。 */
+export function chunkIndexAtBlock(blocks: MdBlock[], block: number): number {
+  let chunk = 0
+  for (let index = 0; index < Math.min(block, blocks.length); index += 1) {
+    chunk += chunkCountOf(blocks[index])
+  }
+  return chunk
 }
 
 /** 当前滚动到第几块 —— 朗读从「作者看得见的地方」开始，而不是永远从第一段。
@@ -60,6 +82,7 @@ export function blockAtScroll(tops: number[], scrollTop: number): number {
 
 export interface BookHit {
   chapterId: string
+  chapterSeq: number
   chapterTitle: string
   volumeName: string
   /** 命中处在 `parseMarkdown(chapter.content)` 里的块序号。 */
@@ -69,6 +92,7 @@ export interface BookHit {
 
 export interface SearchableChapter {
   id: string
+  seq: number
   title: string
   content: string
   volumeName: string
@@ -91,6 +115,7 @@ export function findInBook(chapters: SearchableChapter[], query: string): BookHi
     for (const hit of findMatches(parseMarkdown(chapter.content), needle)) {
       hits.push({
         chapterId: chapter.id,
+        chapterSeq: chapter.seq,
         chapterTitle: chapter.title,
         volumeName: chapter.volumeName,
         block: hit.block,

@@ -75,7 +75,8 @@ export function parseInline(text: string): MdInline[] {
  * 词；中文之间补空格反而难看，所以只在两侧都是非空白、且**至少一侧不是
  * 中日韩字符**时补一个空格。
  */
-const CJK = /[㐀-鿿豈-﫿　-〿＀-￯]/
+// 汉字 / 假名 / 谚文 / 全角标点：这些字符之间断行不该补空格。
+const CJK = /[　-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/
 
 function joinSoft(lines: string[]): string {
   let result = ''

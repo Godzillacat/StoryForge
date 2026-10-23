@@ -3,6 +3,7 @@ import { parseMarkdown } from './markdown'
 import {
   blockAtScroll,
   blockIndexOfChunk,
+  chunkIndexAtBlock,
   findInBook,
   findMatches,
   speechChunksOf,
@@ -119,11 +120,40 @@ describe('blockAtScroll', () => {
   })
 })
 
+describe('块 ↔ 朗读段的一致', () => {
+  it('有分隔线时，从第 3 块起读要落在第 2 段（分隔线不占段）', () => {
+    const blocks = parseMarkdown('一。\n\n---\n\n二。')
+    const chunks = speechChunksOf(blocks)
+
+    expect(chunks).toEqual(['一。', '二。'])
+    // 块 2 是「二。」，它前面只有一段朗读。
+    expect(chunkIndexAtBlock(blocks, 2)).toBe(1)
+    // 反过来映射也一致。
+    expect(blockIndexOfChunk(blocks, 1)).toBe(2)
+  })
+
+  it('列表项与段落各自成段，块↔段下标一致', () => {
+    const blocks = parseMarkdown('- 甲\n- 乙\n\n尾巴。')
+    const chunks = speechChunksOf(blocks)
+
+    expect(chunks).toEqual(['甲', '乙', '尾巴。'])
+    // 块 0 是列表（两段），块 1 是段落 → 第 2 段指回块 1。
+    expect(blockIndexOfChunk(blocks, 2)).toBe(1)
+    expect(chunkIndexAtBlock(blocks, 1)).toBe(2)
+  })
+
+  it('每一块算出来的段数加起来等于总段数', () => {
+    const blocks = parseMarkdown('# 题\n\n一。\n\n---\n\n- 甲\n- 乙\n\n> 引。')
+
+    expect(chunkIndexAtBlock(blocks, blocks.length)).toBe(speechChunksOf(blocks).length)
+  })
+})
+
 describe('findInBook', () => {
   const chapters = [
-    { id: 'c1', title: '开端', volumeName: '第一卷', content: '雨落在旧城。' },
-    { id: 'c2', title: '转折', volumeName: '第二卷', content: '旧城的灯灭了。' },
-    { id: 'c3', title: '空章', volumeName: '第二卷', content: '' },
+    { id: 'c1', seq: 0, title: '开端', volumeName: '第一卷', content: '雨落在旧城。' },
+    { id: 'c2', seq: 0, title: '转折', volumeName: '第二卷', content: '旧城的灯灭了。' },
+    { id: 'c3', seq: 1, title: '空章', volumeName: '第二卷', content: '' },
   ]
 
   it('跨章找，每章各自报', () => {

@@ -6,6 +6,7 @@ import { parseMarkdown } from '../lib/markdown'
 import {
   blockAtScroll,
   blockIndexOfChunk,
+  chunkIndexAtBlock,
   findInBook,
   speechChunksOf,
 } from '../lib/reading'
@@ -193,6 +194,7 @@ export default function Reader() {
       findInBook(
         chapters.map((row) => ({
           id: row.id,
+          seq: row.seq,
           title: row.title,
           content: row.content,
           volumeName: row.volume.name,
@@ -220,25 +222,35 @@ export default function Reader() {
     if (scrollRef.current) scrollRef.current.scrollTop = 0
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chapterId])
-
   // 进度按帧节流：滚动事件一秒能来几十次，而只有最后那一次的位置有意义。
   const progressTimer = useRef<number | null>(null)
-  const saveProgress = useCallback(() => {
-    if (!projectId || !chapterId || !scrollRef.current) return
-    if (progressTimer.current !== null) return
-    progressTimer.current = window.setTimeout(() => {
-      progressTimer.current = null
-      if (!scrollRef.current) return
+  // 立即落盘。节流窗口内切章 / 离开页面时要靠它补上最后一次，
+  // 而且**必须用闭包里那一刻的 chapterId**，否则定时器可能在新章里
+  // 写下旧章的位置。
+  const writeProgress = useCallback(
+    (targetChapterId: string, targetProjectId: string) => {
+      if (!targetProjectId || !targetChapterId || !scrollRef.current) return
       try {
         localStorage.setItem(
-          PROGRESS_PREFIX + projectId,
-          JSON.stringify({ chapterId, scrollTop: scrollRef.current.scrollTop }),
+          PROGRESS_PREFIX + targetProjectId,
+          JSON.stringify({ chapterId: targetChapterId, scrollTop: scrollRef.current.scrollTop }),
         )
       } catch {
         // 存不下不影响阅读。
       }
+    },
+    [],
+  )
+  const saveProgress = useCallback(() => {
+    if (!projectId || !chapterId) return
+    if (progressTimer.current !== null) return
+    const atChapter = chapterId
+    const atProject = projectId
+    progressTimer.current = window.setTimeout(() => {
+      progressTimer.current = null
+      writeProgress(atChapter, atProject)
     }, 200)
-  }, [projectId, chapterId])
+  }, [projectId, chapterId, writeProgress])
 
   useEffect(() => {
     return () => {
@@ -246,27 +258,40 @@ export default function Reader() {
     }
   }, [])
 
+  // 切章前把上一章的最后位置补上：节流窗口里滚到的位置不该因为切章而丢掉。
+  // 清理函数拿到的是**旧章的** chapterId / projectId，正是要写的那个。
+  useEffect(() => {
+    const atChapter = chapterId
+    const atProject = projectId
+    return () => {
+      if (atChapter && atProject) writeProgress(atChapter, atProject)
+    }
+  }, [chapterId, projectId, writeProgress])
+
   /** 从作者当前看得见的那一段开始念，而不是永远从第一段重来。 */
   const startSpeaking = useCallback(() => {
-    if (!scrollRef.current) {
-      speech.speakFrom(0)
-      return
+    // 刚跳到一个检索命中时，从那一块读 —— 平滑滚动还没停，量出来的位置
+    // 是跳之前的位置，靠它算会从好几段之前开始念。
+    let block = activeMatch
+    if (block === null) {
+      if (!scrollRef.current) {
+        speech.speakFrom(0)
+        return
+      }
+      const container = scrollRef.current
+      const containerTop = container.getBoundingClientRect().top
+      const tops = blocks.map((_, index) => {
+        const node = document.getElementById(`block-${index}`)
+        return node
+          ? node.getBoundingClientRect().top - containerTop + container.scrollTop
+          : 0
+      })
+      block = blockAtScroll(tops, container.scrollTop)
     }
-    const container = scrollRef.current
-    const containerTop = container.getBoundingClientRect().top
-    const tops = blocks.map((_, index) => {
-      const node = document.getElementById(`block-${index}`)
-      return node ? node.getBoundingClientRect().top - containerTop + container.scrollTop : 0
-    })
-    const block = blockAtScroll(tops, container.scrollTop)
-    // 块 → 朗读段的下标：列表被拆成逐项，两者不是一一对应，只能数一遍。
-    let chunk = 0
-    for (let index = 0; index < block; index += 1) {
-      const item = blocks[index]
-      chunk += item?.type === 'list' ? item.items.length : 1
-    }
-    speech.speakFrom(Math.min(chunk, chunks.length - 1))
-  }, [blocks, chunks.length, speech])
+    // 块 → 朗读段：分隔线与空块不产生朗读段，必须用与 `speechChunksOf`
+    // 同一份规则来数，否则有分隔线时会晚一段。
+    speech.speakFrom(Math.min(chunkIndexAtBlock(blocks, block), chunks.length - 1))
+  }, [activeMatch, blocks, chunks.length, speech])
 
   // 恢复上次的滚动位置。必须在正文渲染完之后做，否则 scrollTop 会被截断到 0。
   useEffect(() => {
@@ -461,8 +486,8 @@ export default function Reader() {
                       className="text-left underline-offset-2 hover:underline"
                       onClick={() => jumpToBookHit(hit.chapterId, hit.block)}
                     >
-                      {hit.volumeName} · 第{hit.chapterTitle}章 · 第 {hit.block + 1} 段 ·{' '}
-                      {hit.snippet}
+                      {hit.volumeName} · 第{hit.chapterSeq + 1}章 {hit.chapterTitle} · 第{' '}
+                      {hit.block + 1} 段 · {hit.snippet}
                     </button>
                   </li>
                 ))}
