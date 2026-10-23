@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import shutil
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import config
 from app.db.models import Project
 from app.services import search_service
 
@@ -40,3 +43,7 @@ def delete_project(session: Session, project_id: str) -> None:
     search_service.delete_project(session, project_id)
     session.delete(project)
     session.commit()
+    # 资产目录跟着项目走：库里的行没了，磁盘上的封面与附件不该留下无主文件。
+    assets = config.data_dir() / "projects" / project_id
+    if assets.is_dir():
+        shutil.rmtree(assets, ignore_errors=True)

@@ -299,8 +299,25 @@ export const api = {
     request<ExportReport>(`/api/projects/${projectId}/export/report`),
   readBook: (projectId: string) =>
     request<BookResponse>(`/api/projects/${projectId}/book`),
-  exportUrl: (projectId: string, format: 'md' | 'txt' | 'epub') =>
-    `/api/projects/${projectId}/export?format=${format}`,
+  exportUrl: (projectId: string, format: 'md' | 'txt' | 'epub', template?: string) =>
+    `/api/projects/${projectId}/export?format=${format}` +
+    (format === 'epub' && template ? `&template=${encodeURIComponent(template)}` : ''),
+  uploadCover: async (projectId: string, file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    // 不能带 content-type：浏览器要自己算 multipart 的 boundary。
+    const response = await fetch(`/api/projects/${projectId}/cover`, {
+      method: 'PUT',
+      body,
+    })
+    if (!response.ok) {
+      const detail = await response.json().catch(() => null)
+      throw new Error(detail?.detail ?? `上传失败（${response.status}）`)
+    }
+    return (await response.json()) as { has_cover: boolean; size: number }
+  },
+  removeCover: (projectId: string) =>
+    request<void>(`/api/projects/${projectId}/cover`, { method: 'DELETE' }),
   resolveAuditIssue: (issueId: string, resolution: AuditResolution) =>
     request<AuditIssue>(`/api/audit/issues/${issueId}`, {
       method: 'PATCH',
@@ -526,6 +543,8 @@ export interface Project {
   tone: string | null
   target_length: number | null
   logic_check_level: string
+  /** 有没有封面图；EPUB 会带上它。 */
+  has_cover?: boolean
 }
 
 export interface Idea {
