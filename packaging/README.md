@@ -27,14 +27,16 @@ powershell -ExecutionPolicy Bypass -File scripts/build.ps1
 
 产物：`backend/dist/StoryForge/StoryForge.exe`（整个 `StoryForge\` 目录要一起分发）。
 
-> `--selftest` 会建库、建表、读一次项目列表。它抓的是「数据文件没打进去」这类问题 ——
-> 例如 `app/agents` / `app/tools_lib` 漏了，自检会当场失败，而不是等作者双击才发现首页空白。
+> `--selftest` 在**系统临时目录**里建库、建表、播种、读一次项目列表，然后删掉 ——
+> **不会碰你的真实数据目录**。它抓的是「文件没打进去」这类问题：断言工具库必须
+> 25 份、智能体不能为 0（`seed_tools` 在目录缺失时会静默返回 0，只查「没抛异常」
+> 是查不出来的）。失败时退出码为 1，构建脚本会当场停下；打包版还会弹一个消息框。
 
-## 安装包（需要先装 Inno Setup 6）
+## 安装包（需要先装 Inno Setup 6.3+）
 
 **本仓库不自动跑这一步** —— 装 Inno Setup 属于改系统，由你决定。
 
-1. 装 Inno Setup 6：<https://jrsoftware.org/isdl.php>
+1. 装 **Inno Setup 6.3 或更新**（脚本里的 `x64compatible` 是 6.3 才有的）：<https://jrsoftware.org/isdl.php>
 2. 先跑一次上面的 `build.ps1`
 3. 在仓库根执行：
 

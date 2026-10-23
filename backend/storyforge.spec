@@ -25,7 +25,8 @@ if not (frontend_dist / "index.html").is_file():
 
 datas = [
     (str(frontend_dist), "frontend_dist"),
-    (str(ROOT / "app" / "agents"), "app/agents"),
+    # **只有工具库是数据**（25 份 JSON）。`app/agents` 是 Python 包，PyInstaller
+    # 的依赖分析会把它打进 PYZ，不需要再当 datas 复制一遍。
     (str(ROOT / "app" / "tools_lib"), "app/tools_lib"),
 ]
 

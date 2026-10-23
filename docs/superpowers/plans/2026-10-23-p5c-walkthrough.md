@@ -7,11 +7,11 @@
 
 | 项 | 结果 |
 |---|---|
-| 后端 | **990 passed**（基线 969，本段新增 21） |
+| 后端 | **997 passed**（基线 969，本段新增 28） |
 | 前端 | 71 passed（本段未改前端测试） |
 | 前端构建 | `pnpm build` 干净 |
 
-## 2. 接口级走查（`scripts/p5c_walkthrough.py`，14 项全过）
+## 2. 接口级走查（`scripts/p5c_walkthrough.py`，17 项全过）
 
 | 组 | 覆盖 |
 |---|---|
@@ -19,7 +19,8 @@
 | 根路径 | 200、`text/html`、`<title>StoryForge</title>`、引用 `/assets/*.js` |
 | 静态资源 | `/favicon.svg` 200 |
 | SPA 深链 | `/read`、`/chapters`、`/write`、`/world`、任意深层路径 全部回落 index.html |
-| 未知 API | `/api/definitely-not-a-route` → 404 且**不是 HTML**（不会把 JSON 请求喂成页面） |
+| 未知 API | `/api/definitely-not-a-route`、`/api` 本身、`/API/projects` 全部 404 且**不是 HTML** |
+| 缺失的静态文件 | `/chunks/missing.js` → 404（把缺失的 .js 当 HTML 返回 200，浏览器会报「Unexpected token '<'」） |
 | 目录穿越 | `/../backend/app/config.py` 拿不到源码 |
 
 ## 3. 桌面窗口（真实启动）
@@ -57,6 +58,22 @@
 
 另外把「后端没就绪」的错误文案改准：原先只说「数据目录可能被占用」，而真实原因常常是
 启动期模块导入失败 —— 现在提示去看上面 uvicorn 自己的日志。
+
+## 4.1 整支复查修掉的 5 条 Important
+
+| # | 问题 | 修法 | 复验 |
+|---|---|---|---|
+| 1 | `build.ps1` 的产物自检**根本没检查到** —— `console=False` 的 GUI 程序用 `& $exe` 调用时 PowerShell 不等它结束，`$LASTEXITCODE` 还是上一条命令的 0 | 改用 `Start-Process -Wait -PassThru` 取真正的 `ExitCode` | 复查实测 `& $exe` 43 ms 就返回且退出码是旧的 |
+| 2 | **自检查不出它本该查的东西** —— `seed_tools` 在目录缺失时静默返回 0 | 断言工具库必须 25 份、智能体不能为 0 | **实测把产物里的 `tools_lib` 改名后，自检报「应有 25 份，实际 0 份」、退出码 1**；恢复后回到 0 |
+| 3 | **构建会把自检跑在作者真实数据目录上** —— 一次打包就在书稿上跑迁移、写备份、播种 | 自检改用系统临时目录，用完删掉 | 建库后 `dispose_engine()` 再 rmtree（Windows 上不 dispose 删不掉），实测无残留 |
+| 4 | **单实例锁加得太晚** —— 启动含建库 / 迁移 / 播种要几秒，这期间第二次双击会起第二个后端、第二个 SQLite 写者 | 起后端**之前**用 `O_CREAT\|O_EXCL` 抢一个「正在启动」标记 | 新用例：标记被占时第二次 `run()` 返回 1；崩溃遗留的标记可被接管 |
+| 5 | **打包后错误信息全看不见** —— 所有提示走 stderr，资源管理器双击时没有 stderr | `_report()` 同时 print 与 `MessageBoxW`；`STORYFORGE_NO_DIALOG=1` 时只 print（测试与构建脚本不能被模态框挡住） | 打包版自检失败会弹框；构建脚本设了该变量 |
+
+另外修了几条 Minor：`/api` 本身与 `/API/...` 也会回落成页面；缺失的 `.js` 返回 200 HTML
+（浏览器报 `Unexpected token '<'`）；`webview.create_window` 移进 try/finally；
+spec 里的 `app/agents` 是代码不是数据（多余）；Inno 的 `x64compatible` 需要 6.3+，README 已更正。
+
+---
 
 ## 5. 未覆盖 / 遗留
 

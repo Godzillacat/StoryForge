@@ -32,6 +32,11 @@ def _sqlite_pragmas(dbapi_connection, _record) -> None:
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
+def dispose_engine() -> None:
+    """关掉连接池。自检用临时目录时要先释放，否则 Windows 上删不掉库文件。"""
+    engine.dispose()
+
+
 _MIGRATION_DDL = """
 CREATE TABLE IF NOT EXISTS schema_migration (
     version    INTEGER PRIMARY KEY,

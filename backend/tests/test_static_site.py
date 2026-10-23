@@ -78,6 +78,29 @@ def test_an_unknown_api_path_is_404_json_not_html(dist):
     assert response.status_code == 404
 
 
+def test_bare_api_and_uppercase_api_are_not_swallowed(dist):
+    """`/api` 本身、以及大小写不同的 `/API/...` 都不该回落到页面。"""
+    client = TestClient(_app())
+
+    assert client.get("/api").status_code == 404
+    assert client.get("/API/projects").status_code == 404
+
+
+def test_a_missing_file_is_404_not_the_index(dist):
+    """把一个缺失的 .js 当 HTML 返回 200，浏览器会报「Unexpected token '<'」。"""
+    client = TestClient(_app())
+
+    response = client.get("/chunks/missing.js")
+
+    assert response.status_code == 404
+
+
+def test_a_missing_asset_under_the_mount_is_404(dist):
+    client = TestClient(_app())
+
+    assert client.get("/assets/nope.js").status_code == 404
+
+
 def test_deep_links_fall_back_to_index(dist):
     """单页应用的深链（/read、/chapters）直接打开要能用。"""
     client = TestClient(_app())

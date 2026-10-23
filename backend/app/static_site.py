@@ -69,20 +69,27 @@ def mount_site(app: FastAPI) -> bool:
     if assets.is_dir():
         app.mount("/assets", StaticFiles(directory=assets), name="assets")
 
-    @app.get("/", include_in_schema=False)
+    # **只挂一条 catch-all**。再叠一条 `@app.get("/")` 是多余的：`{full_path:path}`
+    # 本身就匹配 `/`（full_path 为空串），先注册的那条反而让 `/` 落进
+    # `?full_path=…` 的查询参数，永远绑不上。
     @app.get("/{full_path:path}", include_in_schema=False)
     def _spa(full_path: str = "") -> FileResponse:
         # API 不该走到这里；真走到了就当不存在，免得把 JSON 请求喂成 HTML。
-        if full_path.startswith("api/"):
+        # 前缀比较大小写不敏感：`/API/...` 同样不该回落到页面。
+        if full_path.lower() == "api" or full_path.lower().startswith("api/"):
             raise HTTPException(status_code=404, detail="接口不存在")
+
         target = (root / full_path).resolve()
         # 防目录穿越：解析后的路径必须仍在产物目录内。
-        if (
-            full_path
-            and target.is_file()
-            and root.resolve() in target.parents
-        ):
+        if full_path and target.is_file() and root.resolve() in target.parents:
             return FileResponse(target)
+
+        # **看起来像文件名的路径不回落 index.html**：把一个缺失的 .js 当成 HTML
+        # 返回 200，浏览器会报「Unexpected token '<'」，比 404 难查得多。
+        last = full_path.rsplit("/", 1)[-1]
+        if "." in last:
+            raise HTTPException(status_code=404, detail="文件不存在")
+
         # 其余一律回落 index.html —— 单页应用的深链（/read、/chapters）靠这条。
         return FileResponse(root / "index.html")
 

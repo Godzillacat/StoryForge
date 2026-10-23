@@ -45,8 +45,16 @@ if (-not (Test-Path $exe)) {
 }
 
 Write-Host "==> 产物自检" -ForegroundColor Cyan
-& $exe --selftest
-if ($LASTEXITCODE -ne 0) { throw "产物自检失败（退出码 $LASTEXITCODE）" }
+# 自检失败时打包版会弹消息框；构建脚本要的是退出码，不能被框挡住。
+$env:STORYFORGE_NO_DIALOG = "1"
+# **必须用 Start-Process -Wait**：`console=False` 的 GUI 程序用 `&` 调用时
+# PowerShell 不会等它结束，`$LASTEXITCODE` 还是上一条命令（pyinstaller）的 0 ——
+# 自检失败也会报「构建完成」。实测过：`& $exe` 43ms 就返回、退出码是旧的。
+$selftest = Start-Process -FilePath $exe -ArgumentList '--selftest' -Wait -PassThru
+Remove-Item Env:\STORYFORGE_NO_DIALOG -ErrorAction SilentlyContinue
+if ($selftest.ExitCode -ne 0) {
+    throw "产物自检失败（退出码 $($selftest.ExitCode)）—— 见上面的输出"
+}
 
 Write-Host ""
 Write-Host "构建完成：$exe" -ForegroundColor Green

@@ -63,6 +63,23 @@ check(
     f"{status} {ctype}",
 )
 
+# ---- 5b. `/api` 本身与大小写变体也是 404 ----
+for path in ("/api", "/API/projects"):
+    status, body, _ctype = get(path)
+    check(
+        f"{path} 不回落成页面",
+        status == 404,
+        f"{status} {body[:60]!r}",
+    )
+
+# ---- 5c. 看起来像文件的路径 404，而不是返回 index.html ----
+status, body, _ctype = get("/chunks/missing.js")
+check(
+    "缺失的 .js 是 404 而不是 HTML",
+    status == 404,
+    f"{status} {body[:60]!r}",
+)
+
 # ---- 6. 目录穿越不能读到产物之外 ----
 status, body, _ctype = get("/../backend/app/config.py")
 leaked = body.decode("utf-8", "replace")
