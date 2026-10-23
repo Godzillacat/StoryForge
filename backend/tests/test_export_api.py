@@ -67,3 +67,22 @@ def test_export_rejects_unknown_format(client):
 
 def test_export_missing_project(client):
     assert client.get("/api/projects/nope/export?format=md").status_code == 404
+
+
+def test_book_returns_the_whole_text_in_one_request(client):
+    data = _create(client)
+
+    response = client.get(f"/api/projects/{data['project']['id']}/book")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["project_name"] == "雾港"
+    assert len(body["volumes"]) == 1
+    chapters = body["volumes"][0]["chapters"]
+    assert [row["title"] for row in chapters] == ["第一章"]
+    assert "雨落在旧城。" in chapters[0]["content"]
+    assert chapters[0]["word_count"] == body["total_words"]
+
+
+def test_book_missing_project_is_404(client):
+    assert client.get("/api/projects/nope/book").status_code == 404

@@ -1,10 +1,11 @@
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import Architecture from './pages/Architecture'
 import Chapters from './pages/Chapters'
 import Dashboard from './pages/Dashboard'
 import Idea from './pages/Idea'
 import Models from './pages/Models'
 import Pipeline from './pages/Pipeline'
+import Reader from './pages/Reader'
 import Relations from './pages/Relations'
 import Studio from './pages/Studio'
 import Terms from './pages/Terms'
@@ -22,12 +23,14 @@ const NAV = [
   { to: '/terms', label: '术语表' },
   { to: '/chapters', label: '章节设计' },
   { to: '/write', label: '写作台' },
+  { to: '/read', label: '阅读器' },
   { to: '/pipeline', label: '管线编排' },
   { to: '/studio', label: '智能体工作室' },
   { to: '/models', label: '模型与费用' },
 ]
 
 export default function App() {
+  const paddingless = useLocation().pathname
   return (
     <div className="flex h-screen">
       <aside className="w-56 shrink-0 border-r border-slate-800 p-4">
@@ -48,7 +51,12 @@ export default function App() {
           ))}
         </nav>
       </aside>
-      <main className="flex-1 overflow-auto p-6">
+      <main
+        className={`flex min-h-0 flex-1 flex-col overflow-auto ${
+          // 阅读器要通铺自己的配色与滚动区；其余页面统一内边距。
+          paddingless === '/read' ? '' : 'p-6'
+        }`}
+      >
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
@@ -60,6 +68,7 @@ export default function App() {
           <Route path="/terms" element={<Terms />} />
           <Route path="/chapters" element={<Chapters />} />
           <Route path="/write" element={<Writing />} />
+          <Route path="/read" element={<Reader />} />
           <Route path="/pipeline" element={<Pipeline />} />
           <Route path="/studio" element={<Studio />} />
           <Route path="/models" element={<Models />} />

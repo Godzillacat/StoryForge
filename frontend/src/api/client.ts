@@ -297,6 +297,8 @@ export const api = {
     request<BatchJob>(`/api/batches/${jobId}/retry-failed`, { method: 'POST' }),
   getExportReport: (projectId: string) =>
     request<ExportReport>(`/api/projects/${projectId}/export/report`),
+  readBook: (projectId: string) =>
+    request<BookResponse>(`/api/projects/${projectId}/book`),
   exportUrl: (projectId: string, format: 'md' | 'txt' | 'epub') =>
     `/api/projects/${projectId}/export?format=${format}`,
   resolveAuditIssue: (issueId: string, resolution: AuditResolution) =>
@@ -1420,4 +1422,28 @@ export interface BranchRevisionRow {
   chars: number
   created_at: string
   preview: string
+}
+
+export interface BookChapter {
+  id: string
+  seq: number
+  title: string
+  word_count: number
+  /** Markdown 原文；渲染交给前端。 */
+  content: string
+}
+
+export interface BookVolume {
+  id: string
+  seq: number
+  name: string
+  chapters: BookChapter[]
+}
+
+export interface BookResponse {
+  project_id: string
+  project_name: string
+  total_words: number
+  /** 只含有正文的章 —— 与导出口径一致。 */
+  volumes: BookVolume[]
 }

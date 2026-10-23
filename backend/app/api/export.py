@@ -28,6 +28,15 @@ def export_report(project_id: str, session: Session = Depends(get_session)) -> d
         raise _missing(exc) from exc
 
 
+@router.get("/projects/{project_id}/book")
+def read_book(project_id: str, session: Session = Depends(get_session)) -> dict:
+    """整本正文，供阅读器一次性取回（只收有正文的章）。"""
+    try:
+        return export_service.build_book(session, project_id)
+    except ValueError as exc:
+        raise _missing(exc) from exc
+
+
 @router.get("/projects/{project_id}/export")
 def export_project(
     project_id: str,
