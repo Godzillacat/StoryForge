@@ -41,11 +41,12 @@ def read_book(project_id: str, session: Session = Depends(get_session)) -> dict:
 def export_project(
     project_id: str,
     format: str = "md",
+    template: str | None = None,
     session: Session = Depends(get_session),
 ) -> Response:
     try:
         content, media_type, extension = export_service.build_export(
-            session, project_id, format
+            session, project_id, format, template=template
         )
         filename = export_service.export_filename(session, project_id, format)
     except ValueError as exc:

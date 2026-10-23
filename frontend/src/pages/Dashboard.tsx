@@ -13,6 +13,9 @@ import { ChangeList, SnapshotPanel } from '../components/Snapshots'
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
   const [selected, setSelected] = useState<Project | null>(null)
+  // 封面是否已设置。**与 `selected` 分开存**：它一变就替换 `selected` 的话，
+  // 下面的 report effect 会重跑、整张导出卡片塌成占位。
+  const [coverSet, setCoverSet] = useState(false)
   const [cost, setCost] = useState<CostSummary | null>(null)
   const [report, setReport] = useState<ExportReport | null>(null)
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -21,6 +24,10 @@ export default function Dashboard() {
   const [snapshots, setSnapshots] = useState<SnapshotView[]>([])
   const [changes, setChanges] = useState<ChangeRow[]>([])
   const reportToken = useRef(0)
+  // 导出模板是**每次导出选一次**的参数，不是项目设置 —— 所以不落库、不记忆。
+  const [epubTemplate, setEpubTemplate] = useState<'plain' | 'classic'>('plain')
+  const [coverBusy, setCoverBusy] = useState(false)
+  const coverInput = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     api
@@ -35,8 +42,10 @@ export default function Dashboard() {
     if (!selected) {
       setCost(null)
       setReport(null)
+      setCoverSet(false)
       return
     }
+    setCoverSet(Boolean(selected.has_cover))
     setReport(null)
     setSnapshots([])
     setChanges([])
@@ -93,6 +102,50 @@ export default function Dashboard() {
       setNotice('')
     } catch (error) {
       setNotice((error as Error).message)
+    }
+  }
+
+  /** 封面变了要把项目列表也刷新一次 —— `has_cover` 是列表接口给的。 */
+  async function refreshProjects() {
+    try {
+      const list = await api.listProjects()
+      setProjects(list)
+      // **不替换 `selected`**：它一换对象，下面的 report effect 就重跑，
+      // 整张导出卡片（连封面控件一起）会塌成占位再等一遍报告。
+      // 只需要把 has_cover 这一项同步过来。
+      setCoverSet(list.find((row) => row.id === selected?.id)?.has_cover ?? false)
+    } catch (error) {
+      setNotice((error as Error).message)
+    }
+  }
+
+  async function uploadCover(file: File | undefined) {
+    if (!file || !selected) return
+    setCoverBusy(true)
+    setNotice('')
+    try {
+      await api.uploadCover(selected.id, file)
+      await refreshProjects()
+    } catch (error) {
+      setNotice((error as Error).message)
+    } finally {
+      setCoverBusy(false)
+      // 同一个文件再选一次也要能触发 change。
+      if (coverInput.current) coverInput.current.value = ''
+    }
+  }
+
+  async function removeCover() {
+    if (!selected) return
+    setCoverBusy(true)
+    setNotice('')
+    try {
+      await api.removeCover(selected.id)
+      await refreshProjects()
+    } catch (error) {
+      setNotice((error as Error).message)
+    } finally {
+      setCoverBusy(false)
     }
   }
 
@@ -221,7 +274,7 @@ export default function Dashboard() {
                     {report.review_marks ?? 0}。仍可导出。
                   </p>
                 )}
-                <div className="flex flex-wrap gap-2 text-sm">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
                   <a
                     href={api.exportUrl(selected.id, 'md')}
                     className="rounded border border-slate-700 px-3 py-1 text-slate-300 hover:text-white"
@@ -234,12 +287,69 @@ export default function Dashboard() {
                   >
                     TXT
                   </a>
+                  <select
+                    className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-slate-300"
+                    value={epubTemplate}
+                    onChange={(event) =>
+                      setEpubTemplate(event.target.value as 'plain' | 'classic')
+                    }
+                    title="EPUB 的排版样式；每次导出选一次"
+                  >
+                    <option value="plain">素雅</option>
+                    <option value="classic">传统</option>
+                  </select>
                   <a
-                    href={api.exportUrl(selected.id, 'epub')}
+                    href={api.exportUrl(selected.id, 'epub', epubTemplate)}
                     className="rounded border border-slate-700 px-3 py-1 text-slate-300 hover:text-white"
                   >
                     EPUB
                   </a>
+                </div>
+
+                <div className="mt-3 space-y-1 border-t border-slate-800 pt-3 text-sm">
+                  <p className="text-xs text-slate-500">封面</p>
+                  {coverSet ? (
+                    <div className="flex items-center gap-2 text-xs">
+                      <img
+                        src={`/api/projects/${selected.id}/cover`}
+                        alt="封面"
+                        className="h-16 w-12 rounded border border-slate-700 object-cover"
+                      />
+                      <button
+                        className="text-slate-400 hover:text-white disabled:opacity-50"
+                        disabled={coverBusy}
+                        onClick={() => coverInput.current?.click()}
+                      >
+                        换一张
+                      </button>
+                      <button
+                        className="text-slate-400 hover:text-red-300 disabled:opacity-50"
+                        disabled={coverBusy}
+                        onClick={() => void removeCover()}
+                      >
+                        移除
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-slate-500">未设置封面，EPUB 不会带封面页。</span>
+                      <button
+                        className="text-slate-400 hover:text-white disabled:opacity-50"
+                        disabled={coverBusy}
+                        onClick={() => coverInput.current?.click()}
+                      >
+                        上传
+                      </button>
+                    </div>
+                  )}
+                  <input
+                    ref={coverInput}
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    className="hidden"
+                    onChange={(event) => void uploadCover(event.target.files?.[0])}
+                  />
+                  <p className="text-xs text-slate-600">PNG 或 JPEG，最大 4 MB。</p>
                 </div>
               </>
             ) : (
