@@ -297,6 +297,8 @@ export const api = {
     request<BatchJob>(`/api/batches/${jobId}/retry-failed`, { method: 'POST' }),
   getExportReport: (projectId: string) =>
     request<ExportReport>(`/api/projects/${projectId}/export/report`),
+  readBook: (projectId: string) =>
+    request<BookResponse>(`/api/projects/${projectId}/book`),
   exportUrl: (projectId: string, format: 'md' | 'txt' | 'epub') =>
     `/api/projects/${projectId}/export?format=${format}`,
   resolveAuditIssue: (issueId: string, resolution: AuditResolution) =>
@@ -1420,4 +1422,32 @@ export interface BranchRevisionRow {
   chars: number
   created_at: string
   preview: string
+}
+
+export interface BookChapter {
+  id: string
+  seq: number
+  title: string
+  word_count: number
+  /** 有没有已采纳正文。没有的章阅读器要标「未写」而不是藏起来。 */
+  has_body: boolean
+  /** Markdown 原文；没有正文时为空串。 */
+  content: string
+}
+
+export interface BookVolume {
+  id: string
+  seq: number
+  name: string
+  chapters: BookChapter[]
+}
+
+export interface BookResponse {
+  project_id: string
+  project_name: string
+  total_words: number
+  written_chapters: number
+  total_chapters: number
+  /** 空章也在里面 —— 作者要看得见这本书还差哪几章。 */
+  volumes: BookVolume[]
 }

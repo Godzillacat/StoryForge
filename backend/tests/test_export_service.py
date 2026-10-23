@@ -213,3 +213,60 @@ def test_report_counts_review_marks(session):
     session.commit()
 
     assert export_service.build_report(session, project.id)["review_marks"] == 1
+
+
+def test_book_lists_unwritten_chapters_so_the_author_sees_the_shape(session):
+    """阅读器要看见「还差哪几章」；只列有正文的章会让半本没写的稿子看起来是完整的。
+
+    与导出**刻意不同** —— 导出是成品，阅读器还要看进度。
+    """
+    project, _volume, _first, _second, _scene, _empty = _seed(session)
+
+    book = export_service.build_book(session, project.id)
+    chapters = book["volumes"][0]["chapters"]
+
+    assert [row["title"] for row in chapters] == ["开端", "空章"]
+    blank = chapters[1]
+    assert blank["has_body"] is False
+    assert blank["content"] == ""
+    assert blank["word_count"] == 0
+    assert book["written_chapters"] == 1
+    assert book["total_chapters"] == 2
+
+
+def test_book_content_matches_the_markdown_export(session):
+    """读到的必须就是导出的那份 —— 两个口径一旦分叉，作者读的就不是成品。"""
+    project, _volume, _first, _second, _scene, _empty = _seed(session)
+
+    book = export_service.build_book(session, project.id)
+    markdown = export_service.build_markdown(session, project.id)
+    written = [row for row in book["volumes"][0]["chapters"] if row["has_body"]]
+    content = written[0]["content"]
+
+    assert content in markdown
+
+
+def test_book_word_count_agrees_with_the_chapter_content(session):
+    project, *_ = _seed(session)
+
+    book = export_service.build_book(session, project.id)
+    chapters = book["volumes"][0]["chapters"]
+
+    assert book["total_words"] == sum(row["word_count"] for row in chapters)
+    assert chapters[0]["word_count"] == count_words(chapters[0]["content"])
+
+
+def test_book_of_an_empty_project_has_no_volumes(session):
+    project = Project(name="空白")
+    session.add(project)
+    session.commit()
+
+    book = export_service.build_book(session, project.id)
+
+    assert book["volumes"] == []
+    assert book["total_words"] == 0
+
+
+def test_book_of_a_missing_project_raises(session):
+    with pytest.raises(ValueError, match="项目不存在"):
+        export_service.build_book(session, "nope")

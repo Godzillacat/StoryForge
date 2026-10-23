@@ -181,16 +181,73 @@ def _book_chapters(session: Session, project_id: str) -> list[tuple[str, str]]:
     result: list[tuple[str, str]] = []
     for volume in _ordered_volumes(session, project_id):
         for chapter in _ordered_chapters(session, volume.id):
-            chunks = [
-                (scene.body or "").strip()
-                for scene in _ordered_scenes(session, chapter.id)
-                if (scene.body or "").strip()
-            ]
-            if not chunks:
+            content = _chapter_text(session, chapter)
+            if not content:
                 continue
             title = f"第{volume.seq + 1}卷 {volume.name} · 第{chapter.seq + 1}章 {chapter.title}"
-            result.append((title, "\n\n".join(chunks)))
+            result.append((title, content))
     return result
+
+
+def _chapter_text(session: Session, chapter: Chapter) -> str:
+    """章内正文：按场景顺序用空行拼接。**导出与阅读器共用这一份口径。**"""
+    return "\n\n".join(
+        (scene.body or "").strip()
+        for scene in _ordered_scenes(session, chapter.id)
+        if (scene.body or "").strip()
+    )
+
+
+def build_book(session: Session, project_id: str) -> dict:
+    """整本正文，供阅读器一次性取回。
+
+    **空章也返回**（`content` 为空、`has_body` 为 false）：阅读器要让作者看见
+    「这本书还差哪几章」，只列有正文的章会让半本没写的稿子看起来是完整的。
+    这与导出**刻意不同** —— 导出是成品，读到哪算到哪；阅读器还要看进度。
+
+    `content` 是 Markdown 原文，渲染交给前端：渲染规则属于展示层，后端不该
+    知道「段落怎么画」。
+    """
+    project = _project(session, project_id)
+    volumes: list[dict] = []
+    total_words = 0
+    written_chapters = 0
+    for volume in _ordered_volumes(session, project_id):
+        chapters: list[dict] = []
+        for chapter in _ordered_chapters(session, volume.id):
+            content = _chapter_text(session, chapter)
+            words = count_words(content)
+            if content:
+                written_chapters += 1
+            total_words += words
+            chapters.append(
+                {
+                    "id": chapter.id,
+                    "seq": chapter.seq,
+                    "title": chapter.title,
+                    "word_count": words,
+                    "has_body": bool(content),
+                    "content": content,
+                }
+            )
+        if chapters:
+            volumes.append(
+                {
+                    "id": volume.id,
+                    "seq": volume.seq,
+                    "name": volume.name,
+                    "chapters": chapters,
+                }
+            )
+    return {
+        "project_id": project.id,
+        "project_name": project.name,
+        "total_words": total_words,
+        "written_chapters": written_chapters,
+        "total_chapters": sum(len(vol["chapters"]) for vol in volumes),
+        "volumes": volumes,
+    }
+
 
 
 def build_markdown(session: Session, project_id: str) -> str:
@@ -199,16 +256,10 @@ def build_markdown(session: Session, project_id: str) -> str:
     for volume in _ordered_volumes(session, project_id):
         chapters = []
         for chapter in _ordered_chapters(session, volume.id):
-            chunks = [
-                (scene.body or "").strip()
-                for scene in _ordered_scenes(session, chapter.id)
-                if (scene.body or "").strip()
-            ]
-            if not chunks:
+            content = _chapter_text(session, chapter)
+            if not content:
                 continue
-            chapters.append(
-                f"### 第{chapter.seq + 1}章 {chapter.title}\n\n" + "\n\n".join(chunks)
-            )
+            chapters.append(f"### 第{chapter.seq + 1}章 {chapter.title}\n\n" + content)
         if chapters:
             parts.append(f"## 第{volume.seq + 1}卷 {volume.name}")
             parts.extend(chapters)
@@ -238,17 +289,10 @@ def build_text(session: Session, project_id: str) -> str:
     for volume in _ordered_volumes(session, project_id):
         chapters = []
         for chapter in _ordered_chapters(session, volume.id):
-            chunks = [
-                (scene.body or "").strip()
-                for scene in _ordered_scenes(session, chapter.id)
-                if (scene.body or "").strip()
-            ]
-            if not chunks:
+            content = _chapter_text(session, chapter)
+            if not content:
                 continue
-            chapters.append(
-                f"第{chapter.seq + 1}章 {chapter.title}\n\n"
-                + "\n\n".join(chunks)
-            )
+            chapters.append(f"第{chapter.seq + 1}章 {chapter.title}\n\n" + content)
         if chapters:
             parts.append(f"第{volume.seq + 1}卷 {volume.name}")
             parts.extend(chapters)
