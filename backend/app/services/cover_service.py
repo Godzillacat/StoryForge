@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -45,13 +46,35 @@ def _cover_file(project_id: str, extension: str) -> Path:
     return config.project_assets_dir(project_id) / f"cover.{extension}"
 
 
+def _inside_assets(project_id: str, path: Path) -> bool:
+    """`cover_path` 是库里的值，可能被手工改过或被回滚带回来 —— 删除前必须
+    确认它就在这个项目的资产目录里，否则一条坏数据能删掉任意文件。"""
+    try:
+        return path.resolve().parent == config.project_assets_dir(project_id).resolve()
+    except OSError:
+        return False
+
+
 def _existing(session: Session, project_id: str) -> Path | None:
-    """`cover_path` 指向的文件真的在才认；用户手工删过就当没有。"""
+    """`cover_path` 指向的文件真的在、且确实是一张图才认。
+
+    **要嗅探内容而不只是看文件在不在**：文件被换成垃圾字节时，界面若还显示
+    「已设置」，作者导出的 EPUB 却没有封面页 —— 两处说法打架。
+    """
     project = _project(session, project_id)
     if not project.cover_path:
         return None
     path = Path(project.cover_path)
-    return path if path.is_file() else None
+    if not path.is_file() or not _inside_assets(project_id, path):
+        return None
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(16)
+    except OSError:
+        return None
+    if detect(head) is None:
+        return None
+    return path
 
 
 def has_cover(session: Session, project_id: str) -> bool:
@@ -73,15 +96,20 @@ def save_cover(session: Session, project_id: str, data: bytes) -> dict:
     extension, media_type = detected
 
     target = _cover_file(project_id, extension)
-    # 临时文件 + 替换：写到一半断电不会留下半截封面。
-    temporary = target.with_suffix(target.suffix + ".tmp")
-    temporary.write_bytes(data)
-    os.replace(temporary, target)
+    # 临时文件 + 替换：写到一半断电不会留下半截封面。名字带随机后缀，
+    # 两个同格式的上传并发时不会抢同一个临时文件。
+    temporary = target.with_name(f"{target.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_bytes(data)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
 
     # 换成另一种格式时把旧文件删掉，免得两份并存、`cover_path` 指向哪个看运气。
+    # 旧路径来自库里的值，删之前确认它在本项目资产目录内。
     if project.cover_path:
         previous = Path(project.cover_path)
-        if previous != target and previous.is_file():
+        if previous != target and previous.is_file() and _inside_assets(project_id, previous):
             previous.unlink(missing_ok=True)
 
     project.cover_path = str(target)
@@ -93,7 +121,8 @@ def clear_cover(session: Session, project_id: str) -> None:
     project = _project(session, project_id)
     if project.cover_path:
         path = Path(project.cover_path)
-        if path.is_file():
+        # 同上：只删本项目资产目录里的文件。
+        if path.is_file() and _inside_assets(project_id, path):
             path.unlink(missing_ok=True)
         project.cover_path = None
         session.commit()

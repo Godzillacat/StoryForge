@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api._serializers import _idea_out
@@ -56,7 +56,7 @@ def update_project(
         project = project_service.update_project(session, project_id, **payload.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return _project_out(project)
+    return _project_out(project, has_cover=cover_service.has_cover(session, project_id))
 
 
 @router.delete("/{project_id}", status_code=204)
@@ -73,7 +73,9 @@ async def upload_cover(
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
 ) -> dict:
-    data = await file.read()
+    # 多读 1 字节就能判断「超限」：整个文件读进来再检查，作者误选一个
+    # 400 MB 的 PSD 会把内存和事件循环一起拖住。
+    data = await file.read(cover_service.MAX_COVER_BYTES + 1)
     try:
         return cover_service.save_cover(session, project_id, data)
     except ValueError as exc:
@@ -89,6 +91,20 @@ def remove_cover(project_id: str, session: Session = Depends(get_session)) -> No
         cover_service.clear_cover(session, project_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{project_id}/cover")
+def read_cover(project_id: str, session: Session = Depends(get_session)) -> Response:
+    """封面原图。仪表盘拿它当缩略图（本机回环，几 MB 以内不必缩）。"""
+    try:
+        files = cover_service.cover_files(session, project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if files is None:
+        raise HTTPException(status_code=404, detail="这个项目没有封面")
+    data, media_type, _name = files
+    # 封面内容不变的话让浏览器缓存，切项目来回时不重复下载。
+    return Response(content=data, media_type=media_type)
 
 
 @router.get("/{project_id}/ideas")

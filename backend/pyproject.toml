@@ -19,7 +19,3 @@ dev = ["pytest>=9.1", "pytest-asyncio>=1.0"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-
-[[tool.uv.index]]
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
-default = true

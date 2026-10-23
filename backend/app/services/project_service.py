@@ -44,6 +44,11 @@ def delete_project(session: Session, project_id: str) -> None:
     session.delete(project)
     session.commit()
     # 资产目录跟着项目走：库里的行没了，磁盘上的封面与附件不该留下无主文件。
-    assets = config.data_dir() / "projects" / project_id
-    if assets.is_dir():
+    # 用 project.id（库里那条）而不是请求里的 project_id；路径也只从
+    # project_assets_dir 这一处来 —— 存储布局不该有第二份定义。
+    # 注意它在目录不存在时会建出一个空的，所以这里只删已存在的。
+    assets = config.project_assets_dir(project.id)
+    if assets.is_dir() and not any(assets.iterdir()):
+        assets.rmdir()
+    else:
         shutil.rmtree(assets, ignore_errors=True)

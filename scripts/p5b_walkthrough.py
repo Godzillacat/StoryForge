@@ -136,6 +136,17 @@ check(
 ncx = plain.read("OEBPS/toc.ncx").decode("utf-8")
 check("ncx 存在且列章", "<navMap>" in ncx and "第1章 开端" in ncx, ncx[:120])
 check("opf 指向 ncx", '<spine toc="ncx">' in opf)
+check(
+    "ncx 也是两级（卷父 + 章子）",
+    ncx.count("<navPoint ") == 4 and 'id="np-volume-1"' in ncx and 'id="np-1"' in ncx,
+    str(ncx.count("<navPoint ")),
+)
+orders = [int(part.split('"')[0]) for part in ncx.split('playOrder="')[1:]]
+check(
+    "ncx playOrder 连续唯一",
+    orders == list(range(1, len(orders) + 1)),
+    str(orders),
+)
 
 # ---- 5. 正文转义 ----
 jget("PUT", f"/api/scenes/{s3['id']}/body", {"content": "<script>alert(1)</script>"})
@@ -173,6 +184,19 @@ check(
 )
 cover_page = with_cover.read("OEBPS/cover.xhtml").decode("utf-8")
 check("封面页指向真实文件", 'src="cover-image.png"' in cover_page, cover_page[:200])
+check(
+    "封面页带样式表且整页铺图",
+    'href="style.css"' in cover_page and 'class="cover-page"' in cover_page,
+    cover_page[:200],
+)
+
+# 缩略图接口
+status, payload = call("GET", f"/api/projects/{pid}/cover")
+check(
+    "封面原图可读（仪表盘缩略图用）",
+    status == 200 and payload.startswith(b"\x89PNG"),
+    f"{status} {payload[:8]!r}",
+)
 
 # 非图片被拒
 body, ctype = multipart("file", "cover.png", b"not an image", "image/png")

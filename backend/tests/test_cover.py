@@ -99,6 +99,40 @@ def test_a_hand_deleted_file_counts_as_no_cover(session):
     assert cover_service.cover_files(session, project.id) is None
 
 
+def test_a_corrupted_file_also_counts_as_no_cover(session):
+    """文件被换成垃圾字节时，界面与 EPUB 必须说法一致 —— 否则作者看到
+    「已设置」，导出的书却没有封面页。"""
+    project = _project(session)
+    cover_service.save_cover(session, project.id, PNG)
+    (config.project_assets_dir(project.id) / "cover.png").write_bytes(b"garbage")
+
+    assert cover_service.has_cover(session, project.id) is False
+    assert cover_service.cover_files(session, project.id) is None
+
+
+def test_a_cover_path_pointing_outside_the_assets_dir_is_ignored(session, tmp_path):
+    """库里的路径可能被手工改过或被回滚带回来 —— 它不该让删除操作碰到别的文件。"""
+    project = _project(session)
+    outside = tmp_path / "somebody-elses.png"
+    outside.write_bytes(PNG)
+    project.cover_path = str(outside)
+    session.commit()
+
+    assert cover_service.has_cover(session, project.id) is False
+
+    cover_service.clear_cover(session, project.id)
+    assert outside.exists(), "资产目录之外的文件绝不能被删"
+
+
+def test_no_temp_file_is_left_behind(session):
+    project = _project(session)
+
+    cover_service.save_cover(session, project.id, PNG)
+
+    leftovers = list(config.project_assets_dir(project.id).glob("*.tmp"))
+    assert leftovers == []
+
+
 def _book(session, project) -> None:
     volume = Volume(project_id=project.id, seq=0, name="第一卷")
     session.add(volume)

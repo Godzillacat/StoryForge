@@ -103,6 +103,35 @@ def test_ncx_lists_chapters_for_old_readers(session):
     assert '<spine toc="ncx">' in opf
 
 
+def test_ncx_is_two_levels_like_the_nav(session):
+    """老阅读器只看 ncx —— 它若平铺，两卷里的「第1章」会一模一样地排在一起。"""
+    project = _two_volumes(session)
+
+    archive = zipfile.ZipFile(BytesIO(export_service.build_epub(session, project.id)))
+    ncx = archive.read("OEBPS/toc.ncx").decode("utf-8")
+
+    assert ncx.count("<navPoint ") == 4  # 两卷 + 两章
+    assert ncx.index("第1卷 起雾") < ncx.index("第1章 开端")
+    # 章点嵌在卷点里面：卷点关闭标签之前出现章点。
+    volume_one = ncx.split('id="np-volume-1"', 1)[1]
+    assert 'id="np-1"' in volume_one
+    assert volume_one.index('id="np-1"') < volume_one.index("</navPoint>")
+
+
+def test_ncx_play_order_is_contiguous(session):
+    project = _two_volumes(session)
+
+    archive = zipfile.ZipFile(BytesIO(export_service.build_epub(session, project.id)))
+    ncx = archive.read("OEBPS/toc.ncx").decode("utf-8")
+
+    orders = [
+        int(part.split('"')[0])
+        for part in ncx.split('playOrder="')[1:]
+    ]
+    assert orders == sorted(orders)
+    assert orders == list(range(1, len(orders) + 1))
+
+
 def test_unwritten_chapters_are_skipped(session):
     project = _two_volumes(session)
 

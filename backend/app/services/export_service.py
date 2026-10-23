@@ -292,16 +292,16 @@ def _paragraphs(text: str) -> list[str]:
     return ["<p>" + escape(block).replace("\n", "<br/>") + "</p>" for block in blocks]
 
 
-def _xhtml(title: str, body: str, *, css: bool = True) -> str:
+def _xhtml(title: str, body: str, *, body_class: str = "") -> str:
     head = f"<head><title>{escape(title)}</title>"
-    if css:
-        head += '<link rel="stylesheet" type="text/css" href="style.css"/>'
+    head += '<link rel="stylesheet" type="text/css" href="style.css"/>'
     head += "</head>"
+    class_attr = f' class="{body_class}"' if body_class else ""
     return (
         '<?xml version="1.0" encoding="utf-8"?>\n'
         "<!DOCTYPE html>\n"
         '<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh">\n'
-        f"{head}\n<body>\n{body}\n</body>\n</html>"
+        f"{head}\n<body{class_attr}>\n{body}\n</body>\n</html>"
     )
 
 
@@ -316,11 +316,12 @@ def _volume_xhtml(title: str) -> str:
 
 
 def _cover_xhtml(image_name: str) -> str:
-    # 封面页不带样式表：它只有一张图，任何边距都会让图四周出现白边。
+    # 带样式表：模板里的 `.cover img { max-width/max-height: 100% }` 要靠它
+    # 才能把大图缩进屏幕；不带的话 1600px 的封面会在手机上溢出。
     return _xhtml(
         "封面",
         f'<div class="cover"><img src="{image_name}" alt="封面"/></div>',
-        css=False,
+        body_class="cover-page",
     )
 
 
@@ -354,7 +355,6 @@ def _book_structure(session: Session, project_id: str) -> list[dict]:
             volumes.append(
                 {
                     "title": f"第{volume.seq + 1}卷 {volume.name}",
-                    "name": volume.name,
                     "chapters": chapters,
                 }
             )
@@ -375,10 +375,11 @@ def build_epub(
     if not structure:
         # 还没有正文：仍然出一本合法的空书（带一章占位），作者能打开确认
         # 「确实是空的」，而不是拿到一个连章节都没有、阅读器打不开的文件。
+        # 这一卷是合成的、不是作者排的，所以不出卷扉页 —— 否则扉页与正文
+        # 会是同一个书名。
         structure = [
             {
-                "title": project.name,
-                "name": project.name,
+                "title": "",
                 "chapters": [{"title": project.name, "content": ""}],
             }
         ]
@@ -425,8 +426,14 @@ def build_epub(
             spine.append('<itemref idref="cover" linear="yes"/>')
 
         volume_no = 0
+        # ncx 的 playOrder 必须连续且唯一，卷点与章点都占一个号 —— 两套目录
+        # 的层级必须一致，否则老阅读器只看得到一堆同号的「第1章」。
+        order = 0
         for volume in structure:
-            if volume["chapters"]:
+            # 合成的兜底卷（title 为空）没有卷扉页，也不进目录 —— 它不是一个
+            # 作者排出来的卷。
+            has_volume_page = bool(volume["title"])
+            if has_volume_page:
                 volume_no += 1
                 name = f"volume-{volume_no}.xhtml"
                 archive.writestr(f"OEBPS/{name}", _volume_xhtml(volume["title"]))
@@ -435,15 +442,16 @@ def build_epub(
                     'media-type="application/xhtml+xml"/>'
                 )
                 spine.append(f'<itemref idref="volume-{volume_no}"/>')
-                nav_volume = (
-                    f'<li><a href="{name}">{escape(volume["title"])}</a><ol>'
-                )
+                nav_volume = f'<li><a href="{name}">{escape(volume["title"])}</a><ol>'
+                order += 1
+                volume_order = order
             else:
-                # 空项目兜底出来的那一卷没有扉页，也不该进目录。
-                nav_volume = ""
                 name = ""
+                nav_volume = ""
+                volume_order = 0
 
             chapters_nav: list[str] = []
+            nested_ncx: list[str] = []
             for chapter in volume["chapters"]:
                 chapter_no += 1
                 chapter_name = f"chapter-{chapter_no}.xhtml"
@@ -455,20 +463,29 @@ def build_epub(
                     'media-type="application/xhtml+xml"/>'
                 )
                 spine.append(f'<itemref idref="chapter-{chapter_no}"/>')
+                order += 1
                 chapters_nav.append(
                     f'<li><a href="{chapter_name}">{escape(chapter["title"])}</a></li>'
                 )
-                if name:
-                    ncx_points.append(
-                        f'<navPoint id="np-{chapter_no}" playOrder="{chapter_no}">'
-                        f'<navLabel><text>{escape(chapter["title"])}</text></navLabel>'
-                        f'<content src="{chapter_name}"/></navPoint>'
-                    )
-
-            if name:
-                nav_volumes.append(
-                    nav_volume + "".join(chapters_nav) + "</ol></li>"
+                nested_ncx.append(
+                    f'<navPoint id="np-{chapter_no}" playOrder="{order}">'
+                    f'<navLabel><text>{escape(chapter["title"])}</text></navLabel>'
+                    f'<content src="{chapter_name}"/></navPoint>'
                 )
+
+            if has_volume_page:
+                nav_volumes.append(nav_volume + "".join(chapters_nav) + "</ol></li>")
+                ncx_points.append(
+                    f'<navPoint id="np-volume-{volume_no}" playOrder="{volume_order}">'
+                    f'<navLabel><text>{escape(volume["title"])}</text></navLabel>'
+                    f'<content src="{name}"/>'
+                    + "".join(nested_ncx)
+                    + "</navPoint>"
+                )
+            else:
+                # 兜底卷：章直接挂在目录顶层。
+                nav_volumes.extend(chapters_nav)
+                ncx_points.extend(nested_ncx)
 
         archive.writestr(
             "OEBPS/nav.xhtml",

@@ -13,6 +13,9 @@ import { ChangeList, SnapshotPanel } from '../components/Snapshots'
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
   const [selected, setSelected] = useState<Project | null>(null)
+  // 封面是否已设置。**与 `selected` 分开存**：它一变就替换 `selected` 的话，
+  // 下面的 report effect 会重跑、整张导出卡片塌成占位。
+  const [coverSet, setCoverSet] = useState(false)
   const [cost, setCost] = useState<CostSummary | null>(null)
   const [report, setReport] = useState<ExportReport | null>(null)
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -39,8 +42,10 @@ export default function Dashboard() {
     if (!selected) {
       setCost(null)
       setReport(null)
+      setCoverSet(false)
       return
     }
+    setCoverSet(Boolean(selected.has_cover))
     setReport(null)
     setSnapshots([])
     setChanges([])
@@ -105,9 +110,10 @@ export default function Dashboard() {
     try {
       const list = await api.listProjects()
       setProjects(list)
-      setSelected((current) =>
-        current ? list.find((row) => row.id === current.id) ?? current : current,
-      )
+      // **不替换 `selected`**：它一换对象，下面的 report effect 就重跑，
+      // 整张导出卡片（连封面控件一起）会塌成占位再等一遍报告。
+      // 只需要把 has_cover 这一项同步过来。
+      setCoverSet(list.find((row) => row.id === selected?.id)?.has_cover ?? false)
     } catch (error) {
       setNotice((error as Error).message)
     }
@@ -302,9 +308,13 @@ export default function Dashboard() {
 
                 <div className="mt-3 space-y-1 border-t border-slate-800 pt-3 text-sm">
                   <p className="text-xs text-slate-500">封面</p>
-                  {selected.has_cover ? (
+                  {coverSet ? (
                     <div className="flex items-center gap-2 text-xs">
-                      <span className="text-emerald-400">已设置</span>
+                      <img
+                        src={`/api/projects/${selected.id}/cover`}
+                        alt="封面"
+                        className="h-16 w-12 rounded border border-slate-700 object-cover"
+                      />
                       <button
                         className="text-slate-400 hover:text-white disabled:opacity-50"
                         disabled={coverBusy}

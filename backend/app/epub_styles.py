@@ -51,6 +51,11 @@ hr {
   border-top: 1px solid #ccc;
   margin: 1.8em 2em;
 }
+/* 封面页整页铺图，不能被正文的页边距框住。 */
+body.cover-page {
+  margin: 0;
+  padding: 0;
+}
 .cover {
   margin: 0;
   padding: 0;
@@ -101,6 +106,11 @@ hr {
   border: none;
   border-top: 1px solid #bbb;
   margin: 1.8em 2em;
+}
+/* 封面页整页铺图，不能被正文的页边距框住。 */
+body.cover-page {
+  margin: 0;
+  padding: 0;
 }
 .cover {
   margin: 0;
