@@ -1,10 +1,10 @@
-"""修订建议：生成（Task 2）。
+"""修订建议：生成（Task 2）与逐条应用（Task 3）。
 
 链路固定：影响面 → 过滤未锁的场景/章 → 组两个临时槽位跑「修订建议师」
 → 归一模型给的对象名与字段 → 只留能落到真实对象上的建议。
 
-**本模块的 `suggest()` 不写库。** 建议只落在 `generation_run.parsed_json`，
-等作者逐条勾选后由 `apply()`（Task 3）写入，并在写入前再查一次锁定与现值。
+**`suggest()` 不写业务表。** 建议只落在 `generation_run.parsed_json`，
+等作者逐条勾选后由 `apply()` 写入，并在写入前再查一次锁定与现值。
 
 两个必须记住的约束：
 - 模型看到的对象名就是这里给它的候选标签，所以映射必须**精确到 id**；
@@ -18,8 +18,15 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Architecture, Chapter, Scene, SettingEntry, Volume
-from app.services import agent_service, impact_service
+from app.db.models import (
+    Architecture,
+    Chapter,
+    GenerationRun,
+    Scene,
+    SettingEntry,
+    Volume,
+)
+from app.services import agent_service, change_service, impact_service, lock_service
 from app.services.runtime_service import RuntimeService
 
 # 单次最多 12 条建议；候选也按同一上限截断。
@@ -55,6 +62,18 @@ _ALLOWED_FIELDS = {
     "scene": ("goal", "conflict", "turn"),
     "chapter": ("summary",),
 }
+
+# 服务端解析后的建议写回运行记录时用的键。模型的原始输出原样保留，
+# 应用时只认这份解析结果 —— 下标与生成时的 before 都钉在这里。
+_RESOLVED_KEY = "resolved_suggestions"
+
+# 逐条应用时跳过某条的原因。放在一处，界面与测试都对着同一份文案。
+_SKIP_BAD_INDEX = "下标无效"
+_SKIP_MISSING = "对象已删除"
+_SKIP_LOCKED = "已锁定"
+_SKIP_APPLIED = "已应用"
+_SKIP_STALE = "现值已变化"
+_SKIP_FIELD = "字段不可修改"
 
 # 描述「这次改了什么」时从目标对象上取哪些字段。
 _TARGET_FIELDS = {
@@ -258,6 +277,21 @@ def _parse_suggestions(
     return suggestions, dropped
 
 
+def _persist_suggestions(
+    session: Session, run: GenerationRun, suggestions: list[dict]
+) -> None:
+    """把服务端解析后的建议写回运行记录，供 `apply()` 按 run_id + 下标取用。
+
+    模型的原始 `suggestions` 原样保留（调试台要看得见它到底返回了什么），
+    解析结果另起一个键。不存这份结果的话，`apply()` 只能重新解析一遍，
+    而候选会随下游内容变化、下标随之漂移 —— 作者勾的第 2 条可能写到别的
+    对象上。`before` 也必须以生成时的值为准，事后重取的现值比不出「已变化」。
+    """
+    parsed = run.parsed_json if isinstance(run.parsed_json, dict) else {}
+    run.parsed_json = {**parsed, _RESOLVED_KEY: suggestions}
+    session.commit()
+
+
 def _skipped(warning: str) -> dict:
     return {
         "run_id": None,
@@ -335,6 +369,7 @@ def _suggest(
         )
 
     suggestions, dropped = _parse_suggestions(run.parsed_json, candidates)
+    _persist_suggestions(session, run, suggestions)
     warning = (
         f"有 {dropped} 条建议没对上受影响对象或可改字段，已丢弃" if dropped else ""
     )
@@ -345,3 +380,123 @@ def _suggest(
         "dropped": dropped,
         "warning": warning,
     }
+
+
+def _row_of(session: Session, target_type: str, target_id: str):
+    """按建议里的对象类型取回当前行；类型不认识也当「对象已删除」。"""
+    if target_type == "scene":
+        return session.get(Scene, target_id)
+    if target_type == "chapter":
+        return session.get(Chapter, target_id)
+    return None
+
+
+def _locked(session: Session, target_type: str, row) -> bool:
+    """锁定检查。场景看自己/章/卷三级继承，章看自己与所属卷。"""
+    if target_type == "scene":
+        return bool(lock_service.effective_scene_lock(session, row)["locked"])
+    volume = session.get(Volume, row.volume_id)
+    return bool(row.locked or (volume is not None and volume.locked))
+
+
+def apply(session: Session, project_id: str, run_id: str, accepted: list[int]) -> dict:
+    """把作者勾选的建议逐条写进库，并各记一条改动历史。
+
+    只认运行记录里服务端在生成时存下的那份建议：请求只带下标，`after` 与
+    `before` 都从库里读回 —— 前端无法决定写入什么内容，也无法把下标指到
+    另一条上去。每条落库前再查一次「对象还在、没被锁、现值仍等于 before」，
+    任一不成立就跳过并给出原因；能写的与历史记录在同一事务里提交。
+
+    Raises:
+        ValueError: 运行记录不存在 / 不属于这个项目 / 不是一次可应用的运行。
+    """
+    run = session.get(GenerationRun, run_id)
+    if run is None:
+        raise ValueError(f"运行记录不存在：{run_id}")
+    if run.project_id != project_id:
+        raise ValueError(f"运行记录不存在于这个项目：{run_id}")
+
+    parsed = run.parsed_json if isinstance(run.parsed_json, dict) else None
+    if parsed is None or "suggestions" not in parsed:
+        raise ValueError(f"这次运行没有可应用的修订建议：{run_id}")
+    suggestions = parsed.get(_RESOLVED_KEY)
+    if not isinstance(suggestions, list):
+        # 解析结果由服务端写回；缺失说明这条运行不是本链路产出的（或来自旧版本），
+        # 重新解析会让下标漂移，所以宁可让作者重新生成一次。
+        raise ValueError("这次运行的建议缺少服务端解析结果，请重新生成修订建议")
+
+    applied: list[dict] = []
+    skipped: list[dict] = []
+    seen: set[int] = set()
+    for raw_index in accepted or []:
+        try:
+            index = int(raw_index)
+        except (TypeError, ValueError):
+            skipped.append({"index": raw_index, "reason": _SKIP_BAD_INDEX})
+            continue
+        # 同一批里重复勾同一个下标（列表传重了）：只算一次，不算错误。
+        if index in seen:
+            continue
+        seen.add(index)
+        if index < 0 or index >= len(suggestions):
+            skipped.append({"index": index, "reason": _SKIP_BAD_INDEX})
+            continue
+
+        item = suggestions[index] if isinstance(suggestions[index], dict) else None
+        if item is None:
+            skipped.append({"index": index, "reason": _SKIP_BAD_INDEX})
+            continue
+
+        target_type = str(item.get("target_type") or "")
+        target_id = str(item.get("target_id") or "")
+        field = str(item.get("field") or "")
+        field_label = str(
+            item.get("field_label") or _FIELD_LABELS.get(field) or field
+        )
+        target_label = str(item.get("target_label") or "")
+        before = str(item.get("before") or "")
+        after = str(item.get("after") or "")
+
+        # 白名单兜底：运行记录里混进别的字段（被改过、或来自更早的版本）也不写。
+        if field not in _ALLOWED_FIELDS.get(target_type, ()):
+            skipped.append({"index": index, "reason": _SKIP_FIELD})
+            continue
+
+        row = _row_of(session, target_type, target_id)
+        if row is None:
+            skipped.append({"index": index, "reason": _SKIP_MISSING})
+            continue
+        if _locked(session, target_type, row):
+            skipped.append({"index": index, "reason": _SKIP_LOCKED})
+            continue
+
+        current = str(getattr(row, field, "") or "")
+        if current != before:
+            # 现值已经等于建议值：说明这一批之前应用过一次。单独给「已应用」，
+            # 与「作者手改过」区分开 —— 两者都写不得，但作者在意的不是一回事。
+            reason = _SKIP_APPLIED if current == after else _SKIP_STALE
+            skipped.append({"index": index, "reason": reason})
+            continue
+
+        setattr(row, field, after)
+        change_service.record(
+            session,
+            project_id,
+            target_type=target_type,
+            target_id=target_id,
+            target_label=target_label,
+            action="update",
+            source="ai",
+            summary=f"修订建议 · {field_label}",
+        )
+        applied.append(
+            {
+                "index": index,
+                "target_label": target_label,
+                "field": field,
+                "field_label": field_label,
+            }
+        )
+
+    session.commit()
+    return {"applied": applied, "skipped": skipped}

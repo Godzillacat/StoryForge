@@ -1,8 +1,9 @@
-"""修订建议：槽位、预置、任务类型（Task 1）与生成（Task 2）。
+"""修订建议：槽位、预置、任务类型（Task 1）、生成（Task 2）与应用（Task 3）。
 
 Task 1 的用例先跑红、再实现：新槽位没注册时上下文组装会整段跳过，
 新任务类型没登记时 `find_by_task_type` 找不到智能体。
 Task 2 的用例同样先跑红：`revision_service` 模块一开始并不存在。
+Task 3 的用例先跑红：`apply()` 不存在，且运行记录里还没有服务端解析结果。
 """
 
 import json
@@ -10,7 +11,15 @@ import json
 import pytest
 from sqlalchemy import select
 
-from app.db.models import Architecture, Chapter, Project, Scene, Volume
+from app.db.models import (
+    Architecture,
+    ChangeLog,
+    Chapter,
+    GenerationRun,
+    Project,
+    Scene,
+    Volume,
+)
 
 
 @pytest.fixture()
@@ -592,3 +601,261 @@ def test_suggest_reports_unstructured_output_without_half_json(
     assert result["llm_status"] == "error"
     assert result["suggestions"] == []
     assert "契约" in result["warning"]
+
+
+# ---- Task 3：apply() ----
+
+_SUGGESTIONS = [
+    {
+        "target_label": "第1卷 第1章 场景1",
+        "field": "目标",
+        "after": "改后的目标",
+        "reason": "动机变了",
+    },
+    {
+        "target_label": "第1卷 第1章 场景2",
+        "field": "冲突",
+        "after": "改后的冲突",
+        "reason": "冲突要跟上",
+    },
+    {
+        "target_label": "第1卷 第1章（失踪的船主）",
+        "field": "摘要",
+        "after": "改后的摘要",
+        "reason": "摘要要覆盖新动机",
+    },
+]
+
+
+@pytest.fixture()
+def run_with_suggestions(session, project, scenes, runtime_ready):
+    """跑一次真实生成链路，拿到一条带三条建议的运行记录。
+
+    应用只认运行记录里服务端存下的建议，所以夹具必须走 `suggest()` ——
+    手工拼 `parsed_json` 测不到「服务端在生成时填的 before 被读回」这条。
+    """
+    from app.services import revision_service
+
+    arch = _architecture_of(session, project)
+    result = revision_service.suggest(
+        session,
+        project.id,
+        "architecture",
+        arch.id,
+        client=_model_client(_content(_SUGGESTIONS)),
+    )
+    assert result["llm_status"] == "ok"
+    assert [s["index"] for s in result["suggestions"]] == [0, 1, 2]
+    run = session.get(GenerationRun, result["run_id"])
+    assert run is not None
+    return run
+
+
+def _changes_of(session, target_id: str) -> list[ChangeLog]:
+    return list(
+        session.scalars(select(ChangeLog).where(ChangeLog.target_id == target_id))
+    )
+
+
+def test_apply_writes_only_accepted_and_records_history(
+    session, project, scenes, run_with_suggestions
+):
+    """采纳一条 → 只有那一条落库，改动历史恰好一条且来源是 AI。"""
+    from app.services import revision_service
+
+    out = revision_service.apply(
+        session, project.id, run_with_suggestions.id, [0]
+    )
+
+    assert out["applied"] == [
+        {
+            "index": 0,
+            "target_label": "第1卷 第1章 场景1",
+            "field": "goal",
+            "field_label": "目标",
+        }
+    ]
+    assert out["skipped"] == []
+    assert session.get(Scene, scenes["first"].id).goal == "改后的目标"
+    # 没勾的两条一个字都不能动。
+    assert session.get(Scene, scenes["second"].id).conflict == "船票上的日期是三年前"
+    assert session.get(Chapter, scenes["chapter"].id).summary == "兄长在码头打听船主的下落"
+
+    rows = _changes_of(session, scenes["first"].id)
+    assert len(rows) == 1
+    assert rows[0].source == "ai"
+    assert rows[0].target_type == "scene"
+    assert rows[0].action == "update"
+    assert rows[0].target_label == "第1卷 第1章 场景1"
+    assert rows[0].summary == "修订建议 · 目标"
+    assert _changes_of(session, scenes["second"].id) == []
+
+
+def test_apply_skips_value_changed_after_generation(
+    session, project, scenes, run_with_suggestions
+):
+    """生成后作者手改了目标：该条报「现值已变化」，另一条照常写入。"""
+    from app.services import revision_service
+
+    session.get(Scene, scenes["first"].id).goal = "生成后被作者改过"
+    session.commit()
+
+    out = revision_service.apply(
+        session, project.id, run_with_suggestions.id, [0, 1]
+    )
+
+    assert [a["index"] for a in out["applied"]] == [1]
+    assert out["skipped"] == [{"index": 0, "reason": "现值已变化"}]
+    # 旧建议绝不能覆盖作者的手改。
+    assert session.get(Scene, scenes["first"].id).goal == "生成后被作者改过"
+    assert session.get(Scene, scenes["second"].id).conflict == "改后的冲突"
+    assert _changes_of(session, scenes["first"].id) == []
+
+
+def test_apply_skips_locked_scene_and_locked_volume(
+    session, project, scenes, run_with_suggestions
+):
+    """生成后才锁上：场景锁与卷锁（章的继承）都要拦住。"""
+    from app.services import revision_service
+
+    session.get(Scene, scenes["first"].id).locked = True
+    session.get(Volume, scenes["volume"].id).locked = True
+    session.commit()
+
+    out = revision_service.apply(
+        session, project.id, run_with_suggestions.id, [0, 2]
+    )
+
+    assert out["applied"] == []
+    assert out["skipped"] == [
+        {"index": 0, "reason": "已锁定"},
+        {"index": 2, "reason": "已锁定"},
+    ]
+    assert session.get(Scene, scenes["first"].id).goal == "找到船主的下落"
+    assert session.get(Chapter, scenes["chapter"].id).summary == "兄长在码头打听船主的下落"
+
+
+def test_apply_rejects_out_of_range_and_dedupes_indices(
+    session, project, scenes, run_with_suggestions
+):
+    """越界/负数报「下标无效」；同一下标出现两次只应用一次。"""
+    from app.services import revision_service
+
+    out = revision_service.apply(
+        session, project.id, run_with_suggestions.id, [99, -1, 0, 0]
+    )
+
+    assert [a["index"] for a in out["applied"]] == [0]
+    assert out["skipped"] == [
+        {"index": 99, "reason": "下标无效"},
+        {"index": -1, "reason": "下标无效"},
+    ]
+    assert session.get(Scene, scenes["first"].id).goal == "改后的目标"
+    # 重复下标不能写出两条历史。
+    assert len(_changes_of(session, scenes["first"].id)) == 1
+
+
+def test_apply_is_idempotent(session, project, scenes, run_with_suggestions):
+    """同一批再应用一次：不再写库，也不再多记一条历史。"""
+    from app.services import revision_service
+
+    first = revision_service.apply(
+        session, project.id, run_with_suggestions.id, [0]
+    )
+    assert [a["index"] for a in first["applied"]] == [0]
+
+    second = revision_service.apply(
+        session, project.id, run_with_suggestions.id, [0]
+    )
+
+    assert second["applied"] == []
+    assert second["skipped"] == [{"index": 0, "reason": "已应用"}]
+    assert session.get(Scene, scenes["first"].id).goal == "改后的目标"
+    assert len(_changes_of(session, scenes["first"].id)) == 1
+
+
+def test_apply_rejects_run_from_another_project(
+    session, project, run_with_suggestions
+):
+    """别的项目的运行记录不许拿来写这个项目。"""
+    from app.services import revision_service
+
+    other = Project(name="别的项目")
+    session.add(other)
+    session.commit()
+
+    with pytest.raises(ValueError, match="不存在"):
+        revision_service.apply(session, other.id, run_with_suggestions.id, [0])
+
+
+def test_apply_rejects_unknown_run_and_run_without_suggestions(session, project):
+    """运行记录不存在、或它不是一次修订建议运行 → ValueError（路由映射 404/400）。"""
+    from app.services import revision_service
+
+    with pytest.raises(ValueError, match="不存在"):
+        revision_service.apply(session, project.id, "no-such-run", [0])
+
+    # 别的智能体的运行记录（parsed_json 里没有 suggestions）。
+    other_run = GenerationRun(project_id=project.id, parsed_json={"open_questions": []})
+    # 解析失败的运行记录（parsed_json 为空）。
+    empty_run = GenerationRun(project_id=project.id, parsed_json=None)
+    session.add_all([other_run, empty_run])
+    session.commit()
+
+    with pytest.raises(ValueError):
+        revision_service.apply(session, project.id, other_run.id, [0])
+    with pytest.raises(ValueError):
+        revision_service.apply(session, project.id, empty_run.id, [0])
+
+
+def test_apply_skips_deleted_object_and_illegal_field(
+    session, project, scenes
+):
+    """落库前再兜一次：对象已删除、字段不在白名单（运行记录被改过也不写）。"""
+    from app.services import revision_service
+
+    run = GenerationRun(
+        project_id=project.id,
+        parsed_json={
+            "suggestions": [
+                {"target_label": "第1卷 第1章 场景9", "field": "目标", "after": "新值"},
+                {"target_label": "第1卷 第1章（失踪的船主）", "field": "标题", "after": "新标题"},
+            ],
+            # 服务端解析结果里混进一条指向已删场景、一条越白名单字段。
+            "resolved_suggestions": [
+                {
+                    "index": 0,
+                    "target_type": "scene",
+                    "target_id": "no-such-scene",
+                    "target_label": "第1卷 第1章 场景9",
+                    "field": "goal",
+                    "field_label": "目标",
+                    "before": "",
+                    "after": "新值",
+                    "reason": "编的",
+                },
+                {
+                    "index": 1,
+                    "target_type": "chapter",
+                    "target_id": scenes["chapter"].id,
+                    "target_label": "第1卷 第1章（失踪的船主）",
+                    "field": "title",
+                    "field_label": "标题",
+                    "before": "失踪的船主",
+                    "after": "新标题",
+                    "reason": "越权字段",
+                },
+            ],
+        },
+    )
+    session.add(run)
+    session.commit()
+
+    out = revision_service.apply(session, project.id, run.id, [0, 1])
+
+    assert out["applied"] == []
+    assert out["skipped"] == [
+        {"index": 0, "reason": "对象已删除"},
+        {"index": 1, "reason": "字段不可修改"},
+    ]
+    assert session.get(Chapter, scenes["chapter"].id).title == "失踪的船主"
