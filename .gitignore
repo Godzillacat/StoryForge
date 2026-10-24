@@ -33,6 +33,10 @@ dist/
 .planning/
 .acl-reports/
 
+# 本地走查与临时构建产物
+.cache/
+frontend/.cache/
+
 # 编辑器
 .vscode/
 .idea/
