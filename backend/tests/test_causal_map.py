@@ -1,11 +1,19 @@
 """因果链图的后端投影：断点判定、只收未处理因果问题、逻辑自检是否跑过、锁定继承。
 
-投影只读：全部从场景树与 `audit_issue` 派生，不新增任何数据。
+投影只读：全部从场景树、`audit_issue` 与运行记录派生，不新增任何数据。
 """
 
 import pytest
 
-from app.db.models import AuditIssue, Chapter, Project, Scene, Volume
+from app.db.models import (
+    Agent,
+    AuditIssue,
+    Chapter,
+    GenerationRun,
+    Project,
+    Scene,
+    Volume,
+)
 from app.services import causal_service
 
 
@@ -55,6 +63,20 @@ def _issue(session, project, scene, **overrides):
     return issue
 
 
+def _agent(session, task_type="logic_check"):
+    agent = Agent(name=f"测试智能体-{task_type}", task_type=task_type)
+    session.add(agent)
+    session.commit()
+    return agent
+
+
+def _run(session, project, agent, *, status="ok"):
+    run = GenerationRun(project_id=project.id, agent_id=agent.id, status=status)
+    session.add(run)
+    session.commit()
+    return run
+
+
 def test_breaks_are_projected_and_counted(session):
     project, _volume, (chapter,) = _project_with_chapters(session)
     _scene(session, chapter, 0, goal="把信交给掌柜", turn="")
@@ -87,7 +109,7 @@ def test_breaks_are_projected_and_counted(session):
     assert data["logic_checked"] is True
 
 
-def test_a_scene_missing_both_goal_and_turn_counts_two_breaks_not_three(session):
+def test_breaks_are_counted_once_per_kind(session):
     """三项全空也只按「缺目标 + 缺转折 + 因果问题」各记一条，不重复计数。"""
     project, _volume, (chapter,) = _project_with_chapters(session)
     scene = _scene(session, chapter, 0, goal="  ", turn="")
@@ -157,6 +179,29 @@ def test_logic_checked_stays_true_after_every_issue_is_handled(session):
 
     assert data["logic_checked"] is True
     assert data["chapters"][0]["scenes"][0]["issues"] == []
+
+
+def test_logic_checked_is_true_after_a_successful_check_with_no_issues(session):
+    """检查成功但一条问题都没报时，跑过的证据只有运行记录。"""
+    project, _volume, (chapter,) = _project_with_chapters(session)
+    _scene(session, chapter, 0)
+    agent = _agent(session, task_type="logic_check")
+    _run(session, project, agent, status="ok")
+
+    data = causal_service.build_map(session, project.id)
+
+    assert data["logic_checked"] is True
+    assert data["chapters"][0]["scenes"][0]["issues"] == []
+    assert data["totals"]["breaks"] == 0
+
+
+def test_logic_checked_is_false_without_any_check(session):
+    """别的任务跑得再多也不算逻辑自检：只看 agent 的任务类型。"""
+    project, _volume, (chapter,) = _project_with_chapters(session)
+    _scene(session, chapter, 0)
+    _run(session, project, _agent(session, task_type="scene_plan"))
+
+    assert causal_service.build_map(session, project.id)["logic_checked"] is False
 
 
 def test_scene_lock_inherits_from_chapter_then_volume(session):

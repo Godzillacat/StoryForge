@@ -10,7 +10,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import AuditIssue, Project
+from app.db.models import Agent, AuditIssue, GenerationRun, Project
 from app.logic_types import LOGIC_LAYERS
 from app.services import chapter_service
 
@@ -64,20 +64,33 @@ def _logic_checked(session: Session, project_id: str) -> bool:
     """项目跑过场景卡阶段的逻辑自检没有。
 
     「跑过就是跑过」：包含作者已经处理掉的问题，也包含因果链之外层面的问题。
-    为 false 时前端显示「未检查」，**不能**显示成通过。
+    一次成功的自检如果一条问题都没报，`audit_issue` 里什么也没有 —— 那时
+    跑过的证据只剩 `generation_run`，所以还要按 agent 的任务类型认一次运行
+    （任意状态：失败也是跑过）。为 false 时前端显示「未检查」，**不能**
+    显示成通过。
     """
-    return (
-        session.scalars(
-            select(AuditIssue.id)
-            .where(
-                AuditIssue.project_id == project_id,
-                AuditIssue.check_type == "logic",
-                AuditIssue.stage == "plan",
-            )
-            .limit(1)
-        ).first()
-        is not None
-    )
+    issue_seen = session.scalars(
+        select(AuditIssue.id)
+        .where(
+            AuditIssue.project_id == project_id,
+            AuditIssue.check_type == "logic",
+            AuditIssue.stage == "plan",
+        )
+        .limit(1)
+    ).first()
+    if issue_seen is not None:
+        return True
+    # 运行表里 agent_id 是普通字符串（没有外键），只能显式 join 取任务类型。
+    run_seen = session.scalars(
+        select(GenerationRun.id)
+        .join(Agent, Agent.id == GenerationRun.agent_id)
+        .where(
+            GenerationRun.project_id == project_id,
+            Agent.task_type == "logic_check",
+        )
+        .limit(1)
+    ).first()
+    return run_seen is not None
 
 
 def _breaks(scene: dict, issues: list[AuditIssue]) -> list[str]:

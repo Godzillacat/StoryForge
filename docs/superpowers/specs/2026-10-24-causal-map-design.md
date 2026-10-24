@@ -29,7 +29,7 @@
 
 - 不判断语义上「这个转折合不合理」—— 那是逻辑自检的 LLM 层；本图只标「有人报过」。
 - 不做整本书的巨型图：一章一行，纵向堆叠，页面滚动。
-- 不新增数据：全部从场景卡 + `audit_issue` 读。
+- 不新增数据：全部从场景卡、`audit_issue` 与运行记录读。
 
 **反目标**
 
@@ -65,9 +65,10 @@
 
 - `breaks` 是**枚举数组**：`missing_goal` / `missing_turn` / `causality_issue`（可同时多个）。
 - `issues` 只收 `check_type="logic"`、`stage="plan"`、`status="open"`、`layer="causality"`。
-- `logic_checked`：项目里是否存在任何 `stage=plan` 的逻辑自检运行（`audit_issue` 的
-  `check_type=logic` 行或 `generation_run` 的 `logic_check` 任务）。为 `false` 时前端显示
-  「还没跑过逻辑自检，图里只标结构断点」。
+- `logic_checked`：项目里跑过场景卡阶段的逻辑自检没有 —— 存在任意 `audit_issue`
+  （`check_type=logic`、`stage=plan`）行，**或**存在任意 `generation_run`（其 agent 的
+  `task_type=logic_check`，不筛状态）。跑过就是跑过：问题被处理完、一次成功但零问题、
+  甚至失败的运行都算。为 `false` 时前端显示「还没跑过逻辑自检，图里只标结构断点」。
 - 场景锁定沿用 `effective_scene_lock`（卷/章继承），节点上标锁。
 
 **一次查询**：先按项目取卷章场景树，再一次性取该项目全部相关 `AuditIssue`，按 `scene_id` 分组。
@@ -128,5 +129,7 @@ vitest 覆盖：空章、缺目标、多断点、节点 x 递增。
 
 ## 7. 已知限制
 
-- `logic_checked` 只看 `audit_issue` 里有没有 `stage=plan` 的逻辑问题行。**逻辑自检跑了但模型失败 / 未结构化、一条问题都没写**时，会显示「未检查」而不是「检查失败」。两者都不提供因果问题断点，行为一致；文案准确性留后续（需要再查一次 `generation_run`）。
+- `logic_checked` 认 `generation_run` 时用的是 agent 的**当前** `task_type`：运行记录不存
+  任务类型快照，若作者事后把该智能体改成别的任务类型，历史逻辑自检运行会认不出来；
+  `audit_issue` 那条路径不受影响。
 - 问题标题取 `audit_issue.explanation`（表里没有 `title` 列），可能是一整句，界面按一行截断、全文进 `title` 提示。
