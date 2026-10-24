@@ -7,14 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import LogicCheckRequest
 from app.db.session import get_session
-from app.services import logic_service
+from app.services import causal_service, logic_service
 
 router = APIRouter(prefix="/api", tags=["logic"])
 
 
 def _value_error(exc: ValueError) -> HTTPException:
     message = str(exc)
-    if message.startswith("场景不存在"):
+    if message.startswith(("场景不存在", "项目不存在")):
         return HTTPException(status_code=404, detail=message)
     if message.startswith("场景的章节结构已损坏"):
         return HTTPException(status_code=409, detail=message)
@@ -52,3 +52,13 @@ def logic_chain(scene_id: str, session: Session = Depends(get_session)) -> dict:
         return logic_service.logic_chain(session, scene_id)
     except ValueError as exc:
         raise _value_error(exc) from exc
+
+
+@router.get("/projects/{project_id}/causal-map")
+def causal_map(project_id: str, session: Session = Depends(get_session)) -> dict:
+    """因果链图的只读投影：场景树 + 已报过的因果问题，不改任何数据。"""
+    try:
+        return causal_service.build_map(session, project_id)
+    except ValueError as exc:
+        raise _value_error(exc) from exc
+

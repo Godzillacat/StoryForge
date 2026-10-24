@@ -327,6 +327,8 @@ export const api = {
 
   foreshadowSummary: (projectId: string) =>
     request<ForeshadowSummary>(`/api/projects/${projectId}/foreshadows/summary`),
+  causalMap: (projectId: string) =>
+    request<CausalMapData>(`/api/projects/${projectId}/causal-map`),
   logicChain: (sceneId: string) =>
     request<LogicChainResponse>(`/api/scenes/${sceneId}/logic-chain`),
   listForeshadows: (projectId: string) =>
@@ -925,6 +927,43 @@ export interface LogicChainResponse {
   reason: string
   // 正文段数：图形要按它铺出空列，才能看出「这一段没有逻辑链」。
   paragraphs: number
+}
+
+export type CausalBreak = 'missing_goal' | 'missing_turn' | 'causality_issue'
+
+export interface CausalIssue {
+  id: string
+  layer: string
+  layer_label: string
+  severity: string
+  title: string
+}
+
+export interface CausalScene {
+  id: string
+  seq: number
+  label: string
+  goal: string
+  turn: string
+  status: string
+  locked: boolean
+  // 结构断点与已报过的因果问题分开给：前者作者自己能补，后者要去处理面板看。
+  breaks: CausalBreak[]
+  issues: CausalIssue[]
+}
+
+export interface CausalChapter {
+  id: string
+  label: string
+  volume_label: string
+  scenes: CausalScene[]
+}
+
+export interface CausalMapData {
+  chapters: CausalChapter[]
+  totals: { scenes: number; breaks: number; chapters: number }
+  // false = 从没跑过场景卡阶段的逻辑自检，图里只有结构断点。
+  logic_checked: boolean
 }
 
 export interface Foreshadow {

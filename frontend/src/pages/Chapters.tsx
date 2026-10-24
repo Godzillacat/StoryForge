@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   api,
+  type CausalMapData,
   type ChapterNode,
   type ChapterPlanResponse,
   type ChapterStatusOption,
@@ -30,14 +31,16 @@ import VolumeEditor from '../components/chapters/VolumeEditor'
 import ForeshadowLedger from '../components/chapters/ForeshadowLedger'
 import RhythmCurve from '../components/chapters/RhythmCurve'
 import Swimlanes from '../components/chapters/Swimlanes'
+import CausalMap from '../components/chapters/CausalMap'
 
-type ViewTab = 'structure' | 'rhythm' | 'foreshadows' | 'lanes'
+type ViewTab = 'structure' | 'rhythm' | 'foreshadows' | 'lanes' | 'causal'
 
 const TABS: { key: ViewTab; label: string }[] = [
   { key: 'structure', label: '结构设计' },
   { key: 'rhythm', label: '节奏曲线' },
   { key: 'foreshadows', label: '伏笔账本' },
   { key: 'lanes', label: '剧情线' },
+  { key: 'causal', label: '因果链' },
 ]
 
 export default function Chapters() {
@@ -54,6 +57,10 @@ export default function Chapters() {
   // paid 语义不同），各自从后端拉，界面不硬编。
   const [foreshadowStatuses, setForeshadowStatuses] = useState<ChapterStatusOption[]>([])
   const [foreshadowSummary, setForeshadowSummary] = useState<ForeshadowSummary | null>(null)
+  const [causal, setCausal] = useState<CausalMapData | null>(null)
+  // 因果链属于哪个项目：切项目时先清空，不能让上一本的图冒充这一本。
+  const [causalProjectId, setCausalProjectId] = useState('')
+  const [causalError, setCausalError] = useState('')
   const [selected, setSelected] = useState<Selection | null>(null)
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -103,6 +110,9 @@ export default function Chapters() {
     setEntriesProjectId('')
     setForeshadows([])
     setForeshadowSummary(null)
+    setCausal(null)
+    setCausalProjectId('')
+    setCausalError('')
     setReviewMarks([])
     setDataProjectId('')
     runToken.current++
@@ -115,7 +125,8 @@ export default function Chapters() {
       api.listForeshadows(projectId),
       api.listReviewMarks(projectId),
       api.foreshadowSummary(projectId),
-    ]).then(([treeResult, foreshadowResult, markResult, summaryResult]) => {
+      api.causalMap(projectId),
+    ]).then(([treeResult, foreshadowResult, markResult, summaryResult, causalResult]) => {
       if (dataRequestRef.current !== token) return
       const errors: string[] = []
       if (treeResult.status === 'fulfilled') {
@@ -136,9 +147,17 @@ export default function Chapters() {
       if (markResult.status === 'fulfilled') {
         setReviewMarks(markResult.value)
       }
+      // 因果链只在它自己的视图里报错，不混进页头的伏笔/树错误。
+      if (causalResult.status === 'fulfilled') {
+        setCausal(causalResult.value)
+        setCausalError('')
+      } else {
+        setCausalError((causalResult.reason as Error).message)
+      }
       if (errors.length > 0) setNotice(errors.join('；'))
       // 两份都已有结果就结束加载态：部分失败时显示已有数据 + 页头提示。
       setDataProjectId(projectId)
+      setCausalProjectId(projectId)
     })
     api
       .listEntries(projectId)
@@ -187,8 +206,23 @@ export default function Chapters() {
         projectIdRef.current === requestProjectId
       ) {
         setDataProjectId(requestProjectId)
+        setCausalProjectId(requestProjectId)
       }
     }
+    // 因果链单独取：这张图失败只该让它的视图报错，不该把保存后的整页刷新一起拖垮。
+    api
+      .causalMap(requestProjectId)
+      .then((map) => {
+        if (dataRequestRef.current !== token) return
+        if (projectIdRef.current !== requestProjectId) return
+        setCausal(map)
+        setCausalError('')
+      })
+      .catch((error) => {
+        if (dataRequestRef.current !== token) return
+        if (projectIdRef.current !== requestProjectId) return
+        setCausalError((error as Error).message)
+      })
   }
 
   async function run(action: () => Promise<void>) {
@@ -371,6 +405,8 @@ export default function Chapters() {
   }
 
   const viewsLoading = Boolean(projectId) && dataProjectId !== projectId
+  // 因果链单独判加载态：它只服务一个视图，失败也不该拖住别的视图。
+  const causalLoading = Boolean(projectId) && causalProjectId !== projectId
 
   return (
     <div className="space-y-6">
@@ -636,6 +672,17 @@ export default function Chapters() {
                   volumes={volumes}
                   onSelectChapter={(id) =>
                     openInStructure({ kind: 'chapter', id })
+                  }
+                />
+              )}
+              {view === 'causal' && (
+                <CausalMap
+                  data={causal}
+                  loading={causalLoading}
+                  error={causalError}
+                  logicChecked={causal?.logic_checked ?? false}
+                  onSelectScene={(id) =>
+                    openInStructure({ kind: 'scene', id })
                   }
                 />
               )}
