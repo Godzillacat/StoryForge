@@ -285,10 +285,12 @@ def logic_chain(session: Session, scene_id: str) -> dict:
             "chain": [],
             "summary": {"total": 0, "cause": 0, "turn": 0, "reveal": 0},
             "reason": "这一场还没有已采纳正文。",
+            "paragraphs": chain_lib.count_paragraphs(body),
         }
     chain = chain_lib.extract_chain(body)
     return {
         "chain": chain,
         "summary": chain_lib.summarize(chain),
         "reason": "" if chain else "正文里没有明显的因果连接词。",
+        "paragraphs": chain_lib.count_paragraphs(body),
     }

@@ -875,6 +875,8 @@ export interface LogicChainResponse {
   chain: LogicChainItem[]
   summary: { total: number; cause: number; turn: number; reveal: number }
   reason: string
+  // 正文段数：图形要按它铺出空列，才能看出「这一段没有逻辑链」。
+  paragraphs: number
 }
 
 export interface Foreshadow {

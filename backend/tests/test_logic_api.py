@@ -202,8 +202,29 @@ def test_logic_chain_without_connectives_does_not_invent_one(client):
     data = client.get(f"/api/scenes/{scene_id}/logic-chain").json()
 
     assert data["chain"] == []
+    # 零命中不等于没有正文：正文只有一段且没有连接词，段落数仍是 1。
+    assert data["paragraphs"] == 1
     assert "没有明显" in data["reason"]
 
 
 def test_logic_chain_for_an_unknown_scene_is_404(client):
     assert client.get("/api/scenes/nope/logic-chain").status_code == 404
+
+
+def test_logic_chain_reports_paragraph_count(client):
+    _project_id, scene_id = _create_scene(
+        client, body="第一段。\n\n因为下雨，他留下。\n\n第三段。"
+    )
+
+    data = client.get(f"/api/scenes/{scene_id}/logic-chain").json()
+
+    assert data["paragraphs"] == 3
+    assert data["chain"][0]["paragraph"] == 2
+
+
+def test_logic_chain_paragraph_count_is_zero_without_body(client):
+    _project_id, scene_id = _create_scene(client, body="")
+
+    data = client.get(f"/api/scenes/{scene_id}/logic-chain").json()
+
+    assert data["paragraphs"] == 0

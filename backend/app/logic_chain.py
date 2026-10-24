@@ -78,6 +78,17 @@ def extract_chain(text: str | None) -> list[dict]:
     return chain
 
 
+def count_paragraphs(text: str | None) -> int:
+    """正文的**非空段落数**，与 `extract_chain` 用同一个分段函数。
+
+    图形视图的横轴要覆盖整段正文：只靠命中句的段落号推，会截掉最后一个
+    命中段之后的所有段，「结尾几段一条都没有」这个信号就没了。
+    """
+    if not text:
+        return 0
+    return sum(1 for paragraph in _PARA_SPLIT.split(text) if paragraph.strip())
+
+
 def summarize(chain: list[dict]) -> dict:
     counts = {key: 0 for key in KIND_LABELS}
     for item in chain:
