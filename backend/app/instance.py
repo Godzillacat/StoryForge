@@ -106,17 +106,26 @@ def _pid_alive(pid: int) -> bool:
     import subprocess
 
     try:
-        out = subprocess.run(
+        completed = subprocess.run(
             ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
             capture_output=True,
             text=True,
+            # `tasklist` 按**控制台 OEM 码页**写字节，而 `text=True` 在 UTF-8 模式
+            # （`uv run` 默认开着 PYTHONUTF8=1）下会按 UTF-8 解 —— 中文 Windows 上
+            # 解码线程抛异常、stdout 变成 None。显式指定码页，坏字节按替换字符过，
+            # 绝不因一段输出让启动路径崩掉。
+            encoding="oem",
+            errors="replace",
             timeout=5,
             creationflags=0x08000000,  # CREATE_NO_WINDOW：别给双击的用户闪一个黑框
-        ).stdout
+        )
     except (OSError, subprocess.SubprocessError):
         # 问不出来就当它还活着 —— 宁可拒绝第二次启动，也别开第二个写者。
         return True
-    return str(pid) in out
+    if completed.stdout is None:
+        # 解码都失败了就**不知道**它死没死；同样按「还活着」处理。
+        return True
+    return str(pid) in completed.stdout
 
 
 def already_running() -> dict | None:

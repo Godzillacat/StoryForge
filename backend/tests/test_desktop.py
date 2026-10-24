@@ -128,3 +128,43 @@ def test_a_stale_starting_marker_does_not_block_forever():
 
     assert instance.claim_starting() is True
     instance.release_starting()
+
+
+needs_windows = pytest.mark.skipif(sys.platform != "win32", reason="tasklist 只在 Windows 上存在")
+
+
+@needs_windows
+def test_pid_probe_treats_an_empty_probe_as_alive(monkeypatch):
+    """探测没有输出时按「还活着」处理，不许抛异常。
+
+    回归：`tasklist` 的输出解码失败后 subprocess 的 stdout 是 None，原来的
+    `str(pid) in out` 直接 TypeError —— 而它跑在启动路径上。
+    """
+
+    class _Result:
+        stdout = None
+
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: _Result())
+    assert instance._pid_alive(1234) is True
+
+
+@needs_windows
+def test_pid_probe_decodes_console_output_with_the_oem_codepage(monkeypatch):
+    """探测子进程的输出必须显式按 OEM 码页解码，不能跟随 PYTHONUTF8。
+
+    `tasklist` 按控制台码页写字节；Python 的 UTF-8 模式（`uv run` 默认开着）下
+    `text=True` 会按 UTF-8 解，中文 Windows 上必然失败。
+    """
+    seen: dict = {}
+
+    class _Result:
+        stdout = "1234"
+
+    def fake_run(*args, **kwargs):
+        seen.update(kwargs)
+        return _Result()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert instance._pid_alive(1234) is True
+    assert seen["encoding"] == "oem"
+    assert seen["errors"] == "replace"
