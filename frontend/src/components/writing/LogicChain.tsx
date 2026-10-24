@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type LogicChainResponse } from '../../api/client'
+import LogicChainGraph from './LogicChainGraph'
 
 const COLORS: Record<string, string> = {
   cause: 'text-sky-300',
@@ -26,6 +27,9 @@ export default function LogicChain({
   const [data, setData] = useState<LogicChainResponse | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  // 默认图形：图是本项交付物，文本列表退成备选。切换只改这一处本地状态，
+  // 不碰 `data`、也不进 `useEffect` 的依赖 —— 切模式不该重跑接口。
+  const [mode, setMode] = useState<'graph' | 'text'>('graph')
 
   useEffect(() => {
     setData(null)
@@ -59,6 +63,26 @@ export default function LogicChain({
             {data.summary.reveal}
           </span>
         )}
+        <div className="ml-auto flex shrink-0 gap-1">
+          {(
+            [
+              ['graph', '图形'],
+              ['text', '文本'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={mode === value}
+              onClick={() => setMode(value)}
+              className={`rounded px-2 py-0.5 text-xs ${
+                mode === value ? 'bg-slate-800 text-slate-200' : 'text-slate-500'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
       <p className="text-xs text-slate-500">
         从正文里按连接词抽出，不做判断。问题清单在下面。
@@ -71,7 +95,16 @@ export default function LogicChain({
         <p className="text-xs text-slate-500">{data.reason || '没有可展示的句子。'}</p>
       )}
 
-      {data && data.chain.length > 0 && (
+      {data && data.chain.length > 0 && mode === 'graph' && (
+        <div className="space-y-1">
+          <p className="text-xs text-slate-500">
+            按出现顺序相连，不代表句子真的指向哪一句。
+          </p>
+          <LogicChainGraph chain={data.chain} paragraphs={data.paragraphs} />
+        </div>
+      )}
+
+      {data && data.chain.length > 0 && mode === 'text' && (
         <ul className="space-y-1">
           {data.chain.map((item, index) => (
             <li key={`${item.paragraph}-${index}`} className="flex gap-2 text-xs">
