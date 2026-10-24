@@ -16,9 +16,10 @@ function colorOf(kind: string): string {
 }
 
 /**
- * 跨列：从源节点右缘连到目标节点左缘，控制点水平外推。
+ * 跨列：从源节点右缘连到目标节点左缘，控制点取两端水平中点。
+ * 中点一定落在两节点之间的空隙里，曲线不会外探，两端切线仍保持水平。
  * 同列（同一段里的两处逻辑）：两点上下相对，改走竖直 S 曲线，横向不探出节点边缘，
- * 否则左右各探 84 的弧会从邻节点身上穿过去。
+ * 否则左右各探的弧会从邻节点身上穿过去。
  */
 function edgePath(from: GraphNode, to: GraphNode): string {
   if (from.x === to.x) {
@@ -32,8 +33,8 @@ function edgePath(from: GraphNode, to: GraphNode): string {
   const sy = from.y + from.height / 2
   const tx = to.x
   const ty = to.y + to.height / 2
-  const bend = Math.max(32, Math.abs(tx - sx) / 2)
-  return `M ${sx} ${sy} C ${sx + bend} ${sy}, ${tx - bend} ${ty}, ${tx} ${ty}`
+  const midX = sx + (tx - sx) / 2
+  return `M ${sx} ${sy} C ${midX} ${sy}, ${midX} ${ty}, ${tx} ${ty}`
 }
 
 /** 节点内文字从 x+12 起、右侧同样留 12，168 宽里约放得下 13 个 11px 中文字。 */

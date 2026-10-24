@@ -3,7 +3,8 @@ import type { LogicChainItem } from '../api/client'
 // 图形几何常量：一处定义，布局与渲染共用。
 export const NODE_WIDTH = 168
 export const NODE_HEIGHT = 52
-export const COLUMN_WIDTH = 192
+// 列间距 = COLUMN_WIDTH − NODE_WIDTH = 48，留给跨列连线，太窄会画成挤在一起的小圈。
+export const COLUMN_WIDTH = 216
 export const ROW_GAP = 12
 export const PAD_LEFT = 16
 export const PAD_TOP = 24
