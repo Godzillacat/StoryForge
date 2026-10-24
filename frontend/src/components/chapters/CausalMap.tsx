@@ -19,13 +19,9 @@ function textOrEmpty(value: string): string {
   return value.trim() ? value : '（空）'
 }
 
-/** 问题标题可能是一整句（`explanation`），悬停提示里截断，正文不再挤一行。 */
-function truncateTitle(value: string): string {
-  return value.length > 60 ? `${value.slice(0, 60)}…` : value
-}
-
+/** 问题标题可能是一整句（`explanation`）：全文进悬停提示，界面不截断。 */
 function issueTooltip(issues: CausalIssue[]): string {
-  return issues.map((issue) => truncateTitle(issue.title)).join('\n')
+  return issues.map((issue) => issue.title).join('\n')
 }
 
 export default function CausalMap({
@@ -158,7 +154,7 @@ export default function CausalMap({
                             {textOrEmpty(node.turn)}
                           </span>
                         </button>
-                        {structural.length > 0 && (
+                        {(structural.length > 0 || hasIssue) && (
                           <span
                             className="absolute text-[11px] leading-4 text-amber-400"
                             style={{
@@ -167,9 +163,14 @@ export default function CausalMap({
                               width: NODE_WIDTH,
                             }}
                           >
-                            {structural
-                              .map((item) => BREAK_LABELS[item] ?? item)
-                              .join(' · ')}
+                            {structural.length > 0 &&
+                              structural
+                                .map((item) => BREAK_LABELS[item] ?? item)
+                                .join(' · ')}
+                            {structural.length > 0 && hasIssue && ' · '}
+                            {hasIssue && (
+                              <span className="text-rose-400">因果问题</span>
+                            )}
                           </span>
                         )}
                       </div>
