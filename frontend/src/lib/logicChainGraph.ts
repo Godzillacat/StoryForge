@@ -10,6 +10,9 @@ export const PAD_LEFT = 16
 export const PAD_TOP = 24
 export const PAD_BOTTOM = 28
 
+/** 节点内一行文字最多放几个字：168 宽、左右各留 12，11px 中文约放 13 个。 */
+export const NODE_TEXT_MAX = 13
+
 /** 列的水平中心：节点左缘与底部刻度都从这里派生，组件不另算一份公式。 */
 export function columnCenterX(paragraph: number): number {
   return PAD_LEFT + (paragraph - 1) * COLUMN_WIDTH + NODE_WIDTH / 2
@@ -18,6 +21,30 @@ export function columnCenterX(paragraph: number): number {
 /** 底部段落刻度的基线：落在 PAD_BOTTOM 留白区里，组件不自己编偏移量。 */
 export function tickBaselineY(height: number): number {
   return height - PAD_BOTTOM + 18
+}
+
+/**
+ * 一条边的 SVG 路径。几何全在这里，组件只负责把它画出来。
+ *
+ * 跨列：从源节点右缘连到目标节点左缘，控制点取两端水平中点 ——
+ * 中点一定落在两节点之间的空隙里，曲线不会外探，两端切线仍保持水平。
+ * 同列（同一段里的两处逻辑）：两点上下相对，走竖直 S 曲线，横向不探出节点边缘，
+ * 否则左右各探的弧会从邻节点身上穿过去。
+ */
+export function edgePathFor(from: GraphNode, to: GraphNode): string {
+  if (from.x === to.x) {
+    const cx = from.x + from.width / 2
+    const bottom = from.y + from.height
+    const top = to.y
+    const lift = Math.max(16, (top - bottom) / 2)
+    return `M ${cx} ${bottom} C ${cx} ${bottom + lift}, ${cx} ${top - lift}, ${cx} ${top}`
+  }
+  const sx = from.x + from.width
+  const sy = from.y + from.height / 2
+  const tx = to.x
+  const ty = to.y + to.height / 2
+  const midX = sx + (tx - sx) / 2
+  return `M ${sx} ${sy} C ${midX} ${sy}, ${midX} ${ty}, ${tx} ${ty}`
 }
 
 export interface GraphNode {

@@ -4,7 +4,9 @@ import {
   buildLogicChainGraph,
   shortenSentence,
   columnCenterX,
+  edgePathFor,
   tickBaselineY,
+  NODE_TEXT_MAX,
 } from '../../lib/logicChainGraph'
 
 // 深色底 #020617 上实测（WCAG 相对亮度）：sky-500 7.28:1、amber-500 9.39:1、emerald-500 7.95:1
@@ -14,31 +16,6 @@ const COLORS: Record<string, string> = { cause: '#0ea5e9', turn: '#f59e0b', reve
 function colorOf(kind: string): string {
   return COLORS[kind] ?? '#94a3b8'
 }
-
-/**
- * 跨列：从源节点右缘连到目标节点左缘，控制点取两端水平中点。
- * 中点一定落在两节点之间的空隙里，曲线不会外探，两端切线仍保持水平。
- * 同列（同一段里的两处逻辑）：两点上下相对，改走竖直 S 曲线，横向不探出节点边缘，
- * 否则左右各探的弧会从邻节点身上穿过去。
- */
-function edgePath(from: GraphNode, to: GraphNode): string {
-  if (from.x === to.x) {
-    const cx = from.x + from.width / 2
-    const bottom = from.y + from.height
-    const top = to.y
-    const lift = Math.max(16, (top - bottom) / 2)
-    return `M ${cx} ${bottom} C ${cx} ${bottom + lift}, ${cx} ${top - lift}, ${cx} ${top}`
-  }
-  const sx = from.x + from.width
-  const sy = from.y + from.height / 2
-  const tx = to.x
-  const ty = to.y + to.height / 2
-  const midX = sx + (tx - sx) / 2
-  return `M ${sx} ${sy} C ${midX} ${sy}, ${midX} ${ty}, ${tx} ${ty}`
-}
-
-/** 节点内文字从 x+12 起、右侧同样留 12，168 宽里约放得下 13 个 11px 中文字。 */
-const SENTENCE_CHARS = 13
 
 export default function LogicChainGraph({
   chain,
@@ -75,7 +52,7 @@ export default function LogicChainGraph({
           return (
             <path
               key={`${edge.fromIndex}-${edge.toIndex}`}
-              d={edgePath(from, to)}
+              d={edgePathFor(from, to)}
               stroke={colorOf(edge.kind)}
               strokeWidth={1.5}
               fill="none"
@@ -86,7 +63,7 @@ export default function LogicChainGraph({
 
         {graph.nodes.map((node) => {
           const color = colorOf(node.kind)
-          const sentence = shortenSentence(node.sentence, SENTENCE_CHARS)
+          const sentence = shortenSentence(node.sentence, NODE_TEXT_MAX)
           return (
             <g key={node.index}>
               <title>{`¶${node.paragraph} · ${node.sentence} · ${node.marker || '无连接词'}`}</title>
