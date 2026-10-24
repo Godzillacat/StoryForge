@@ -153,6 +153,14 @@ MIGRATIONS: tuple[Migration, ...] = (
             "ALTER TABLE scene ADD COLUMN locked_paragraphs_json JSON NOT NULL DEFAULT '[]'",
         ),
     ),
+    # A/B 并排生成：一对临时分支共用组号，普通分支持续为 NULL。
+    # 只加可空列 —— 存量分支一律 NULL，正是「不是 A/B 分支」的语义，不回填。
+    Migration(
+        version=12,
+        note="scene_branch 加 ab_group（A/B 并排）",
+        requires=("scene_branch",),
+        statements=("ALTER TABLE scene_branch ADD COLUMN ab_group TEXT",),
+    ),
 )
 
 BASELINE_VERSION = 0

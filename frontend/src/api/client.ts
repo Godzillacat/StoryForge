@@ -508,6 +508,35 @@ export const api = {
     request<BranchRevisionRow[]>(`/api/branches/${branchId}/revisions`),
   discardBranch: (branchId: string) =>
     request<void>(`/api/branches/${branchId}`, { method: 'DELETE' }),
+  // ---- A/B 并排：两版就是两条带 ab_group 的分支，生成仍走分支的流式链路 ----
+  getAb: (sceneId: string) => request<AbSession>(`/api/scenes/${sceneId}/ab`),
+  createAb: async (sceneId: string): Promise<AbSession> => {
+    // POST 的 label 是侧别（A/B），GET 的 label 是库名 —— 在这里归一成 AbBranch，
+    // 面板只认一种形状。刚建组时还没有草稿，字数由随后的 getAb 补上。
+    const created = await request<{
+      group: string
+      branches: { id: string; label: string }[]
+    }>(`/api/scenes/${sceneId}/ab`, { method: 'POST' })
+    return {
+      group: created.group,
+      branches: created.branches.map((item) => ({
+        id: item.id,
+        label: item.label,
+        side: item.label,
+        has_draft: false,
+        chars: 0,
+      })),
+    }
+  },
+  adoptAb: (sceneId: string, branchId: string) =>
+    request<{ revision_created: boolean; body: string; chars: number; discarded: string[] }>(
+      `/api/scenes/${sceneId}/ab/${branchId}/adopt`,
+      { method: 'POST' },
+    ),
+  discardAb: (sceneId: string, branchId: string) =>
+    request<{ removed: string[] }>(`/api/scenes/${sceneId}/ab/${branchId}/discard`, {
+      method: 'POST',
+    }),
   listSnapshots: (projectId: string) =>
     request<SnapshotView[]>(`/api/projects/${projectId}/snapshots`),
   createSnapshot: (projectId: string, body: { name: string; note?: string }) =>
@@ -1506,6 +1535,21 @@ export interface BranchRevisionRow {
   chars: number
   created_at: string
   preview: string
+}
+
+/** A/B 并排里的一版。`label` 是库名（`A/B · A`），两栏标题用 `side`。 */
+export interface AbBranch {
+  id: string
+  label: string
+  side: string
+  has_draft: boolean
+  chars: number
+}
+
+/** 该场景**最近一组**未处理的 A/B；没有组时 `group` 为 null、`branches` 为空。 */
+export interface AbSession {
+  group: string | null
+  branches: AbBranch[]
 }
 
 export interface BookChapter {
