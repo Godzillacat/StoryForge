@@ -6,6 +6,7 @@ import {
   type BranchRevisionRow,
   type BranchSummary,
 } from '../../api/client'
+import { buildBranchRows } from '../../lib/branchTree'
 
 export default function BranchPanel({
   sceneId,
@@ -26,6 +27,8 @@ export default function BranchPanel({
   const [notice, setNotice] = useState('')
   // 切场景时旧响应不许覆盖新列表 —— 列表会串成上一个场景的分支。
   const token = useRef(0)
+  // 树形排序：根在前、子紧随父；缩进与父名由 buildBranchRows 算。
+  const treeRows = buildBranchRows(rows)
 
   async function reload() {
     const current = token.current
@@ -53,6 +56,35 @@ export default function BranchPanel({
     try {
       const row = await api.createBranch(sceneId, { name: name.trim() })
       setName('')
+      await reload()
+      onSelect(row.id)
+    } catch (error) {
+      setNotice((error as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * 从这一条派生：新分支复制父分支正文，挂在这条下面（最多三层）。
+   * 名字当场问作者（默认「父名 · 派生」）—— **重名后端会 400**，
+   * 错误原样显示让作者改名重试，前端不静默加序号。
+   */
+  async function derive(parent: BranchSummary) {
+    const input = window.prompt(
+      '新分支名称（正文从这一版复制）',
+      `${parent.name} · 派生`,
+    )
+    if (input === null) return
+    const clean = input.trim()
+    if (!clean) return
+    setBusy(true)
+    setNotice('')
+    try {
+      const row = await api.createBranch(sceneId, {
+        name: clean,
+        parent_id: parent.id,
+      })
       await reload()
       onSelect(row.id)
     } catch (error) {
@@ -106,6 +138,7 @@ export default function BranchPanel({
       </div>
       <p className="text-xs text-slate-500">
         分支是同一场戏的另一种写法；场景卡（目标 / 冲突 / 转折）是共享的。
+        可以从任意一版「派生」出新分支，最多三层。
       </p>
 
       {notice && <p className="text-xs text-slate-400">{notice}</p>}
@@ -140,9 +173,12 @@ export default function BranchPanel({
             主版
           </button>
         </li>
-        {rows.map((row) => (
+        {treeRows.map((row) => (
           <li key={row.id} className="space-y-1">
-            <div className="flex items-center gap-2">
+            <div
+              className="flex items-center gap-2"
+              style={{ paddingLeft: row.indent }}
+            >
               <button
                 className={`min-w-0 flex-1 truncate rounded px-2 py-1 text-left text-xs ${
                   selectedBranchId === row.id
@@ -151,9 +187,28 @@ export default function BranchPanel({
                 }`}
                 onClick={() => onSelect(row.id)}
               >
-                {row.name}
-                <span className="ml-2 text-slate-600">{row.chars} 字</span>
-                {row.has_draft && <span className="ml-1 text-emerald-400">有草稿</span>}
+                <span className="block truncate">
+                  {row.name}
+                  <span className="ml-2 text-slate-600">{row.chars} 字</span>
+                  {row.has_draft && (
+                    <span className="ml-1 text-emerald-400">有草稿</span>
+                  )}
+                </span>
+                {row.parentName && (
+                  <span className="block truncate text-[10px] text-slate-600">
+                    派生自 {row.parentName}
+                  </span>
+                )}
+              </button>
+              <button
+                className="text-xs text-sky-400 disabled:opacity-50"
+                onClick={() => derive(row)}
+                disabled={disabled || busy || row.depth >= 3}
+                title={
+                  row.depth >= 3 ? '最多三层分支' : '从这一版派生（正文复制过来）'
+                }
+              >
+                派生
               </button>
               <button
                 className="text-xs text-amber-400 disabled:opacity-50"
