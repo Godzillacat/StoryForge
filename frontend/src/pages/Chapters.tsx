@@ -13,6 +13,7 @@ import {
   type ReviewMark,
   type ScenePlanResponse,
   type SettingEntry,
+  type SettingLoadData,
   type VolumeNode,
 } from '../api/client'
 import RunTrace from '../components/RunTrace'
@@ -32,8 +33,9 @@ import ForeshadowLedger from '../components/chapters/ForeshadowLedger'
 import RhythmCurve from '../components/chapters/RhythmCurve'
 import Swimlanes from '../components/chapters/Swimlanes'
 import CausalMap from '../components/chapters/CausalMap'
+import SettingLoadCurve from '../components/chapters/SettingLoadCurve'
 
-type ViewTab = 'structure' | 'rhythm' | 'foreshadows' | 'lanes' | 'causal'
+type ViewTab = 'structure' | 'rhythm' | 'foreshadows' | 'lanes' | 'causal' | 'settingLoad'
 
 const TABS: { key: ViewTab; label: string }[] = [
   { key: 'structure', label: '结构设计' },
@@ -41,6 +43,7 @@ const TABS: { key: ViewTab; label: string }[] = [
   { key: 'foreshadows', label: '伏笔账本' },
   { key: 'lanes', label: '剧情线' },
   { key: 'causal', label: '因果链' },
+  { key: 'settingLoad', label: '设定投放' },
 ]
 
 export default function Chapters() {
@@ -61,6 +64,10 @@ export default function Chapters() {
   // 因果链属于哪个项目：切项目时先清空，不能让上一本的图冒充这一本。
   const [causalProjectId, setCausalProjectId] = useState('')
   const [causalError, setCausalError] = useState('')
+  const [settingLoad, setSettingLoad] = useState<SettingLoadData | null>(null)
+  // 设定投放与因果链同理：数据属于哪个项目、错误只归它自己的视图。
+  const [settingLoadProjectId, setSettingLoadProjectId] = useState('')
+  const [settingLoadError, setSettingLoadError] = useState('')
   const [selected, setSelected] = useState<Selection | null>(null)
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -113,6 +120,9 @@ export default function Chapters() {
     setCausal(null)
     setCausalProjectId('')
     setCausalError('')
+    setSettingLoad(null)
+    setSettingLoadProjectId('')
+    setSettingLoadError('')
     setReviewMarks([])
     setDataProjectId('')
     runToken.current++
@@ -126,7 +136,16 @@ export default function Chapters() {
       api.listReviewMarks(projectId),
       api.foreshadowSummary(projectId),
       api.causalMap(projectId),
-    ]).then(([treeResult, foreshadowResult, markResult, summaryResult, causalResult]) => {
+      api.settingLoad(projectId),
+    ]).then((results) => {
+      const [
+        treeResult,
+        foreshadowResult,
+        markResult,
+        summaryResult,
+        causalResult,
+        settingLoadResult,
+      ] = results
       if (dataRequestRef.current !== token) return
       const errors: string[] = []
       if (treeResult.status === 'fulfilled') {
@@ -154,10 +173,18 @@ export default function Chapters() {
       } else {
         setCausalError((causalResult.reason as Error).message)
       }
+      // 设定投放同样独立报错：统计失败不该连带把结构树判为失败。
+      if (settingLoadResult.status === 'fulfilled') {
+        setSettingLoad(settingLoadResult.value)
+        setSettingLoadError('')
+      } else {
+        setSettingLoadError((settingLoadResult.reason as Error).message)
+      }
       if (errors.length > 0) setNotice(errors.join('；'))
       // 两份都已有结果就结束加载态：部分失败时显示已有数据 + 页头提示。
       setDataProjectId(projectId)
       setCausalProjectId(projectId)
+      setSettingLoadProjectId(projectId)
     })
     api
       .listEntries(projectId)
@@ -207,6 +234,7 @@ export default function Chapters() {
       ) {
         setDataProjectId(requestProjectId)
         setCausalProjectId(requestProjectId)
+        setSettingLoadProjectId(requestProjectId)
       }
     }
     // 因果链单独取：这张图失败只该让它的视图报错，不该把保存后的整页刷新一起拖垮。
@@ -222,6 +250,20 @@ export default function Chapters() {
         if (dataRequestRef.current !== token) return
         if (projectIdRef.current !== requestProjectId) return
         setCausalError((error as Error).message)
+      })
+    // 设定投放同样是「只服务一个视图」的统计：保存正文后要重算，失败也只报自己的错。
+    api
+      .settingLoad(requestProjectId)
+      .then((load) => {
+        if (dataRequestRef.current !== token) return
+        if (projectIdRef.current !== requestProjectId) return
+        setSettingLoad(load)
+        setSettingLoadError('')
+      })
+      .catch((error) => {
+        if (dataRequestRef.current !== token) return
+        if (projectIdRef.current !== requestProjectId) return
+        setSettingLoadError((error as Error).message)
       })
   }
 
@@ -407,6 +449,7 @@ export default function Chapters() {
   const viewsLoading = Boolean(projectId) && dataProjectId !== projectId
   // 因果链单独判加载态：它只服务一个视图，失败也不该拖住别的视图。
   const causalLoading = Boolean(projectId) && causalProjectId !== projectId
+  const settingLoadLoading = Boolean(projectId) && settingLoadProjectId !== projectId
 
   return (
     <div className="space-y-6">
@@ -683,6 +726,16 @@ export default function Chapters() {
                   logicChecked={causal?.logic_checked ?? false}
                   onSelectScene={(id) =>
                     openInStructure({ kind: 'scene', id })
+                  }
+                />
+              )}
+              {view === 'settingLoad' && (
+                <SettingLoadCurve
+                  data={settingLoad}
+                  loading={settingLoadLoading}
+                  error={settingLoadError}
+                  onSelectChapter={(id) =>
+                    openInStructure({ kind: 'chapter', id })
                   }
                 />
               )}
