@@ -43,7 +43,9 @@ def test_create_returns_two_sides_and_current_reads_them_back(client):
     current = _current(client, scene["id"])
 
     assert created["group"]
-    assert [row["label"] for row in created["branches"]] == ["A", "B"]
+    # POST 与 GET 的形状一致：`label` 是库名，`side` 才是并排面板的两栏。
+    assert [row["label"] for row in created["branches"]] == ["A/B · A", "A/B · B"]
+    assert [row["side"] for row in created["branches"]] == ["A", "B"]
     assert current["group"] == created["group"]
     branches = current["branches"]
     # `label` 是库里的名字（作者看到的就是它）；`side` 才是并排面板的两栏。
@@ -61,18 +63,39 @@ def test_current_is_empty_before_the_first_ab(client):
     assert _current(client, scene["id"]) == {"group": None, "branches": []}
 
 
-def test_second_ab_is_allowed_and_current_returns_the_latest_group(client):
+def test_a_second_ab_is_409_until_the_first_is_resolved(client):
+    """旧组不可达：未处理完之前拒绝新建，而不是静默删掉或让它变成残留行。"""
     _project, scene = _seed(client)
-    first = _create_ab(client, scene["id"])
+    created = _create_ab(client, scene["id"])
+    a, b = created["branches"]
 
-    second = _create_ab(client, scene["id"])
+    blocked = client.post(f"/api/scenes/{scene['id']}/ab")
 
-    assert second["group"] != first["group"]
-    current = _current(client, scene["id"])
-    assert current["group"] == second["group"]
-    # 第二组自动加序号；序号后缀不改变侧别。
-    assert [row["label"] for row in current["branches"]] == ["A/B · A 2", "A/B · B 2"]
-    assert [row["side"] for row in current["branches"]] == ["A", "B"]
+    assert blocked.status_code == 409
+    assert "还有未处理的 A/B" in blocked.json()["detail"]
+
+    # 丢弃一条后另一条还在，组仍未结束 —— 依然拒绝。
+    client.post(f"/api/scenes/{scene['id']}/ab/{a['id']}/discard")
+    assert client.post(f"/api/scenes/{scene['id']}/ab").status_code == 409
+
+    # 两条都丢弃后组结束，可以再建。
+    client.post(f"/api/scenes/{scene['id']}/ab/{b['id']}/discard")
+    again = client.post(f"/api/scenes/{scene['id']}/ab")
+    assert again.status_code == 201, again.text
+    assert again.json()["group"] != created["group"]
+
+
+def test_adopting_a_side_without_generated_content_is_400(client):
+    """A/B 的「还没生成」是 400（可重试），不是普通分支那种 409。"""
+    _project, scene = _seed(client)
+    created = _create_ab(client, scene["id"])
+    a = created["branches"][0]
+
+    response = client.post(f"/api/scenes/{scene['id']}/ab/{a['id']}/adopt")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "这一版还没有生成内容"
+    assert client.get(f"/api/branches/{a['id']}").status_code == 200
 
 
 def test_current_reports_the_draft_length(client):

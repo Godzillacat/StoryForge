@@ -149,7 +149,9 @@ def test_ab_create_makes_two_branches_in_one_group(session):
     created = branch_service.ab_create(session, scene.id)
 
     a, b = created["branches"]
-    assert [a["label"], b["label"]] == ["A", "B"]
+    # `side` 是并排面板的两栏；`label` 与 GET 一致，是库里的名字。
+    assert [item["side"] for item in created["branches"]] == ["A", "B"]
+    assert [item["label"] for item in created["branches"]] == ["A/B · A", "A/B · B"]
     rows = [session.get(SceneBranch, item["id"]) for item in created["branches"]]
     # 两条共用一个组号，名字带保留前缀 —— 与作者手建的分支一眼分得开。
     assert {row.ab_group for row in rows} == {created["group"]}
@@ -283,20 +285,71 @@ def test_ab_adopt_rolls_back_when_a_later_step_fails(session, monkeypatch):
     assert session.get(Scene, scene.id).body == "主版正文。"
 
 
-def test_ab_adopt_only_cleans_up_its_own_group(session):
-    """同场景可能留着两组未处理的 A/B —— 采纳哪条就只清理它自己那组。"""
+def test_ab_create_rejects_a_second_group_until_the_first_is_resolved(session):
+    """一场戏同时只允许一组 A/B：旧组未处理时**明确拒绝**，而不是静默删掉。
+
+    否则旧组会变成刷新后找不回的残留行：普通分支列表过滤 A/B，而
+    `GET /scenes/{id}/ab` 只返回最近一组。
+    """
     scene = _scene(session)
     first = branch_service.ab_create(session, scene.id)
-    second = branch_service.ab_create(session, scene.id)
-    a = second["branches"][0]
-    branch_service.save_branch_draft(session, a["id"], "第二组的 A。")
+    a, b = first["branches"]
 
-    out = branch_service.ab_adopt(session, scene.id, a["id"])
+    with pytest.raises(ValueError, match="还有未处理的 A/B"):
+        branch_service.ab_create(session, scene.id)
+
+    # 丢弃一条后另一条还在，组没结束，仍然拒绝。
+    branch_service.ab_discard(session, scene.id, a["id"])
+    with pytest.raises(ValueError, match="还有未处理的 A/B"):
+        branch_service.ab_create(session, scene.id)
+
+    # 两条都丢弃后组结束，可以再建；名字回到不带序号的形式。
+    branch_service.ab_discard(session, scene.id, b["id"])
+    second = branch_service.ab_create(session, scene.id)
+    assert second["group"] != first["group"]
+    assert [item["label"] for item in second["branches"]] == ["A/B · A", "A/B · B"]
+
+
+def test_ab_adopt_rejects_an_empty_side_with_its_own_message(session):
+    """A/B 的「还没生成」是作者可重试的状态，不是「没有可采纳的草稿」那种 409。"""
+    scene = _scene(session)
+    created = branch_service.ab_create(session, scene.id)
+    a = created["branches"][0]
+
+    with pytest.raises(ValueError, match="这一版还没有生成内容"):
+        branch_service.ab_adopt(session, scene.id, a["id"])
 
     session.expire_all()
-    assert out["discarded"] == ["A/B · A 2", "A/B · B 2"]
-    assert _branches_of(session, second["group"]) == []
-    assert len(_branches_of(session, first["group"])) == 2
+    assert session.get(SceneBranch, a["id"]) is not None
+    assert session.get(Scene, scene.id).body == "主版正文。"
+
+
+def test_ab_adopt_rejects_a_draft_missing_a_locked_paragraph(session):
+    """段落锁：A 的草稿缺了锁住的段落 → 拒绝，正文与两条分支都不动。"""
+    scene = _scene(session)
+    scene.locked_paragraphs_json = ["必须原样保留的段落。"]
+    session.commit()
+    created = branch_service.ab_create(session, scene.id)
+    a, b = created["branches"]
+    branch_service.save_branch_draft(session, a["id"], "A 的草稿，但没有锁住的那段。")
+
+    with pytest.raises(ValueError, match="草稿缺少已锁定的段落"):
+        branch_service.ab_adopt(session, scene.id, a["id"])
+
+    session.expire_all()
+    assert session.get(Scene, scene.id).body == "主版正文。"
+    row = session.get(SceneBranch, a["id"])
+    assert row is not None
+    assert row.draft_content == "A 的草稿，但没有锁住的那段。"
+    assert row.content == "主版正文。"
+    # 另一条也不受牵连，组还在。
+    assert session.get(SceneBranch, b["id"]) is not None
+    assert (
+        session.scalars(
+            select(SceneRevision).where(SceneRevision.scene_id == scene.id)
+        ).all()
+        == []
+    )
 
 
 def test_ab_discard_removes_one_side_and_keeps_the_other(session):

@@ -391,10 +391,22 @@ def ab_create(session: Session, scene_id: str) -> dict:
 
     两条都从主版正文起步，正文在采纳之前一律不动 —— 生成覆盖的只是各分支
     自己的草稿。名字用保留前缀 `A/B · A`、`A/B · B`，重名时追加序号。
+
+    **一场戏同时只允许一组 A/B。** 旧组未处理完时明确拒绝，而不是静默删掉
+    它：普通分支列表过滤 A/B，而 `ab_current` 只回最近一组，旧组一旦被新组
+    盖住就会变成刷新后找不回的残留行。
     """
     scene = _scene(session, scene_id)
     if lock_service.effective_scene_lock(session, scene)["locked"]:
         raise ValueError("这一场已锁定，不能并排生成")
+    pending = session.scalars(
+        select(SceneBranch).where(
+            SceneBranch.scene_id == scene_id,
+            SceneBranch.ab_group.is_not(None),
+        )
+    ).first()
+    if pending is not None:
+        raise ValueError("这一场还有未处理的 A/B，先采纳或丢弃它们")
 
     group = uuid4().hex
     branches: list[dict] = []
@@ -403,7 +415,8 @@ def ab_create(session: Session, scene_id: str) -> dict:
             name = _unique_name(session, scene_id, f"{_AB_NAME_PREFIX}{side}")
             row = create_branch(session, scene_id, name, commit=False)
             row.ab_group = group
-            branches.append({"id": row.id, "label": side})
+            # `label` 与 GET 一致用库名，`side` 才是并排面板的两栏。
+            branches.append({"id": row.id, "label": row.name, "side": side})
         session.commit()
     except Exception:
         session.rollback()
@@ -414,11 +427,13 @@ def ab_create(session: Session, scene_id: str) -> dict:
 def ab_adopt(session: Session, scene_id: str, branch_id: str) -> dict:
     """采纳一版：adopt 草稿 → merge 进正文 → 删同组**全部**分支，一次提交。
 
-    不要求它是「当前唯一一组」：同场景可能留着一组以上没处理的 A/B，
-    采纳哪条就只清理它自己那一组，别的研究材料不受牵连。
+    `ab_create` 保证同场景只有一组，所以「同组」就是「这一组」。
     """
     scene = _scene(session, scene_id)
     row, group = _ab_branch(session, scene_id, branch_id)
+    # 还没生成是作者可重试的状态：400，不走普通分支 adopt 的 409 文案。
+    if not (row.draft_content or "").strip():
+        raise ValueError("这一版还没有生成内容")
     # merge 只在旧主版非空时写修订 —— 与它自己的判定保持同一口径。
     revision_created = bool((scene.body or "").strip())
     try:
@@ -473,7 +488,8 @@ def ab_current(session: Session, scene_id: str) -> dict:
 
     「最近一组」按创建顺序倒序的第一条定位组号：同一事务里的两条 `created_at`
     可能落在同一微秒上，SQLite 的 `rowid` 才是真正的写入顺序 —— 只按时间排，
-    两组紧挨着建出时可能把旧组当成新组。
+    库里有历史遗留的多组时可能把旧组当成新组。正常路径下 `ab_create` 保证
+    同时只有一组。
     """
     _scene(session, scene_id)
     latest = session.scalars(

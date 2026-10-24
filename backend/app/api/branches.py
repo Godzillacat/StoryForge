@@ -26,7 +26,12 @@ def _value_error(exc: ValueError) -> HTTPException:
     message = str(exc)
     if message.startswith(_MISSING_PREFIXES):
         return HTTPException(status_code=404, detail=message)
-    if "已锁定" in message or "已锁定的段落" in message or "没有可采纳的草稿" in message:
+    if (
+        "已锁定" in message
+        or "已锁定的段落" in message
+        or "没有可采纳的草稿" in message
+        or "未处理的 A/B" in message
+    ):
         return HTTPException(status_code=409, detail=message)
     return HTTPException(status_code=400, detail=message)
 
