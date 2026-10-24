@@ -23,6 +23,7 @@ TASK_TYPES = [
     "logic_check",
     "reader",
     "assistant",
+    "revision_suggest",
 ]
 
 # 任务类型的中文标签。模型分路与费用汇总都按任务类型分组，
@@ -40,6 +41,7 @@ TASK_TYPE_LABELS = {
     "logic_check": "逻辑自检",
     "reader": "读者反馈",
     "assistant": "助手",
+    "revision_suggest": "修订建议",
 }
 
 
@@ -699,6 +701,67 @@ WRITEBACK_PROMPT = """你是长篇小说的回写助手，服务对象是作者�
 6. 每条人物状态与伏笔回收尽量附上正文原句作为证据；说不清就放进待确认问题；
 7. 返回符合输出契约的结构化结果。"""
 
+REVISION_SCHEMA = {
+    "type": "object",
+    "required": ["suggestions"],
+    "properties": {
+        "suggestions": {
+            "type": "array",
+            "title": "修订建议",
+            "items": {
+                "type": "object",
+                "required": ["target_label", "field", "after", "reason"],
+                "properties": {
+                    # 对象名必须与调用方给的候选清单逐字一致：服务端靠它
+                    # 映射回对象 id，对不上就丢弃计数，绝不猜（见设计 §3.2）。
+                    "target_label": {
+                        "type": "string",
+                        "title": "对象（原样照抄受影响清单里的写法）",
+                    },
+                    # 与其它结构化预置同一做法：不用 enum（说明块不渲染
+                    # enum 的中文名），把可填的值写进中文标题，服务层再归一。
+                    "field": {
+                        "type": "string",
+                        "title": "改哪一项（只能是：场景的目标、场景的冲突、场景的转折、章的摘要）",
+                    },
+                    "after": {
+                        "type": "string",
+                        "title": "改成什么（只写这一项的新内容，不要复述原值）",
+                    },
+                    "reason": {"type": "string", "title": "为什么改（一句话）"},
+                },
+            },
+        },
+        "open_questions": {
+            "type": "array",
+            "items": {"type": "string"},
+            "title": "你拿不准、需要作者确认的问题",
+        },
+    },
+}
+
+REVISION_PROMPT = """你是长篇小说的修订建议师，服务对象是作者。你的产出是待作者逐条勾选的修订建议，不是改稿。
+
+【本次改了什么】
+{{ impact_target }}
+
+【受影响对象的现值】
+{{ impact_candidates }}
+
+【故事圣经】
+{{ story_bible }}
+
+【项目核心】
+{{ project_core }}
+
+要求：
+1. 只为清单里的对象提建议，且只改这四项：场景的目标、场景的冲突、场景的转折、章的摘要；其它内容一律不建议，绝不改正文；
+2. 一次最多 12 条；同一对象同一项只给一条；没有真的需要改的地方就返回空清单，不凑数；
+3. 每条要写清：对象、改哪一项、改成什么、为什么改；理由只说一句话，并说清它和本次改动的关系；
+4. 对象名必须原样照抄【受影响对象的现值】里的写法，不许自己编造对象名，也不许缩写、改名或调换顺序；
+5. 改后的内容要跟本次改动一致，不要顺手改别的设定，也不要替作者决定故事走向；
+6. 你没把握的一律写进「你拿不准、需要作者确认的问题」，不要编造设定填空。"""
+
 DEFAULT_ROSTER: list[dict] = [
     {
         "key": "idea_parser",
@@ -873,5 +936,25 @@ DEFAULT_ROSTER: list[dict] = [
         "param_profile": "balanced",
         "trigger_mode": "manual",
         "note": "从已采纳正文提回写建议；作者勾选后才落库。",
+    },
+    {
+        # key 就是 preset_key：识别既有角色卡靠它，别改名（改名会让旧库
+        # 里那张卡认领不回来，等于凭空多出一张重复卡）。
+        "key": "revision-advisor",
+        "name": "修订建议师",
+        "role_label": "修订",
+        "color": "#e11d48",
+        "task_type": "revision_suggest",
+        "system_prompt": REVISION_PROMPT,
+        "context_slots": [
+            "project_core",
+            "story_bible",
+            "impact_target",
+            "impact_candidates",
+        ],
+        "output_schema": REVISION_SCHEMA,
+        "param_profile": "balanced",
+        "trigger_mode": "manual",
+        "note": "针对本次改动提结构化修订建议；作者逐条勾选后才写库。",
     },
 ]

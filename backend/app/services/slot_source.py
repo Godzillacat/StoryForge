@@ -54,6 +54,22 @@ class DbSlotSource:
         # 优先于按时间取默认值，避免解析结果与作者所指的原话对不上。
         self._extra = extra_slots or {}
 
+    def __getattr__(self, name: str):
+        """未显式实现的槽位从 `_extra` 里取。
+
+        修订建议这类「只在该次运行里组装」的槽位不该逼着 RuntimeService 认
+        槽位名字：调用方显式传 `extra_slots`，这里就按名字给一个取值函数。
+        下划线开头的一律照旧报错，免得把内部的拼写错误吞成空槽位。
+        """
+        if name.startswith("_"):
+            raise AttributeError(name)
+
+        def _from_extra() -> str | None:
+            value = self._extra.get(name)
+            return str(value) if value else None
+
+        return _from_extra
+
     def _project(self) -> Project | None:
         return self._session.get(Project, self._project_id)
 

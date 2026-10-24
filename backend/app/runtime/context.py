@@ -70,6 +70,11 @@ SLOT_REGISTRY: dict[str, SlotSpec] = {
         SlotSpec("scene_text", "当前已采纳正文", P_NEVER, "never"),
         SlotSpec("related_settings", "相关设定条目（检索）", P_MID, "summarize"),
         SlotSpec("foreshadow_ledger", "伏笔账本", P_HIGH, "summarize"),
+        # 修订建议专用的两个槽位：不来自项目态投影，由调用方在一次运行里
+        # 显式传值（见 DbSlotSource.__getattr__）。本次改动永不裁剪 ——
+        # 被裁掉就等于让模型不知道这次改了什么。
+        SlotSpec("impact_target", "这次改了什么", P_NEVER, "never"),
+        SlotSpec("impact_candidates", "受影响对象的现值", P_HIGH, "summarize"),
     )
 }
 
