@@ -29,6 +29,11 @@ class SceneBranch(IdMixin, TimestampMixin, Base):
         ForeignKey("generation_run.id", ondelete="SET NULL"), default=None
     )
     note: Mapped[str] = mapped_column(Text, default="")
+    # A/B 并排生成的一对临时分支共用一个组号；普通分支为 NULL。
+    # A/B 分支对**普通分支列表不可见**（见 branch_service.list_branches）：
+    # 它们是「同一场戏试两种写法」的临时产物，采纳或丢弃后即删，
+    # 不该混进作者手工维护的分支列表。
+    ab_group: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
 
 class BranchRevision(IdMixin, TimestampMixin, Base):

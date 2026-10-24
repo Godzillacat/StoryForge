@@ -120,10 +120,12 @@ def serialize_branch_detail(row: SceneBranch) -> dict:
 
 
 def list_branches(session: Session, scene_id: str) -> list[dict]:
+    """作者手工维护的分支列表。**不含 A/B 分支** —— 它们是同一场戏试两种
+    写法的临时产物，采纳或丢弃后即删，混进来会把列表变成一次性的实验记录。"""
     _scene(session, scene_id)
     rows = session.scalars(
         select(SceneBranch)
-        .where(SceneBranch.scene_id == scene_id)
+        .where(SceneBranch.scene_id == scene_id, SceneBranch.ab_group.is_(None))
         .order_by(SceneBranch.created_at, SceneBranch.id)
     ).all()
     return [serialize_branch(row) for row in rows]
