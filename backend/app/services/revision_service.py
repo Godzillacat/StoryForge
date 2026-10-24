@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -63,6 +65,12 @@ _ALLOWED_FIELDS = {
     "chapter": ("summary",),
 }
 
+# 模型抄候选清单时常把行首编号一起带回来（`1. 第1卷…`）。剥掉再精确匹配。
+_LINE_NUMBER = re.compile(r"^\s*\d+\.\s*")
+
+# 「场景的目标」「的冲突」「字段摘要」这类写法的装饰前缀；剥掉之后必须精确命中。
+_FIELD_PREFIXES = ("场景的", "章的", "的", "字段")
+
 # 服务端解析后的建议写回运行记录时用的键。模型的原始输出原样保留，
 # 应用时只认这份解析结果 —— 下标与生成时的 before 都钉在这里。
 _RESOLVED_KEY = "resolved_suggestions"
@@ -70,6 +78,7 @@ _RESOLVED_KEY = "resolved_suggestions"
 # 逐条应用时跳过某条的原因。放在一处，界面与测试都对着同一份文案。
 _SKIP_BAD_INDEX = "下标无效"
 _SKIP_MISSING = "对象已删除"
+_SKIP_FOREIGN = "对象不属于这个项目"
 _SKIP_LOCKED = "已锁定"
 _SKIP_APPLIED = "已应用"
 _SKIP_STALE = "现值已变化"
@@ -100,23 +109,31 @@ def _clip(text: str, limit: int) -> str:
 def _normalize_field(raw: object) -> str | None:
     """把模型给的「改哪一项」归一成英文键；认不出就返回 None（该条丢弃）。
 
-    除了中文标签与英文原值，也接受「场景的目标」「章的摘要」这类带前缀
-    的写法 —— 只按结尾匹配，且必须只命中一个字段，否则算歧义。
+    只做「剥已知前缀 + 精确匹配」：不再按结尾模糊匹配 ——「目标和冲突」
+    不是任何一个字段，猜成冲突比丢弃更危险。
     """
     text = str(raw or "").strip()
     if not text:
         return None
-    direct = _FIELD_ALIASES.get(text) or _FIELD_ALIASES.get(text.lower())
-    if direct is not None:
-        return direct
-    hits = {
-        field
-        for alias, field in _FIELD_ALIASES.items()
-        if not alias.isascii() and text.endswith(alias)
-    }
-    if len(hits) == 1:
-        return hits.pop()
-    return None
+    changed = True
+    while changed:
+        changed = False
+        for prefix in _FIELD_PREFIXES:
+            if text.startswith(prefix):
+                text = text[len(prefix):].strip()
+                changed = True
+                break
+    return _FIELD_ALIASES.get(text) or _FIELD_ALIASES.get(text.lower())
+
+
+def _normalize_label(raw: object) -> str:
+    """把模型照抄的候选行还原成对象标签。
+
+    候选清单每行是 `1. 第1卷 第1章 场景1｜目标：…`；模型经常整行抄回来，
+    所以先剥行首编号、再取 `｜` 之前的部分。仍然只做精确匹配，不猜。
+    """
+    text = _LINE_NUMBER.sub("", str(raw or "").strip())
+    return text.split("｜", 1)[0].strip()
 
 
 def _build_candidates(session: Session, report: dict) -> list[dict]:
@@ -235,12 +252,10 @@ def _parse_suggestions(
     if not isinstance(raw_items, list):
         return [], 0
     for raw in raw_items:
-        if len(suggestions) >= MAX_SUGGESTIONS:
-            break
         if not isinstance(raw, dict):
             dropped += 1
             continue
-        label = str(raw.get("target_label") or "").strip()
+        label = _normalize_label(raw.get("target_label"))
         matched = by_label.get(label) or []
         # 对不上（模型编了对象名）或标签撞车（两个对象同名）：都丢弃，绝不猜。
         if len(matched) != 1:
@@ -260,6 +275,11 @@ def _parse_suggestions(
             dropped += 1
             continue
         seen.add(key)
+        if len(suggestions) >= MAX_SUGGESTIONS:
+            # 超过上限的**有效**建议也计入 dropped：它们既没进 suggestions，
+            # 也不该像没发生过一样消失。
+            dropped += 1
+            continue
         suggestions.append(
             {
                 "index": len(suggestions),
@@ -368,10 +388,20 @@ def _suggest(
             run_id=run.id,
         )
 
+    # 契约正常时 `suggestions` 必是数组；自定义契约放行别的形状后，
+    # 不能让「不是数组」静默变成「这次没有要改的地方」。
+    if not isinstance(run.parsed_json.get("suggestions"), list):
+        return _failed(
+            "模型返回的「修订建议」不是数组，本轮没有可用的修订建议",
+            run_id=run.id,
+        )
+
     suggestions, dropped = _parse_suggestions(run.parsed_json, candidates)
     _persist_suggestions(session, run, suggestions)
     warning = (
-        f"有 {dropped} 条建议没对上受影响对象或可改字段，已丢弃" if dropped else ""
+        f"有 {dropped} 条建议没被采用（对不上对象、字段不可改，或超过 {MAX_SUGGESTIONS} 条上限），已丢弃"
+        if dropped
+        else ""
     )
     return {
         "run_id": run.id,
@@ -397,6 +427,23 @@ def _locked(session: Session, target_type: str, row) -> bool:
         return bool(lock_service.effective_scene_lock(session, row)["locked"])
     volume = session.get(Volume, row.volume_id)
     return bool(row.locked or (volume is not None and volume.locked))
+
+
+def _belongs_to_project(session: Session, target_type: str, row, project_id: str) -> bool:
+    """对象是否真属于这个项目：场景经章→卷，章经卷。
+
+    运行记录里的建议理论上都由本项目的服务端生成，但 `apply()` 只凭 run_id
+    取对象；万一同一 id 落在别的项目名下（或被手改过运行记录），写入就会
+    越项目。这里退一步确认归属，不如「已删除」那样一概而论。
+    """
+    if target_type == "scene":
+        chapter = session.get(Chapter, row.chapter_id)
+        if chapter is None:
+            return False
+        volume = session.get(Volume, chapter.volume_id)
+    else:
+        volume = session.get(Volume, row.volume_id)
+    return volume is not None and volume.project_id == project_id
 
 
 def apply(session: Session, project_id: str, run_id: str, accepted: list[int]) -> dict:
@@ -465,6 +512,9 @@ def apply(session: Session, project_id: str, run_id: str, accepted: list[int]) -
         row = _row_of(session, target_type, target_id)
         if row is None:
             skipped.append({"index": index, "reason": _SKIP_MISSING})
+            continue
+        if not _belongs_to_project(session, target_type, row, project_id):
+            skipped.append({"index": index, "reason": _SKIP_FOREIGN})
             continue
         if _locked(session, target_type, row):
             skipped.append({"index": index, "reason": _SKIP_LOCKED})

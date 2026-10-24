@@ -859,3 +859,214 @@ def test_apply_skips_deleted_object_and_illegal_field(
         {"index": 1, "reason": "字段不可修改"},
     ]
     assert session.get(Chapter, scenes["chapter"].id).title == "失踪的船主"
+
+
+# ---- 审查修复：解析收紧与归属校验 ----
+
+
+def test_suggest_counts_overflow_in_dropped(
+    session, project, many_scenes, runtime_ready
+):
+    """超过 12 条的有效建议不能凭空消失：溢出条数计入 dropped。"""
+    from app.services import revision_service
+
+    arch = _architecture_of(session, project)
+    suggestions = []
+    for index in range(5):
+        for field, label in (("goal", "目标"), ("conflict", "冲突"), ("turn", "转折")):
+            suggestions.append(
+                {
+                    "target_label": f"第1卷 第1章 场景{index + 1}",
+                    "field": label,
+                    "after": f"新{label}{index + 1}",
+                    "reason": "跟本次改动一致",
+                }
+            )
+    assert len(suggestions) == 15
+
+    result = revision_service.suggest(
+        session,
+        project.id,
+        "architecture",
+        arch.id,
+        client=_model_client(_content(suggestions)),
+    )
+
+    assert result["llm_status"] == "ok"
+    assert len(result["suggestions"]) == 12
+    # 15 条全部有效，只留 12 条，剩下 3 条必须记进 dropped。
+    assert result["dropped"] == 3
+    assert "3" in result["warning"]
+
+
+def test_normalize_field_requires_exact_match_after_prefix():
+    """剥掉已知前缀后必须精确命中字段名，不做结尾模糊匹配。"""
+    from app.services import revision_service
+
+    assert revision_service._normalize_field("场景的目标") == "goal"
+    assert revision_service._normalize_field("章的摘要") == "summary"
+    assert revision_service._normalize_field("字段冲突") == "conflict"
+    assert revision_service._normalize_field("转折") == "turn"
+    # 「目标和冲突」不是任何一个字段，猜成后者比丢弃更危险。
+    assert revision_service._normalize_field("目标和冲突") is None
+    assert revision_service._normalize_field("目标或冲突") is None
+    assert revision_service._normalize_field("正文") is None
+
+
+def test_suggest_accepts_model_labels_with_line_numbers(
+    session, project, scenes, runtime_ready
+):
+    """模型把候选行整行抄回来（带 `1.` 编号与 `｜现值`）：剥掉后仍精确命中。"""
+    from app.services import revision_service
+
+    arch = _architecture_of(session, project)
+    client = _model_client(
+        _content(
+            [
+                {
+                    "target_label": "1. 第1卷 第1章 场景1｜目标：找到船主的下落",
+                    "field": "场景的目标",
+                    "after": "改后的目标",
+                    "reason": "整行抄",
+                },
+                {
+                    "target_label": "2. 第1卷 第1章 场景2",
+                    "field": "的冲突",
+                    "after": "改后的冲突",
+                    "reason": "剥前缀",
+                },
+            ]
+        )
+    )
+
+    result = revision_service.suggest(
+        session, project.id, "architecture", arch.id, client=client
+    )
+
+    assert result["llm_status"] == "ok"
+    assert result["dropped"] == 0
+    assert [(s["target_id"], s["field"]) for s in result["suggestions"]] == [
+        (scenes["first"].id, "goal"),
+        (scenes["second"].id, "conflict"),
+    ]
+    assert result["suggestions"][0]["before"] == "找到船主的下落"
+
+
+def test_suggest_errors_when_suggestions_is_not_an_array(
+    session, project, scenes, runtime_ready, monkeypatch
+):
+    """契约挡不住时（自定义契约）也不能把「不是数组」当成「没什么要改」。"""
+    from app.services import revision_service
+
+    class _FakeRun:
+        id = "fake-run"
+        parsed_json = {"suggestions": "不是数组"}
+
+    class _FakeResult:
+        status = "ok"
+        structured = True
+        parse_error = None
+        error = None
+
+    monkeypatch.setattr(
+        revision_service.RuntimeService,
+        "execute",
+        lambda self, *args, **kwargs: (_FakeRun(), _FakeResult()),
+    )
+
+    arch = _architecture_of(session, project)
+    result = revision_service.suggest(session, project.id, "architecture", arch.id)
+
+    assert result["llm_status"] == "error"
+    assert result["suggestions"] == []
+    assert "数组" in result["warning"]
+    assert result["run_id"] == "fake-run"
+
+
+def test_apply_writes_when_before_is_empty(
+    session, project, scenes, runtime_ready
+):
+    """生成时字段是空串：`"" == ""` 要算通过，空字段否则永远应用不上。"""
+    from app.services import revision_service
+
+    empty = Scene(
+        chapter_id=scenes["chapter"].id, seq=3, goal="", conflict="", turn=""
+    )
+    session.add(empty)
+    session.commit()
+
+    arch = _architecture_of(session, project)
+    result = revision_service.suggest(
+        session,
+        project.id,
+        "architecture",
+        arch.id,
+        client=_model_client(
+            _content(
+                [
+                    {
+                        "target_label": "第1卷 第1章 场景4",
+                        "field": "目标",
+                        "after": "从无到有的目标",
+                        "reason": "这一场还没有目标",
+                    }
+                ]
+            )
+        ),
+    )
+
+    assert result["suggestions"][0]["before"] == ""
+
+    out = revision_service.apply(session, project.id, result["run_id"], [0])
+
+    assert [a["index"] for a in out["applied"]] == [0]
+    assert out["skipped"] == []
+    assert session.get(Scene, empty.id).goal == "从无到有的目标"
+
+
+def test_apply_skips_object_from_another_project(session, project, scenes):
+    """运行记录指向别的项目的对象：不写、不记历史，报「对象不属于这个项目」。"""
+    from app.services import revision_service
+
+    other = Project(name="别的项目")
+    session.add(other)
+    session.commit()
+    other_volume = Volume(project_id=other.id, seq=0, name="别卷")
+    session.add(other_volume)
+    session.flush()
+    other_chapter = Chapter(volume_id=other_volume.id, seq=0, title="别章")
+    session.add(other_chapter)
+    session.flush()
+    foreign = Scene(chapter_id=other_chapter.id, seq=0, goal="别处的目标")
+    session.add(foreign)
+    session.commit()
+
+    run = GenerationRun(
+        project_id=project.id,
+        parsed_json={
+            "suggestions": [
+                {"target_label": "第1卷 第1章 场景9", "field": "目标", "after": "新值"}
+            ],
+            "resolved_suggestions": [
+                {
+                    "index": 0,
+                    "target_type": "scene",
+                    "target_id": foreign.id,
+                    "target_label": "第1卷 第1章 场景9",
+                    "field": "goal",
+                    "field_label": "目标",
+                    "before": "别处的目标",
+                    "after": "新值",
+                    "reason": "越项目",
+                }
+            ],
+        },
+    )
+    session.add(run)
+    session.commit()
+
+    out = revision_service.apply(session, project.id, run.id, [0])
+
+    assert out["applied"] == []
+    assert out["skipped"] == [{"index": 0, "reason": "对象不属于这个项目"}]
+    assert session.get(Scene, foreign.id).goal == "别处的目标"
