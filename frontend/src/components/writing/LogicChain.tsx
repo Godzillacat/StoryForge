@@ -30,12 +30,32 @@ export default function LogicChain({
   // 默认图形：图是本项交付物，文本列表退成备选。切换只改这一处本地状态，
   // 不碰 `data`、也不进 `useEffect` 的依赖 —— 切模式不该重跑接口。
   const [mode, setMode] = useState<'graph' | 'text'>('graph')
+  // 全屏只看这一份 `data`：不复制、不重取。右栏在 xl 下仅 320px，图放不下时才用。
+  const [expanded, setExpanded] = useState(false)
+  // 覆盖层真正可见的条件：既点了展开，手头也真有可画的链（重取期间 data 会短暂为 null）。
+  const dialogOpen = expanded && Boolean(data && data.chain.length > 0)
 
-  // 换场回到默认图形：作者换一场时看到的应是这一场的图，而不是上一场留下的选择。
-  // 只重置模式，取数仍由下面那个 effect 管，两者互不影响。
+  // 换场回到默认图形，并关掉上一场的全屏图：取数仍由下面那个 effect 管。
   useEffect(() => {
     setMode('graph')
+    setExpanded(false)
   }, [sceneId])
+
+  // 全屏打开时锁住页面滚动，关闭 / 换场 / 卸载都恢复到打开前的值。
+  // ESC 与「关闭」按钮走同一个出口：setExpanded(false)。
+  useEffect(() => {
+    if (!dialogOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setExpanded(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      document.body.style.overflow = previousOverflow
+    }
+  }, [dialogOpen])
 
   useEffect(() => {
     setData(null)
@@ -85,7 +105,11 @@ export default function LogicChain({
               type="button"
               aria-pressed={mode === value}
               disabled={!data || data.chain.length === 0}
-              onClick={() => setMode(value)}
+              onClick={() => {
+                setMode(value)
+                // 全屏图只在图形模式有意义，切走时一并收起。
+                setExpanded(false)
+              }}
               className={`rounded px-2 py-0.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-slate-500 disabled:cursor-not-allowed disabled:opacity-40 ${
                 mode === value ? 'bg-slate-800 text-slate-200' : 'text-slate-400'
               }`}
@@ -93,6 +117,18 @@ export default function LogicChain({
               {label}
             </button>
           ))}
+          {mode === 'graph' && (
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={expanded}
+              disabled={!data || data.chain.length === 0}
+              onClick={() => setExpanded(true)}
+              className="rounded px-2 py-0.5 text-xs text-slate-400 outline-none focus-visible:ring-1 focus-visible:ring-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              展开
+            </button>
+          )}
         </div>
       </div>
       <p className="text-xs text-slate-500">
@@ -128,6 +164,31 @@ export default function LogicChain({
             </li>
           ))}
         </ul>
+      )}
+
+      {/* 全屏覆盖层：右栏太窄时把同一张图放大看，不另取数据。 */}
+      {dialogOpen && data && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="逻辑链图形视图"
+          className="fixed inset-0 z-50 overflow-auto bg-slate-950/90 p-4 md:p-8"
+        >
+          <div className="mx-auto max-w-6xl rounded border border-slate-800 bg-slate-950 p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <h3 className="font-medium text-slate-200">逻辑链 · 图形视图</h3>
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setExpanded(false)}
+                className="ml-auto rounded px-2 py-0.5 text-xs text-slate-400 outline-none hover:text-slate-200 focus-visible:ring-1 focus-visible:ring-slate-500"
+              >
+                关闭
+              </button>
+            </div>
+            <LogicChainGraph chain={data.chain} paragraphs={data.paragraphs} />
+          </div>
+        </div>
       )}
     </section>
   )
