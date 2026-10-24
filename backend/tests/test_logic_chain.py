@@ -92,3 +92,9 @@ def test_count_paragraphs_agrees_with_extract_chain():
     chain = extract_chain(text)
     assert count_paragraphs(text) == 3
     assert max(item["paragraph"] for item in chain) <= count_paragraphs(text)
+
+    # 最后一个命中就在最后一段：两边若用了不同的分段口径，差一在这里立刻露出来。
+    tail_text = "开头。\n\n因为下雨，他留下。"
+    tail_chain = extract_chain(tail_text)
+    assert count_paragraphs(tail_text) == 2
+    assert max(item["paragraph"] for item in tail_chain) == count_paragraphs(tail_text)

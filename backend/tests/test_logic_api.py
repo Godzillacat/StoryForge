@@ -202,6 +202,8 @@ def test_logic_chain_without_connectives_does_not_invent_one(client):
     data = client.get(f"/api/scenes/{scene_id}/logic-chain").json()
 
     assert data["chain"] == []
+    # 零命中不等于没有正文：正文只有一段且没有连接词，段落数仍是 1。
+    assert data["paragraphs"] == 1
     assert "没有明显" in data["reason"]
 
 
