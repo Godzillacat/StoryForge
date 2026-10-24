@@ -12,8 +12,10 @@
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.db.base import utcnow
 from app.db.models import Chapter, CharacterState, Project, SettingEntry, Volume
 from app.services import chapter_service
 from app.text_stats import count_words
@@ -37,12 +39,15 @@ def _chapter_list(session: Session, project_id: str) -> list[dict]:
     """全项目章列表，按阅读顺序（卷序 → 章序）。
 
     `chapters` 与有没有记录无关：它的职责是给前端对齐列，缺格才留得出来。
+    `volume_label` 与因果链图 / 设定投放曲线对齐 —— 多卷时两卷都有「第1章 雨夜」，
+    只靠章标签分不开是哪一卷。
     """
     tree = chapter_service.build_tree(session, project_id)
     return [
         {
             "id": chapter["id"],
             "label": f"第{chapter['seq'] + 1}章 {chapter['title']}".strip(),
+            "volume_label": volume["name"],
         }
         for volume in tree
         for chapter in volume["chapters"]
@@ -164,6 +169,17 @@ def _state_out(state: CharacterState) -> dict:
     }
 
 
+def _find_state(
+    session: Session, chapter_id: str, entry_id: str
+) -> CharacterState | None:
+    return session.scalars(
+        select(CharacterState).where(
+            CharacterState.chapter_id == chapter_id,
+            CharacterState.entry_id == entry_id,
+        )
+    ).first()
+
+
 def put_state(session: Session, chapter_id: str, entry_id: str, note: str) -> dict:
     """写入一条手记状态；同章同人重复写是 upsert（更新 `updated_at`）。"""
     project_id = _chapter_project(session, chapter_id)
@@ -184,17 +200,25 @@ def put_state(session: Session, chapter_id: str, entry_id: str, note: str) -> di
     if count_words(cleaned) > NOTE_LIMIT:
         raise ValueError(f"状态不能超过 {NOTE_LIMIT} 字")
 
-    state = session.scalars(
-        select(CharacterState).where(
-            CharacterState.chapter_id == chapter_id,
-            CharacterState.entry_id == entry_id,
-        )
-    ).first()
+    state = _find_state(session, chapter_id, entry_id)
     if state is None:
         state = CharacterState(chapter_id=chapter_id, entry_id=entry_id, note=cleaned)
         session.add(state)
-    else:
-        state.note = cleaned
+        try:
+            session.commit()
+            return _state_out(state)
+        except IntegrityError:
+            # select → insert 之间被另一个请求（或双击保存）抢先插进了同一格。
+            # 回滚后重查，按「已存在」的更新语义重来 —— 唯一约束不该冒成 500。
+            session.rollback()
+            state = _find_state(session, chapter_id, entry_id)
+            if state is None:
+                raise
+
+    state.note = cleaned
+    # 显式刷新：重存同一句话时 note 不是脏字段，不会发出 UPDATE，
+    # 光靠 `TimestampMixin.onupdate` 刷不到 `updated_at`（spec §3.2）。
+    state.updated_at = utcnow()
     session.commit()
     return _state_out(state)
 

@@ -7,6 +7,7 @@
 """
 
 from dataclasses import dataclass
+import time
 
 import pytest
 from sqlalchemy import func, select
@@ -112,14 +113,18 @@ def test_chapters_are_always_the_whole_project_in_reading_order(session, drift):
     """`chapters` 是全项目章列表（前端据此对齐列），与有没有记录无关。"""
     # 第二卷排在后面，阅读顺序必须跟着卷序、章序走。
     second_volume = _volume(session, drift.project, seq=1, name="第二卷")
-    _chapter(session, second_volume, 0, "归途")
+    extra = _chapter(session, second_volume, 0, "归途")
 
     data = character_drift_service.get_drift(session, drift.project.id)
 
     assert data["chapters"] == [
-        {"id": chapter.id, "label": f"第{index + 1}章 {chapter.title}"}
+        {
+            "id": chapter.id,
+            "label": f"第{index + 1}章 {chapter.title}",
+            "volume_label": "第一卷",
+        }
         for index, chapter in enumerate(drift.chapters)
-    ] + [{"id": data["chapters"][-1]["id"], "label": "第1章 归途"}]
+    ] + [{"id": extra.id, "label": "第1章 归途", "volume_label": "第二卷"}]
     assert data["characters"] == []
     assert data["totals"] == {"characters": 0, "changes": 0, "sparse": 0}
     assert data["reason"] == "还没有状态记录"
@@ -208,6 +213,44 @@ def test_upsert_keeps_a_single_row(session, drift):
     assert row["recorded"] == 1
     assert row["cells"][0]["note"] == "决意"
     assert row["changes"] == 0
+
+
+def test_resaving_the_same_note_refreshes_updated_at(session, drift):
+    first = _put(session, drift, drift.chapters[0], drift.hero, "犹豫")
+    time.sleep(0.02)  # Windows 时钟粒度可能让两次调用落在同一微秒
+    second = _put(session, drift, drift.chapters[0], drift.hero, "犹豫")
+
+    # 重存同一句话也要算一次更新（spec §3.2）：note 不是脏字段，得显式刷新时间。
+    assert second["note"] == first["note"]
+    assert second["updated_at"] > first["updated_at"]
+    # 仍是那一行（不是又插了一行）。created_at 的时区后缀在这里不作断言：
+    # SQLite 读回的时间不带偏移，首次写入回的是内存对象 —— 这是既有存储行为。
+    assert _state_count(session) == 1
+
+
+def test_a_racing_insert_falls_back_to_an_update(session, drift, monkeypatch):
+    """select 之后、insert 之前被抢先插进同一格：唯一约束不该冒成 500。"""
+    _put(session, drift, drift.chapters[0], drift.hero, "犹豫")
+
+    real_find = character_drift_service._find_state
+    calls = {"count": 0}
+
+    def racing_find(session_, chapter_id, entry_id):
+        calls["count"] += 1
+        # 第一次「查」假装还没有这条记录，逼出一次真会撞唯一约束的 insert；
+        # 回滚后的重查走真实实现，必须能拿回另一边插进去的那一行。
+        if calls["count"] == 1:
+            return None
+        return real_find(session_, chapter_id, entry_id)
+
+    monkeypatch.setattr(character_drift_service, "_find_state", racing_find)
+
+    written = _put(session, drift, drift.chapters[0], drift.hero, "决意")
+
+    assert written["note"] == "决意"
+    assert _state_count(session) == 1
+    row = _row(character_drift_service.get_drift(session, drift.project.id), drift.hero)
+    assert row["cells"][0]["note"] == "决意"
 
 
 def test_database_enforces_one_record_per_chapter_and_character(session, drift):
@@ -356,7 +399,9 @@ def test_api_round_trip_put_get_delete(client):
             "recorded": 1,
         }
     ]
-    assert drift["chapters"] == [{"id": chapter["id"], "label": "第1章 雨夜"}]
+    assert drift["chapters"] == [
+        {"id": chapter["id"], "label": "第1章 雨夜", "volume_label": "第一卷"}
+    ]
     assert drift["totals"] == {"characters": 1, "changes": 0, "sparse": 1}
     assert drift["reason"] == ""
 
