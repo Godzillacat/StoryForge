@@ -48,3 +48,6 @@ frontend/.cache/
 
 # Playwright CLI 走查产物（快照、控制台日志）
 .playwright-cli/
+
+# Inno 安装包产物
+packaging/Output/

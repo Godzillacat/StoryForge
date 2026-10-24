@@ -35,8 +35,14 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ; 需要 WebView2 运行时；Win10/11 通常自带，缺失时安装器会提示去装。
 ; （不内嵌 Evergreen 引导器：它会联网下载，与「本机优先」不符。）
 
-[Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+; 语言：Inno 6.7 官方安装包**不带**简体中文 .isl（它在 jrsoftware/issrc 的
+; `Files/Languages/Unofficial/` 里，需要单独放进来）。本机没有外网、取不到，
+; 因此默认走英文向导。要中文向导：把 `ChineseSimplified.isl` 放到
+; `%LOCALAPPDATA%\Programs\Inno Setup 6\Languages\` 或本目录 `languages\` 下，
+; 再把下面这行的注释去掉。
+;
+; [Languages]
+; Name: "chinesesimplified"; MessagesFile: "languages\ChineseSimplified.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务："; Flags: unchecked
