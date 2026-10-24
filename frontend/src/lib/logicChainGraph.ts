@@ -23,8 +23,8 @@ export interface GraphNode {
 }
 
 export interface GraphEdge {
-  from: number
-  to: number
+  fromIndex: number
+  toIndex: number
   kind: string
 }
 
@@ -100,11 +100,12 @@ export function buildLogicChainGraph(chain: LogicChainItem[], paragraphs: number
   }
 
   // 边只表达出现顺序：相邻两次命中连一条线，颜色由目标端类型决定。
+  // 端点用的是「扁平节点下标」（列优先铺开的 nodes 下标），不是段落下标。
   const edges: GraphEdge[] = []
   for (let position = 1; position < chain.length; position += 1) {
     edges.push({
-      from: indexByPosition[position - 1],
-      to: indexByPosition[position],
+      fromIndex: indexByPosition[position - 1],
+      toIndex: indexByPosition[position],
       kind: chain[position].kind,
     })
   }

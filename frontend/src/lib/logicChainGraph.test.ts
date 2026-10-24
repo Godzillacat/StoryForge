@@ -1,7 +1,8 @@
 import { expect, it } from 'vitest'
 import type { LogicChainItem } from '../api/client'
 import {
-  buildLogicChainGraph, shortenSentence, NODE_HEIGHT, COLUMN_WIDTH, ROW_GAP, PAD_LEFT, PAD_TOP,
+  buildLogicChainGraph, shortenSentence, NODE_WIDTH, NODE_HEIGHT, COLUMN_WIDTH, ROW_GAP,
+  PAD_LEFT, PAD_TOP, PAD_BOTTOM,
 } from './logicChainGraph'
 
 function hit(paragraph: number, kind = 'cause', sentence = '因为下雨，他留下。'): LogicChainItem {
@@ -25,9 +26,33 @@ it('stacks nodes top-down inside a column and numbers them flat', () => {
 it('links consecutive hits with edges coloured by the target kind', () => {
   const graph = buildLogicChainGraph([hit(1), hit(2, 'turn'), hit(3, 'reveal')], 3)
   expect(graph.edges).toEqual([
-    { from: 0, to: 1, kind: 'turn' },
-    { from: 1, to: 2, kind: 'reveal' },
+    { fromIndex: 0, toIndex: 1, kind: 'turn' },
+    { fromIndex: 1, toIndex: 2, kind: 'reveal' },
   ])
+})
+
+it('uses flat node indices for edges, not paragraph numbers', () => {
+  // 同列两个节点（扁平下标 0、1）连一条，再连到下一列第一个节点（扁平下标 2）。
+  // 按 chain 的 i → i+1 连，所以同列相邻两次命中之间也有边。
+  // 判别点在第一条边：0 → 1（若误用段落下标会变成 1 → 1）。
+  const graph = buildLogicChainGraph([hit(1), hit(1), hit(2)], 2)
+  expect(graph.edges).toEqual([
+    { fromIndex: 0, toIndex: 1, kind: 'cause' },
+    { fromIndex: 1, toIndex: 2, kind: 'cause' },
+  ])
+})
+
+it('sizes a single-column single-node graph exactly', () => {
+  const graph = buildLogicChainGraph([hit(1)], 1)
+  expect(graph.width).toBe(PAD_LEFT * 2 + NODE_WIDTH)
+  expect(graph.height).toBe(PAD_TOP + NODE_HEIGHT + PAD_BOTTOM)
+})
+
+it('keeps the height and grows the width when the extra column is empty', () => {
+  const single = buildLogicChainGraph([hit(1)], 1)
+  const wider = buildLogicChainGraph([hit(2)], 2)
+  expect(wider.height).toBe(single.height)
+  expect(wider.width).toBeGreaterThan(single.width)
 })
 
 it('draws no edge for a single hit', () => {
