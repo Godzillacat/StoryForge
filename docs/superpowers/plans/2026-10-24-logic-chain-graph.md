@@ -165,8 +165,8 @@ it('stacks nodes top-down inside a column and numbers them flat', () => {
 it('links consecutive hits with edges coloured by the target kind', () => {
   const graph = buildLogicChainGraph([hit(1), hit(2, 'turn'), hit(3, 'reveal')], 3)
   expect(graph.edges).toEqual([
-    { from: 0, to: 1, kind: 'turn' },
-    { from: 1, to: 2, kind: 'reveal' },
+    { fromIndex: 0, toIndex: 1, kind: 'turn' },
+    { fromIndex: 1, toIndex: 2, kind: 'reveal' },
   ])
 })
 
