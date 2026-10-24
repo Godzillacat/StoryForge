@@ -5,6 +5,7 @@ import {
   type ChapterNode,
   type ChapterPlanResponse,
   type ChapterStatusOption,
+  type CharacterDriftData,
   type Foreshadow,
   type ForeshadowSummary,
   type PlanScene,
@@ -34,8 +35,16 @@ import RhythmCurve from '../components/chapters/RhythmCurve'
 import Swimlanes from '../components/chapters/Swimlanes'
 import CausalMap from '../components/chapters/CausalMap'
 import SettingLoadCurve from '../components/chapters/SettingLoadCurve'
+import CharacterDrift from '../components/chapters/CharacterDrift'
 
-type ViewTab = 'structure' | 'rhythm' | 'foreshadows' | 'lanes' | 'causal' | 'settingLoad'
+type ViewTab =
+  | 'structure'
+  | 'rhythm'
+  | 'foreshadows'
+  | 'lanes'
+  | 'causal'
+  | 'settingLoad'
+  | 'characterDrift'
 
 const TABS: { key: ViewTab; label: string }[] = [
   { key: 'structure', label: '结构设计' },
@@ -44,6 +53,7 @@ const TABS: { key: ViewTab; label: string }[] = [
   { key: 'lanes', label: '剧情线' },
   { key: 'causal', label: '因果链' },
   { key: 'settingLoad', label: '设定投放' },
+  { key: 'characterDrift', label: '性格漂移' },
 ]
 
 export default function Chapters() {
@@ -68,6 +78,11 @@ export default function Chapters() {
   // 设定投放与因果链同理：数据属于哪个项目、错误只归它自己的视图。
   const [settingLoadProjectId, setSettingLoadProjectId] = useState('')
   const [settingLoadError, setSettingLoadError] = useState('')
+  const [characterDrift, setCharacterDrift] = useState<CharacterDriftData | null>(null)
+  // 性格漂移单独一份项目归属与错误：格子里的保存只重拉这张表，
+  // 失败也不该把结构树或另外两张统计判为失败。
+  const [characterDriftProjectId, setCharacterDriftProjectId] = useState('')
+  const [characterDriftError, setCharacterDriftError] = useState('')
   const [selected, setSelected] = useState<Selection | null>(null)
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -89,6 +104,8 @@ export default function Chapters() {
   // 每次项目级请求自增；迟到的旧项目响应凭 token 失效，
   // 不能覆盖当前项目的树、条目或伏笔。
   const dataRequestRef = useRef(0)
+  // 性格漂移自己的 token：保存格子后的重取不能把整页刷新的 token 撞掉。
+  const characterDriftRequestRef = useRef(0)
   // 与 projectId 同步的即时值：保存后的 refresh 是旧渲染的闭包，
   // 只有它能在切项目后认出「这是旧项目的请求」。
   const projectIdRef = useRef('')
@@ -123,6 +140,11 @@ export default function Chapters() {
     setSettingLoad(null)
     setSettingLoadProjectId('')
     setSettingLoadError('')
+    setCharacterDrift(null)
+    setCharacterDriftProjectId('')
+    setCharacterDriftError('')
+    // 让上一本在途的漂移响应过期：它不能落到新项目的表格里。
+    characterDriftRequestRef.current += 1
     setReviewMarks([])
     setDataProjectId('')
     runToken.current++
@@ -137,6 +159,7 @@ export default function Chapters() {
       api.foreshadowSummary(projectId),
       api.causalMap(projectId),
       api.settingLoad(projectId),
+      api.characterDrift(projectId),
     ]).then((results) => {
       const [
         treeResult,
@@ -145,6 +168,7 @@ export default function Chapters() {
         summaryResult,
         causalResult,
         settingLoadResult,
+        characterDriftResult,
       ] = results
       if (dataRequestRef.current !== token) return
       const errors: string[] = []
@@ -180,11 +204,19 @@ export default function Chapters() {
       } else {
         setSettingLoadError((settingLoadResult.reason as Error).message)
       }
+      // 性格漂移同理：读失败只在它自己的页签里说，不牵连别的视图。
+      if (characterDriftResult.status === 'fulfilled') {
+        setCharacterDrift(characterDriftResult.value)
+        setCharacterDriftError('')
+      } else {
+        setCharacterDriftError((characterDriftResult.reason as Error).message)
+      }
       if (errors.length > 0) setNotice(errors.join('；'))
       // 两份都已有结果就结束加载态：部分失败时显示已有数据 + 页头提示。
       setDataProjectId(projectId)
       setCausalProjectId(projectId)
       setSettingLoadProjectId(projectId)
+      setCharacterDriftProjectId(projectId)
     })
     api
       .listEntries(projectId)
@@ -265,6 +297,35 @@ export default function Chapters() {
         if (projectIdRef.current !== requestProjectId) return
         setSettingLoadError((error as Error).message)
       })
+    // 性格漂移也一样：章序或人物改过之后要重排，失败只报它自己的错。
+    void loadCharacterDrift(requestProjectId)
+  }
+
+  /** 只重拉性格漂移。**保存 / 删除一格后走这条** —— 变化标记由后端重算，前端不猜。 */
+  async function loadCharacterDrift(requestProjectId: string) {
+    if (!requestProjectId) return
+    // 保存动作落回时可能已经切了项目：旧项目的请求连 token 都不该动。
+    if (projectIdRef.current !== requestProjectId) return
+    const token = ++characterDriftRequestRef.current
+    try {
+      const data = await api.characterDrift(requestProjectId)
+      if (token !== characterDriftRequestRef.current) return
+      if (projectIdRef.current !== requestProjectId) return
+      setCharacterDrift(data)
+      setCharacterDriftError('')
+    } catch (error) {
+      if (token !== characterDriftRequestRef.current) return
+      if (projectIdRef.current !== requestProjectId) return
+      setCharacterDriftError((error as Error).message)
+    } finally {
+      // 失败也要结束加载态（显示错误），不能一直转圈。
+      if (
+        token === characterDriftRequestRef.current &&
+        projectIdRef.current === requestProjectId
+      ) {
+        setCharacterDriftProjectId(requestProjectId)
+      }
+    }
   }
 
   async function run(action: () => Promise<void>) {
@@ -450,6 +511,7 @@ export default function Chapters() {
   // 因果链单独判加载态：它只服务一个视图，失败也不该拖住别的视图。
   const causalLoading = Boolean(projectId) && causalProjectId !== projectId
   const settingLoadLoading = Boolean(projectId) && settingLoadProjectId !== projectId
+  const characterDriftLoading = Boolean(projectId) && characterDriftProjectId !== projectId
 
   return (
     <div className="space-y-6">
@@ -737,6 +799,17 @@ export default function Chapters() {
                   onSelectChapter={(id) =>
                     openInStructure({ kind: 'chapter', id })
                   }
+                />
+              )}
+              {view === 'characterDrift' && (
+                // key：切项目时重挂载，编辑中的格子不会跟着旧项目的行带到新项目。
+                <CharacterDrift
+                  key={projectId}
+                  data={characterDrift}
+                  loading={characterDriftLoading}
+                  error={characterDriftError}
+                  onReload={() => loadCharacterDrift(projectId)}
+                  onNotice={setNotice}
                 />
               )}
             </>

@@ -331,6 +331,22 @@ export const api = {
     request<CausalMapData>(`/api/projects/${projectId}/causal-map`),
   settingLoad: (projectId: string) =>
     request<SettingLoadData>(`/api/projects/${projectId}/setting-load`),
+  characterDrift: (projectId: string) =>
+    request<CharacterDriftData>(`/api/projects/${projectId}/character-drift`),
+  // 同一章同一人重复写是 upsert（不是再记一条），所以 PUT 而不是 POST。
+  putCharacterState: (chapterId: string, entryId: string, note: string) =>
+    request<CharacterStateRecord>(
+      `/api/chapters/${chapterId}/character-states/${entryId}`,
+      {
+        method: 'PUT',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ note }),
+      },
+    ),
+  deleteCharacterState: (chapterId: string, entryId: string) =>
+    request<void>(`/api/chapters/${chapterId}/character-states/${entryId}`, {
+      method: 'DELETE',
+    }),
   logicChain: (sceneId: string) =>
     request<LogicChainResponse>(`/api/scenes/${sceneId}/logic-chain`),
   listForeshadows: (projectId: string) =>
@@ -1001,6 +1017,50 @@ export interface SettingLoadData {
   totals: SettingLoadTotals
   // 非空 = 曲线没有可比的意义（没有条目 / 没有正文），直接用后端的文案做空态。
   reason: string
+}
+
+/** 性格漂移里的一格：某人某一章手记的一行状态（`changed` 由后端判定）。 */
+export interface CharacterDriftCell {
+  chapter_id: string
+  label: string
+  note: string
+  // 与该人物的**上一条**记录比较（不是与上一章）；首条恒 false。
+  changed: boolean
+}
+
+export interface CharacterDriftRow {
+  entry_id: string
+  name: string
+  // 只含有记录的章；前端按 `chapters` 对齐后缺格留空。
+  cells: CharacterDriftCell[]
+  changes: number
+  recorded: number
+}
+
+export interface CharacterDriftTotals {
+  characters: number
+  changes: number
+  /** 只有一条记录的人数 —— 看不出漂移，顶部汇总要点出来。 */
+  sparse: number
+}
+
+export interface CharacterDriftData {
+  // 只列有记录的人物；没记过的人不占一行空白。
+  characters: CharacterDriftRow[]
+  // 全项目章列表（卷序 → 章序），与有无记录无关：它负责给表格对齐列。
+  chapters: { id: string; label: string }[]
+  totals: CharacterDriftTotals
+  // 非空 = 没东西可画（无人物 / 无记录），直接用后端的文案做空态。
+  reason: string
+}
+
+/** PUT 的返回体。界面不用它拼格子（保存后整本重取），只当作写入回执。 */
+export interface CharacterStateRecord {
+  chapter_id: string
+  entry_id: string
+  note: string
+  created_at: string
+  updated_at: string
 }
 
 export interface Foreshadow {
