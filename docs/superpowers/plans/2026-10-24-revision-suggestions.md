@@ -89,8 +89,11 @@ Expected: FAIL（找不到任务类型 / 槽位未注册）
 
 ```python
 SlotSpec("impact_target", "这次改了什么", P_NEVER, "never"),
-SlotSpec("impact_candidates", "受影响对象的现值", P_HIGH, "summarize"),
+SlotSpec("impact_candidates", "受影响对象的现值", P_NEVER, "never"),
 ```
+
+> `impact_candidates` 用 `never` / `P_NEVER`：它被压成 120 字后，模型就拿不到可照抄的对象名，
+> 建议会整批丢弃、只表现为 `dropped` 变大。候选最多 12 条、每条约 40 字，预算够。
 
 `slot_source.py` 的 `DbSlotSource` 加：
 
