@@ -18,6 +18,7 @@ import {
   type WritebackApplyPayload,
   type WritebackSuggestion,
 } from '../api/client'
+import AbPanel from '../components/writing/AbPanel'
 import AuditPanel from '../components/writing/AuditPanel'
 import BatchPanel from '../components/writing/BatchPanel'
 import ContextPreview from '../components/writing/ContextPreview'
@@ -1323,6 +1324,25 @@ export default function Writing() {
                 <h3 className="text-sm font-medium text-slate-300">这一场的改动</h3>
                 <ChangeList projectId={projectId} changes={sceneChanges} />
               </section>
+            )}
+            {selectedSceneId && (
+              <AbPanel
+                sceneId={selectedSceneId}
+                locked={sceneLock?.locked === true}
+                disabled={busy || generating || branchBusy}
+                onAdopted={() => {
+                  // 采纳会换正文、删掉两条 A/B 分支：正文、改动历史与左树都要跟上。
+                  // 在途请求可能属于刚切走的场景，捕获当前令牌再比对。
+                  const token = sceneToken.current
+                  const sceneId = selectedSceneId
+                  void refreshText(sceneId).then((state) => {
+                    if (state !== null && sceneToken.current === token) {
+                      void refreshSceneChanges(sceneId, token)
+                    }
+                  })
+                  void refreshTree()
+                }}
+              />
             )}
             {selectedSceneId && (
               <BranchPanel
