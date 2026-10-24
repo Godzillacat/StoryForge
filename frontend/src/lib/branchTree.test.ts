@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { INDENT_PER_LEVEL, buildBranchRows, type BranchNode } from './branchTree'
+import {
+  INDENT_PER_LEVEL,
+  buildBranchRows,
+  defaultChildName,
+  type BranchNode,
+} from './branchTree'
 
 /** 后端 `list_branches` 的形状；`depth` / `parent_id` 缺省时由函数自算。 */
 function branch(id: string, name: string, extra: Partial<BranchNode> = {}): BranchNode {
@@ -87,3 +92,33 @@ describe('buildBranchRows', () => {
     expect(buildBranchRows(null)).toEqual([])
   })
 })
+
+describe('defaultChildName', () => {
+  it('suggests 父名 · 派生 when the name is free', () => {
+    expect(defaultChildName('阿明犹豫', [])).toBe('阿明犹豫 · 派生')
+    expect(defaultChildName('阿明犹豫', ['第三人视角'])).toBe('阿明犹豫 · 派生')
+  })
+
+  it('appends a sequence number when the default is taken', () => {
+    expect(defaultChildName('阿明犹豫', ['阿明犹豫 · 派生'])).toBe(
+      '阿明犹豫 · 派生 2',
+    )
+    expect(
+      defaultChildName('阿明犹豫', ['阿明犹豫 · 派生', '阿明犹豫 · 派生 2']),
+    ).toBe('阿明犹豫 · 派生 3')
+  })
+
+  it('skips over names that are taken out of order', () => {
+    expect(
+      defaultChildName('阿明犹豫', ['阿明犹豫 · 派生', '阿明犹豫 · 派生 3']),
+    ).toBe('阿明犹豫 · 派生 2')
+  })
+
+  it('ignores surrounding whitespace when comparing, like the backend', () => {
+    expect(defaultChildName('阿明犹豫', ['  阿明犹豫 · 派生  '])).toBe(
+      '阿明犹豫 · 派生 2',
+    )
+    expect(defaultChildName(' 阿明犹豫 ', [])).toBe('阿明犹豫 · 派生')
+  })
+})
+

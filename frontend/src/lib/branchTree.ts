@@ -9,6 +9,9 @@
 /** 一行分支缩进 16px —— 三层最窄也还读得清（设计 §3.3）。 */
 export const INDENT_PER_LEVEL = 16
 
+/** 派生默认名的后缀；只影响 prompt 的预填值，不改变后端「重名报错」。 */
+const DERIVE_SUFFIX = ' · 派生'
+
 /** `buildBranchRows` 只依赖这几个字段；`BranchSummary` 满足它。 */
 export interface BranchNode {
   id: string
@@ -87,3 +90,24 @@ export function buildBranchRows<T extends BranchNode>(
   }
   return rows
 }
+
+/**
+ * 派生时 prompt 的预填名：「父名 · 派生」；已被占用就依次试
+ * 「父名 · 派生 2」「父名 · 派生 3」……
+ *
+ * **只避让当前列表里已有的名字**，不替后端做唯一性判断：作者改完名字
+ * 提交时若仍重名，后端照旧 400、错误原样显示 —— 这里只是让默认值少撞墙。
+ */
+export function defaultChildName(
+  parentName: string,
+  existingNames: readonly string[],
+): string {
+  const base = `${(parentName ?? '').trim()}${DERIVE_SUFFIX}`
+  // 与后端 `_clean_name` 同口径：名字两端空白不算数。
+  const taken = new Set(existingNames.map((name) => (name ?? '').trim()))
+  if (!taken.has(base)) return base
+  let suffix = 2
+  while (taken.has(`${base} ${suffix}`)) suffix += 1
+  return `${base} ${suffix}`
+}
+

@@ -6,7 +6,7 @@ import {
   type BranchRevisionRow,
   type BranchSummary,
 } from '../../api/client'
-import { buildBranchRows } from '../../lib/branchTree'
+import { buildBranchRows, defaultChildName } from '../../lib/branchTree'
 
 export default function BranchPanel({
   sceneId,
@@ -67,14 +67,16 @@ export default function BranchPanel({
 
   /**
    * 从这一条派生：新分支复制父分支正文，挂在这条下面（最多三层）。
-   * 名字当场问作者（默认「父名 · 派生」）—— **重名后端会 400**，
-   * 错误原样显示让作者改名重试，前端不静默加序号。
+   * 默认名先避让当前列表（「父名 · 派生」「… 2」「… 3」），**在打开
+   * prompt 前算好**；作者改完名提交时若仍重名，后端照旧 400、错误原样
+   * 显示 —— 前端不静默加序号、也不替后端做唯一性判断。
    */
   async function derive(parent: BranchSummary) {
-    const input = window.prompt(
-      '新分支名称（正文从这一版复制）',
-      `${parent.name} · 派生`,
+    const suggested = defaultChildName(
+      parent.name,
+      rows.map((row) => row.name),
     )
+    const input = window.prompt('新分支名称（正文从这一版复制）', suggested)
     if (input === null) return
     const clean = input.trim()
     if (!clean) return
