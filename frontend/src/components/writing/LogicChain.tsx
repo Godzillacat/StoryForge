@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, type LogicChainResponse } from '../../api/client'
 import LogicChainGraph from './LogicChainGraph'
 
@@ -34,6 +34,9 @@ export default function LogicChain({
   const [expanded, setExpanded] = useState(false)
   // 覆盖层真正可见的条件：既点了展开，手头也真有可画的链（重取期间 data 会短暂为 null）。
   const dialogOpen = expanded && Boolean(data && data.chain.length > 0)
+  // 关掉覆盖层后把焦点还给触发它的按钮。不做焦点圈闭，循环 Tab 留待后续。
+  const expandButtonRef = useRef<HTMLButtonElement | null>(null)
+  const wasDialogOpen = useRef(false)
 
   // 换场回到默认图形，并关掉上一场的全屏图：取数仍由下面那个 effect 管。
   useEffect(() => {
@@ -41,20 +44,30 @@ export default function LogicChain({
     setExpanded(false)
   }, [sceneId])
 
-  // 全屏打开时锁住页面滚动，关闭 / 换场 / 卸载都恢复到打开前的值。
+  // 打开时锁住真正的滚动容器：外壳是 <div class="flex h-screen"> + <main class="overflow-auto">，
+  // body 本身不滚，锁 body 是空操作。关闭 / 换场 / 卸载都恢复打开前的值；找不到 main 就跳过。
   // ESC 与「关闭」按钮走同一个出口：setExpanded(false)。
   useEffect(() => {
     if (!dialogOpen) return
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    const scroller = document.querySelector('main')
+    const previousOverflow = scroller?.style.overflow
+    if (scroller) scroller.style.overflow = 'hidden'
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setExpanded(false)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => {
       window.removeEventListener('keydown', onKeyDown)
-      document.body.style.overflow = previousOverflow
+      if (scroller) scroller.style.overflow = previousOverflow ?? ''
     }
+  }, [dialogOpen])
+
+  // 覆盖层从开到关的那一次渲染后，把焦点还给「展开」按钮。
+  useEffect(() => {
+    if (wasDialogOpen.current && !dialogOpen) {
+      expandButtonRef.current?.focus()
+    }
+    wasDialogOpen.current = dialogOpen
   }, [dialogOpen])
 
   useEffect(() => {
@@ -120,6 +133,7 @@ export default function LogicChain({
           {mode === 'graph' && (
             <button
               type="button"
+              ref={expandButtonRef}
               aria-haspopup="dialog"
               aria-expanded={expanded}
               disabled={!data || data.chain.length === 0}
@@ -166,13 +180,14 @@ export default function LogicChain({
         </ul>
       )}
 
-      {/* 全屏覆盖层：右栏太窄时把同一张图放大看，不另取数据。 */}
+      {/* 全屏覆盖层：右栏太窄时把同一张图放大看，不另取数据。
+          `overscroll-contain` 让滚到边界时不再把滚动传给下面的 main。 */}
       {dialogOpen && data && (
         <div
           role="dialog"
           aria-modal="true"
           aria-label="逻辑链图形视图"
-          className="fixed inset-0 z-50 overflow-auto bg-slate-950/90 p-4 md:p-8"
+          className="fixed inset-0 z-50 overflow-auto overscroll-contain bg-slate-950/90 p-4 md:p-8"
         >
           <div className="mx-auto max-w-6xl rounded border border-slate-800 bg-slate-950 p-4">
             <div className="mb-3 flex items-center gap-2">
