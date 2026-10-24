@@ -65,6 +65,15 @@ it('trusts the hits when paragraphs under-reports', () => {
   expect(graph.nodes).toHaveLength(1)
 })
 
+it('falls back to the hits when paragraphs is not a finite number', () => {
+  // 上游漏字段时会传进 undefined：列数必须回落到命中段，宽高也不能变成 NaN。
+  const graph = buildLogicChainGraph([hit(2)], undefined as unknown as number)
+  expect(graph.columns).toHaveLength(2)
+  expect(graph.nodes).toHaveLength(1)
+  expect(Number.isFinite(graph.width)).toBe(true)
+  expect(Number.isFinite(graph.height)).toBe(true)
+})
+
 it('returns an empty graph when nothing matched', () => {
   const graph = buildLogicChainGraph([], 4)
   expect(graph).toEqual({ columns: [], nodes: [], edges: [], width: 0, height: 0, maxRows: 0 })

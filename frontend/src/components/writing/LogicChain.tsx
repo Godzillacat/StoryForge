@@ -31,6 +31,12 @@ export default function LogicChain({
   // 不碰 `data`、也不进 `useEffect` 的依赖 —— 切模式不该重跑接口。
   const [mode, setMode] = useState<'graph' | 'text'>('graph')
 
+  // 换场回到默认图形：作者换一场时看到的应是这一场的图，而不是上一场留下的选择。
+  // 只重置模式，取数仍由下面那个 effect 管，两者互不影响。
+  useEffect(() => {
+    setMode('graph')
+  }, [sceneId])
+
   useEffect(() => {
     setData(null)
     setError('')
@@ -63,7 +69,11 @@ export default function LogicChain({
             {data.summary.reveal}
           </span>
         )}
-        <div className="ml-auto flex shrink-0 gap-1">
+        <div
+          role="group"
+          aria-label="逻辑链视图切换"
+          className="ml-auto flex shrink-0 gap-1"
+        >
           {(
             [
               ['graph', '图形'],
@@ -74,9 +84,10 @@ export default function LogicChain({
               key={value}
               type="button"
               aria-pressed={mode === value}
+              disabled={!data || data.chain.length === 0}
               onClick={() => setMode(value)}
-              className={`rounded px-2 py-0.5 text-xs ${
-                mode === value ? 'bg-slate-800 text-slate-200' : 'text-slate-500'
+              className={`rounded px-2 py-0.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-slate-500 disabled:cursor-not-allowed disabled:opacity-40 ${
+                mode === value ? 'bg-slate-800 text-slate-200' : 'text-slate-400'
               }`}
             >
               {label}

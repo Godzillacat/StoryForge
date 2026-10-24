@@ -65,8 +65,10 @@ export function buildLogicChainGraph(chain: LogicChainItem[], paragraphs: number
   }
 
   // 以命中段兜底：paragraphs 偏小（甚至为 0）时，命中靠后的节点仍要出现。
+  // 先归一成有限整数：接口漏字段时会是 undefined，不拦的话 NaN 会一路算进宽高。
+  const safeParagraphs = Number.isFinite(paragraphs) ? Math.trunc(paragraphs) : 0
   const maxHitParagraph = chain.reduce((max, item) => Math.max(max, item.paragraph), 0)
-  const columnCount = Math.max(paragraphs, maxHitParagraph)
+  const columnCount = Math.max(safeParagraphs, maxHitParagraph)
 
   // 先按段落分桶，桶内保持命中在原链里的先后顺序。
   const positionsByParagraph = new Map<number, number[]>()
