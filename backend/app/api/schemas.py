@@ -390,6 +390,8 @@ class SnapshotCreate(BaseModel):
 class BranchCreate(BaseModel):
     name: str = ""
     note: str = ""
+    # 派生起点：给了就是「从这一版再试一版」，不给则从主版正文起步。
+    parent_id: str | None = None
 
 
 class BranchUpdate(BaseModel):

@@ -34,6 +34,13 @@ class SceneBranch(IdMixin, TimestampMixin, Base):
     # 它们是「同一场戏试两种写法」的临时产物，采纳或丢弃后即删，
     # 不该混进作者手工维护的分支列表。
     ab_group: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # 派生关系：父分支的 id。根分支为 NULL。
+    # **不加外键**：SQLite 的 `ALTER TABLE ADD COLUMN` 加 REFERENCES 有历史坑，
+    # 且「父分支被丢弃 → 子分支提升为根」本来就是服务层语义，用 FK 的
+    # `ON DELETE SET NULL` 会把行为藏进 DDL。
+    parent_branch_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, default=None
+    )
 
 
 class BranchRevision(IdMixin, TimestampMixin, Base):

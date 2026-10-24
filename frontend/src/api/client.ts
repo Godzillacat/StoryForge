@@ -491,7 +491,11 @@ export const api = {
     request<void>(`/api/review-marks/${markId}`, { method: 'DELETE' }),
   listBranches: (sceneId: string) =>
     request<BranchSummary[]>(`/api/scenes/${sceneId}/branches`),
-  createBranch: (sceneId: string, body: { name: string; note?: string }) =>
+  // `parent_id` 给定时是派生：新分支复制父分支正文，最多三层。
+  createBranch: (
+    sceneId: string,
+    body: { name: string; note?: string; parent_id?: string },
+  ) =>
     request<BranchDetail>(`/api/scenes/${sceneId}/branches`, {
       method: 'POST',
       headers: JSON_HEADERS,
@@ -1653,6 +1657,10 @@ export interface BranchSummary {
   id: string
   scene_id: string
   name: string
+  /** 派生自哪条分支；根分支为 null。 */
+  parent_id: string | null
+  /** 根 = 1，最多 3 层。由服务层沿父链算好下发。 */
+  depth: number
   note: string
   chars: number
   has_draft: boolean
