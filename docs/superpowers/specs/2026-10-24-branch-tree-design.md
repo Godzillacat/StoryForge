@@ -55,7 +55,7 @@ ALTER TABLE scene_branch ADD COLUMN parent_branch_id TEXT
   - 父分支存在、同场景、`ab_group is None`；
   - 父深度 < 3（根 = 1 层，最深 3 层）；
   - 新分支 `content` 复制父分支 `content`（父没有正文就复制空串），`note` 记「派生自 …」；
-  - 名字仍走 `_unique_name`。
+  - 名字仍按既有契约：同场景重名报 400，不自动加序号；前端在打开输入框前用 `defaultChildName` 避让。
 - `serialize_branch` 增加 `parent_id`、`depth`；`depth` 由服务层沿父链算（一次取全场景分支，不逐条查库）。
 - `discard_branch`：删除前把子分支的 `parent_id` 置空（`UPDATE ... WHERE parent_branch_id = :id`）。
 - `ab_create` 不设父（A/B 对仍是根）。

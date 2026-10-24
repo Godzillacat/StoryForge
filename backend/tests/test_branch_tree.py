@@ -220,6 +220,23 @@ def test_child_promoted_when_parent_discarded(session, scene_with_branches):
     assert child["draft"]["content"] == "三层自己的草稿。"
 
 
+def test_discarding_a_root_promotes_its_child_and_shortens_the_tree(
+    session, scene_with_branches
+):
+    """丢根不止「清一列」：子分支变根，孙分支的深度跟着少一层。"""
+    tree = scene_with_branches
+
+    branch_service.discard_branch(session, tree.root1.id)
+
+    child = branch_service.get_branch(session, tree.level2.id)
+    grandchild = branch_service.get_branch(session, tree.level3.id)
+    assert child["parent_id"] is None
+    assert child["depth"] == 1
+    # 孙分支的父仍是原来的子分支（它现在是根）：自己不被提升，但深度 3 → 2。
+    assert grandchild["parent_id"] == tree.level2.id
+    assert grandchild["depth"] == 2
+
+
 def test_discarding_a_leaf_keeps_the_rest_of_the_tree(session, scene_with_branches):
     tree = scene_with_branches
 
@@ -323,6 +340,47 @@ def test_migration_13_adds_parent_branch_id_to_an_existing_database(tmp_path):
         engine.dispose()
 
     assert versions.count(13) == 1
+
+
+def test_migration_13_is_skipped_when_the_scene_branch_table_is_missing(tmp_path):
+    """存量库没有 `scene_branch`（P1c 之前的库）：v13 整步跳过并盖章，不报错。
+
+    表随后由 `create_all` 用**当前模型**建出（已含这一列）—— 框架约定的
+    三种情形里，「目标表全部缺失 → 跳过」是正常路径，不是失败。
+    """
+    engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE project (id VARCHAR(36) PRIMARY KEY, name VARCHAR(120))"
+        )
+        db_session._ensure_migration_table(conn)
+        conn.exec_driver_sql(
+            "INSERT INTO schema_migration (version, note, applied_at)"
+            " VALUES (12, 'test', '2026-10-24')"
+        )
+
+    try:
+        db_session.run_migrations(engine)  # 不该抛 no such table
+
+        with engine.connect() as conn:
+            versions = [
+                row[0]
+                for row in conn.exec_driver_sql(
+                    "SELECT version FROM schema_migration ORDER BY version"
+                )
+            ]
+            tables = {
+                row[0]
+                for row in conn.exec_driver_sql(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+    finally:
+        engine.dispose()
+
+    assert versions.count(13) == 1
+    # run_migrations 只跑迁移、不建表：表留给紧随其后的 create_all。
+    assert "scene_branch" not in tables
 
 
 # ---- 接口：body 的 parent_id 与错误映射 ----

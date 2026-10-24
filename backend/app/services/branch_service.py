@@ -195,20 +195,19 @@ def _project_id(session: Session, scene: Scene) -> str:
     return get_project_for_chapter(session, scene.chapter_id).id
 
 
-def serialize_branch(
-    row: SceneBranch, depths: dict[str, int] | None = None
-) -> dict:
-    """`depths` 是 `_depth_map` 的产物：列表一次算全场景，不逐条回库。
+def serialize_branch(row: SceneBranch, depths: dict[str, int]) -> dict:
+    """`depths` 必传：`_depth_map` 的产物，列表一次算全场景、不逐条回库。
 
-    没传时按根（1）返回；单条路径应当传（见 `_detail`），否则派生分支的
-    `depth` 会被报成 1。
+    **不给缺省值。** 缺省成 1 会让漏填的单条路径把派生分支的 `depth` 悄悄
+    报成 1；必传之后漏填当场炸（`depths[row.id]` 取不到），单条路径见
+    `_detail`。
     """
     return {
         "id": row.id,
         "scene_id": row.scene_id,
         "name": row.name,
         "parent_id": row.parent_branch_id,
-        "depth": (depths or {}).get(row.id, 1),
+        "depth": depths[row.id],
         "note": row.note,
         "chars": count_words(row.content),
         "has_draft": bool((row.draft_content or "").strip()),
@@ -217,9 +216,7 @@ def serialize_branch(
     }
 
 
-def serialize_branch_detail(
-    row: SceneBranch, depths: dict[str, int] | None = None
-) -> dict:
+def serialize_branch_detail(row: SceneBranch, depths: dict[str, int]) -> dict:
     return {
         **serialize_branch(row, depths),
         "content": row.content,
