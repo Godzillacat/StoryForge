@@ -365,6 +365,23 @@ class ReviewMarkClear(ReviewMarkCreate):
     pass
 
 
+class RevisionSuggestRequest(BaseModel):
+    """生成修订建议：要分析的受影响目标。"""
+
+    target_type: str
+    target_id: str
+
+
+class RevisionApplyRequest(BaseModel):
+    """应用修订建议：只带运行记录与下标。
+
+    写入内容一律由服务端从运行记录里读回，前端只能决定「哪几条」。
+    """
+
+    run_id: str
+    accepted: list[int] = Field(default_factory=list)
+
+
 class SnapshotCreate(BaseModel):
     name: str = ""
     note: str = ""
