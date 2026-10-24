@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest'
 import type { LogicChainItem } from '../api/client'
 import {
-  buildLogicChainGraph, shortenSentence, NODE_WIDTH, NODE_HEIGHT, COLUMN_WIDTH, ROW_GAP,
-  PAD_LEFT, PAD_TOP, PAD_BOTTOM,
+  buildLogicChainGraph, shortenSentence, columnCenterX, tickBaselineY,
+  NODE_WIDTH, NODE_HEIGHT, COLUMN_WIDTH, ROW_GAP, PAD_LEFT, PAD_TOP, PAD_BOTTOM,
 } from './logicChainGraph'
 
 function hit(paragraph: number, kind = 'cause', sentence = '因为下雨，他留下。'): LogicChainItem {
@@ -76,6 +76,17 @@ it('grows in both directions', () => {
   expect(tall.height).toBeGreaterThan(buildLogicChainGraph([hit(1), hit(2)], 2).height)
   const wide = buildLogicChainGraph([hit(1), hit(9)], 9)
   expect(wide.width).toBeGreaterThan(buildLogicChainGraph([hit(1), hit(2)], 2).width)
+})
+
+it('derives the column center from the shared geometric constants', () => {
+  expect(columnCenterX(2)).toBe(PAD_LEFT + COLUMN_WIDTH + NODE_WIDTH / 2)
+})
+
+it('keeps the tick baseline inside the drawn svg', () => {
+  const graph = buildLogicChainGraph([hit(1), hit(2)], 2)
+  const y = tickBaselineY(graph.height)
+  expect(y).toBeGreaterThan(0)
+  expect(y).toBeLessThan(graph.height)
 })
 
 it('shortens long sentences and leaves short ones alone', () => {

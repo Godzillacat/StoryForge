@@ -3,10 +3,8 @@ import type { GraphNode } from '../../lib/logicChainGraph'
 import {
   buildLogicChainGraph,
   shortenSentence,
-  COLUMN_WIDTH,
-  NODE_WIDTH,
-  PAD_BOTTOM,
-  PAD_LEFT,
+  columnCenterX,
+  tickBaselineY,
 } from '../../lib/logicChainGraph'
 
 // 深色底 #020617 上实测（WCAG 相对亮度）：sky-500 7.28:1、amber-500 9.39:1、emerald-500 7.95:1
@@ -18,10 +16,18 @@ function colorOf(kind: string): string {
 }
 
 /**
- * 边从源节点右缘连到目标节点左缘，控制点水平外推。
- * 相邻两次命中常落在同一列（同一段里的两处逻辑），此时两点反向，控制点会把线撑成一个绕回的弧。
+ * 跨列：从源节点右缘连到目标节点左缘，控制点水平外推。
+ * 同列（同一段里的两处逻辑）：两点上下相对，改走竖直 S 曲线，横向不探出节点边缘，
+ * 否则左右各探 84 的弧会从邻节点身上穿过去。
  */
 function edgePath(from: GraphNode, to: GraphNode): string {
+  if (from.x === to.x) {
+    const cx = from.x + from.width / 2
+    const bottom = from.y + from.height
+    const top = to.y
+    const lift = Math.max(16, (top - bottom) / 2)
+    return `M ${cx} ${bottom} C ${cx} ${bottom + lift}, ${cx} ${top - lift}, ${cx} ${top}`
+  }
   const sx = from.x + from.width
   const sy = from.y + from.height / 2
   const tx = to.x
@@ -30,7 +36,7 @@ function edgePath(from: GraphNode, to: GraphNode): string {
   return `M ${sx} ${sy} C ${sx + bend} ${sy}, ${tx - bend} ${ty}, ${tx} ${ty}`
 }
 
-/** 节点内可用宽度（左右各留 10）能放下几个字：11px 中文字宽约等于字号。 */
+/** 节点内文字从 x+12 起、右侧同样留 12，168 宽里约放得下 13 个 11px 中文字。 */
 const SENTENCE_CHARS = 13
 
 export default function LogicChainGraph({
@@ -47,7 +53,6 @@ export default function LogicChainGraph({
 
   const graph = buildLogicChainGraph(chain, paragraphs)
   const nodeByIndex = new Map<number, GraphNode>(graph.nodes.map((node) => [node.index, node]))
-  const tickY = graph.height - PAD_BOTTOM + 18
 
   return (
     <div className="overflow-x-auto rounded border border-slate-800 bg-slate-950">
@@ -109,8 +114,8 @@ export default function LogicChainGraph({
         {graph.columns.map((column) => (
           <text
             key={column.paragraph}
-            x={PAD_LEFT + (column.paragraph - 1) * COLUMN_WIDTH + NODE_WIDTH / 2}
-            y={tickY}
+            x={columnCenterX(column.paragraph)}
+            y={tickBaselineY(graph.height)}
             textAnchor="middle"
             fontSize={10}
             fill={column.nodes.length > 0 ? '#64748b' : '#334155'}

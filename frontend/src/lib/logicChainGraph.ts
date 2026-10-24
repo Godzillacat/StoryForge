@@ -9,6 +9,16 @@ export const PAD_LEFT = 16
 export const PAD_TOP = 24
 export const PAD_BOTTOM = 28
 
+/** 列的水平中心：节点左缘与底部刻度都从这里派生，组件不另算一份公式。 */
+export function columnCenterX(paragraph: number): number {
+  return PAD_LEFT + (paragraph - 1) * COLUMN_WIDTH + NODE_WIDTH / 2
+}
+
+/** 底部段落刻度的基线：落在 PAD_BOTTOM 留白区里，组件不自己编偏移量。 */
+export function tickBaselineY(height: number): number {
+  return height - PAD_BOTTOM + 18
+}
+
 export interface GraphNode {
   index: number
   paragraph: number
@@ -86,7 +96,7 @@ export function buildLogicChainGraph(chain: LogicChainItem[], paragraphs: number
         kind: item.kind,
         kindLabel: item.kind_label,
         marker: item.marker,
-        x: PAD_LEFT + (paragraph - 1) * COLUMN_WIDTH,
+        x: columnCenterX(paragraph) - NODE_WIDTH / 2,
         y: PAD_TOP + row * (NODE_HEIGHT + ROW_GAP),
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
