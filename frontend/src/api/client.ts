@@ -434,6 +434,25 @@ export const api = {
     request<ImpactReport>(
       `/api/projects/${projectId}/impact?target_type=${targetType}&target_id=${targetId}`,
     ),
+  generateRevisions: (
+    projectId: string,
+    body: { target_type: string; target_id: string },
+  ) =>
+    request<RevisionResult>(`/api/projects/${projectId}/impact/revisions`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  // 请求只带下标：写入内容由服务端从运行记录里读回，前端决定不了写什么。
+  applyRevisions: (
+    projectId: string,
+    body: { run_id: string; accepted: number[] },
+  ) =>
+    request<RevisionApplyResult>(`/api/projects/${projectId}/impact/revisions/apply`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
   listReviewMarks: (projectId: string) =>
     request<ReviewMark[]>(`/api/projects/${projectId}/review-marks`),
   addReviewMarks: (
@@ -1362,6 +1381,50 @@ export interface ImpactReport {
   }
   groups: ImpactGroup[]
   totals: { all: number; locked: number }
+}
+
+/** 一条待勾选的修订建议；`index` 就是应用时 `accepted` 里的那个下标。 */
+export interface RevisionSuggestion {
+  index: number
+  target_type: string
+  target_id: string
+  /** 会改哪个对象，例如「第1卷 第3章 场景2」。 */
+  target_label: string
+  field: string
+  /** 字段的中文名，例如「目标」。 */
+  field_label: string
+  /** 生成时服务端现取的现值（模型给的 before 不被采信）。 */
+  before: string
+  after: string
+  reason: string
+}
+
+export interface RevisionResult {
+  run_id: string | null
+  llm_status: 'ok' | 'skipped' | 'error'
+  suggestions: RevisionSuggestion[]
+  /** 对不上对象、字段不可改或超过上限而被丢弃的条数。 */
+  dropped: number
+  /** 失败或空态的**中文**说明；界面直接显示它，不解析任何 JSON。 */
+  warning: string
+}
+
+export interface RevisionAppliedRow {
+  index: number
+  target_label: string
+  field: string
+  field_label: string
+}
+
+export interface RevisionSkippedRow {
+  index: number
+  /** 「下标无效」「已锁定」「现值已变化」「已应用」等中文原因。 */
+  reason: string
+}
+
+export interface RevisionApplyResult {
+  applied: RevisionAppliedRow[]
+  skipped: RevisionSkippedRow[]
 }
 
 export interface ReviewMark {
