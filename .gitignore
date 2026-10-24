@@ -29,6 +29,10 @@ dist/
 # SDD 工作区（临时产物，git history 才是记录）
 .superpowers/
 
+# 本地规划与权限修复报告（工具产物，不入库）
+.planning/
+.acl-reports/
+
 # 编辑器
 .vscode/
 .idea/
