@@ -55,17 +55,22 @@ class DbSlotSource:
         self._extra = extra_slots or {}
 
     def __getattr__(self, name: str):
-        """未显式实现的槽位从 `_extra` 里取。
+        """只转发调用方显式传进 `extra_slots` 的键。
 
         修订建议这类「只在该次运行里组装」的槽位不该逼着 RuntimeService 认
         槽位名字：调用方显式传 `extra_slots`，这里就按名字给一个取值函数。
-        下划线开头的一律照旧报错，免得把内部的拼写错误吞成空槽位。
+        不在 `extra_slots` 里的名字照旧抛 `AttributeError` —— 否则 `hasattr`
+        恒真、`getattr(..., default)` 永不生效，槽位名拼错会静默变成空槽位，
+        而不是当场报出来。下划线开头的一律报错，免得把内部的拼写错误吞掉。
         """
         if name.startswith("_"):
             raise AttributeError(name)
+        extra = self.__dict__.get("_extra") or {}
+        if name not in extra:
+            raise AttributeError(name)
 
         def _from_extra() -> str | None:
-            value = self._extra.get(name)
+            value = extra.get(name)
             return str(value) if value else None
 
         return _from_extra

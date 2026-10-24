@@ -74,7 +74,7 @@ SLOT_REGISTRY: dict[str, SlotSpec] = {
         # 显式传值（见 DbSlotSource.__getattr__）。本次改动永不裁剪 ——
         # 被裁掉就等于让模型不知道这次改了什么。
         SlotSpec("impact_target", "这次改了什么", P_NEVER, "never"),
-        SlotSpec("impact_candidates", "受影响对象的现值", P_HIGH, "never"),
+        SlotSpec("impact_candidates", "受影响对象的现值", P_NEVER, "never"),
     )
 }
 

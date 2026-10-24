@@ -234,19 +234,33 @@ def test_revision_prompt_asks_for_reasons_in_chinese(session, project):
 
 
 def test_db_slot_source_forwards_only_non_private_names(session, project):
-    """`__getattr__` 通用转发：空值给 None，下划线开头照旧报 AttributeError。"""
+    """`__getattr__` 通用转发：传了键但值为空给 None，下划线开头报 AttributeError。"""
     from app.services.slot_source import DbSlotSource
 
     source = DbSlotSource(
         session,
         project.id,
-        extra_slots={"impact_target": "主角动机改为替妹妹赎罪"},
+        extra_slots={"impact_target": "主角动机改为替妹妹赎罪", "impact_candidates": ""},
     )
     assert source.impact_target() == "主角动机改为替妹妹赎罪"
-    # 没传的槽位返回 None，而不是抛错：上下文组装据此当空槽位跳过。
+    # 键传了、值为空：返回 None，上下文组装据此当空槽位跳过。
     assert source.impact_candidates() is None
     with pytest.raises(AttributeError):
         source._no_such_internal_attribute
+
+
+def test_db_slot_source_raises_for_unknown_slot_names(session, project):
+    """不在 extra_slots 里的槽位名必须抛 AttributeError，不许静默为空。
+
+    否则 `hasattr` 恒真、`getattr(..., default)` 永不生效 —— 槽位名拼错
+    不会报错，只会让模型少看到一段上下文。
+    """
+    from app.services.slot_source import DbSlotSource
+
+    source = DbSlotSource(session, project.id, extra_slots={})
+    assert hasattr(source, "no_such_slot") is False
+    with pytest.raises(AttributeError):
+        source.no_such_slot
 
 
 def test_impact_candidates_slot_is_never_trimmed():
@@ -254,6 +268,13 @@ def test_impact_candidates_slot_is_never_trimmed():
     from app.runtime.context import SLOT_REGISTRY
 
     assert SLOT_REGISTRY["impact_candidates"].over_budget == "never"
+
+
+def test_impact_candidates_slot_has_top_priority():
+    """既然永不裁剪，优先级就该是 P_NEVER —— `P_HIGH` + `never` 语义打架。"""
+    from app.runtime.context import P_NEVER, SLOT_REGISTRY
+
+    assert SLOT_REGISTRY["impact_candidates"].priority == P_NEVER
 
 
 # ---- Task 2：suggest() ----
