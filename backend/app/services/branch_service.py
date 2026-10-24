@@ -9,12 +9,14 @@ A、B 两案写的是同一场戏的不同写法，不是两场不同的戏。
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import BranchRevision, Scene, SceneBranch, SceneDraft, SceneRevision
-from app.services import change_service, search_service
+from app.services import change_service, lock_service, search_service
 from app.text_stats import count_words
 
 
@@ -47,6 +49,21 @@ def _find_by_name(session: Session, scene_id: str, name: str) -> SceneBranch | N
     ).first()
 
 
+def _unique_name(session: Session, scene_id: str, base: str) -> str:
+    """同场景重名时追加 ` 2`、` 3`…，而不是报错。
+
+    **跨全部分支查名**（别的 A/B 组、作者手建的分支都算）：库级唯一索引
+    `(scene_id, name)` 不允许重名，而保留前缀只负责让名字一眼可辨，并不
+    提供唯一性 —— 所以这里不加 `ab_group` 过滤。
+    """
+    name = base
+    suffix = 2
+    while _find_by_name(session, scene_id, name) is not None:
+        name = f"{base} {suffix}"
+        suffix += 1
+    return name
+
+
 def _label(session: Session, scene: Scene) -> str:
     """与写作台一致的场景标签。延迟导入避免与 text_service 的循环。"""
     from app.services.text_service import _scene_label
@@ -55,8 +72,13 @@ def _label(session: Session, scene: Scene) -> str:
 
 
 def create_branch(
-    session: Session, scene_id: str, name: str, note: str = ""
+    session: Session,
+    scene_id: str,
+    name: str,
+    note: str = "",
+    commit: bool = True,
 ) -> SceneBranch:
+    """开一条分支。`commit=False` 把提交时机交给调用方（A/B 要一次提交）。"""
     scene = _scene(session, scene_id)
     clean = _clean_name(name)
     if _find_by_name(session, scene_id, clean) is not None:
@@ -84,7 +106,8 @@ def create_branch(
         source="author",
         summary=f"开分支「{clean}」",
     )
-    session.commit()
+    if commit:
+        session.commit()
     return row
 
 
@@ -220,7 +243,8 @@ def _reject_missing_paragraphs(scene: Scene, content: str) -> None:
     check(scene, content)
 
 
-def adopt_branch_draft(session: Session, branch_id: str) -> dict:
+def adopt_branch_draft(session: Session, branch_id: str, commit: bool = True) -> dict:
+    """把分支草稿变成分支正文。`commit=False` 交给调用方（A/B 要一次提交）。"""
     row = _branch(session, branch_id)
     scene = _scene(session, row.scene_id)
     _reject_if_locked(session, scene)
@@ -233,12 +257,16 @@ def adopt_branch_draft(session: Session, branch_id: str) -> dict:
     row.content = content
     row.draft_content = ""
     row.draft_run_id = None
-    session.commit()
+    if commit:
+        session.commit()
     return serialize_branch_detail(row)
 
 
-def merge_branch(session: Session, branch_id: str) -> dict:
-    """把分支正文合入主版。**分支保留** —— 合并是选它作主版，不是作废其余。"""
+def merge_branch(session: Session, branch_id: str, commit: bool = True) -> dict:
+    """把分支正文合入主版。**分支保留** —— 合并是选它作主版，不是作废其余。
+
+    `commit=False` 把提交时机交给调用方（A/B 采纳要和删两条分支一起提交）。
+    """
     row = _branch(session, branch_id)
     scene = _scene(session, row.scene_id)
     _reject_if_locked(session, scene)
@@ -281,7 +309,8 @@ def merge_branch(session: Session, branch_id: str) -> dict:
         source="author",
         summary=f"合并分支「{row.name}」（{count_words(content)} 字）",
     )
-    session.commit()
+    if commit:
+        session.commit()
     return {
         "branch": serialize_branch_detail(row),
         "scene_id": scene.id,
@@ -307,3 +336,121 @@ def discard_branch(session: Session, branch_id: str) -> None:
         summary=f"丢弃分支「{name}」",
     )
     session.commit()
+
+
+# ---- A/B 并排生成 ----
+
+# 保留前缀：A/B 分支在库里必须和作者手建的分支一眼分得开。名字里带 `/`
+# 与 `·` 是刻意的 —— 正常命名几乎不会撞上，而重名由 `_unique_name` 兜底。
+_AB_NAME_PREFIX = "A/B · "
+_AB_SIDES = ("A", "B")
+
+
+def _ab_branch(
+    session: Session, scene_id: str, branch_id: str
+) -> tuple[SceneBranch, str]:
+    """取一条属于该场景的 A/B 分支，同时校验归属与种类。"""
+    row = _branch(session, branch_id)
+    if row.scene_id != scene_id:
+        raise ValueError("分支不属于这个场景")
+    if row.ab_group is None:
+        raise ValueError("这不是 A/B 分支")
+    return row, row.ab_group
+
+
+def _ab_group_rows(session: Session, group: str) -> list[SceneBranch]:
+    """同组分支，按名字排序 —— 保留前缀让「A 版」永远排在「B 版」前面。
+
+    不用 `created_at` 排序：两条分支在同一个事务里建出，时间戳可能落在同一
+    微秒上，同毫秒内的次序只能靠随机 uuid 兜底，`discarded` 的返回顺序会飘。
+    """
+    return list(
+        session.scalars(
+            select(SceneBranch)
+            .where(SceneBranch.ab_group == group)
+            .order_by(SceneBranch.name)
+        )
+    )
+
+
+def ab_create(session: Session, scene_id: str) -> dict:
+    """为一场戏开一对 A/B 分支：**一次提交**，任一条失败整体回滚。
+
+    两条都从主版正文起步，正文在采纳之前一律不动 —— 生成覆盖的只是各分支
+    自己的草稿。名字用保留前缀 `A/B · A`、`A/B · B`，重名时追加序号。
+    """
+    scene = _scene(session, scene_id)
+    if lock_service.effective_scene_lock(session, scene)["locked"]:
+        raise ValueError("这一场已锁定，不能并排生成")
+
+    group = uuid4().hex
+    branches: list[dict] = []
+    try:
+        for side in _AB_SIDES:
+            name = _unique_name(session, scene_id, f"{_AB_NAME_PREFIX}{side}")
+            row = create_branch(session, scene_id, name, commit=False)
+            row.ab_group = group
+            branches.append({"id": row.id, "label": side})
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    return {"group": group, "branches": branches}
+
+
+def ab_adopt(session: Session, scene_id: str, branch_id: str) -> dict:
+    """采纳一版：adopt 草稿 → merge 进正文 → 删同组**全部**分支，一次提交。
+
+    不要求它是「当前唯一一组」：同场景可能留着一组以上没处理的 A/B，
+    采纳哪条就只清理它自己那一组，别的研究材料不受牵连。
+    """
+    scene = _scene(session, scene_id)
+    row, group = _ab_branch(session, scene_id, branch_id)
+    # merge 只在旧主版非空时写修订 —— 与它自己的判定保持同一口径。
+    revision_created = bool((scene.body or "").strip())
+    try:
+        adopt_branch_draft(session, row.id, commit=False)
+        merged = merge_branch(session, row.id, commit=False)
+        group_rows = _ab_group_rows(session, group)
+        discarded = [item.name for item in group_rows]
+        for item in group_rows:
+            session.delete(item)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    return {
+        "revision_created": revision_created,
+        "body": merged["body"],
+        "chars": merged["chars"],
+        "discarded": discarded,
+    }
+
+
+def ab_discard(session: Session, scene_id: str, branch_id: str) -> dict:
+    """丢弃一版。**同组另一条保留** —— 才能继续采纳或再丢弃它。
+
+    A/B 组固定两条，所以删掉一条后另一条就是「未完成的那一版」；界面上的
+    「两版都不要」是连点两次，而不是一步删两条。
+    """
+    scene = _scene(session, scene_id)
+    row, _group = _ab_branch(session, scene_id, branch_id)
+    name = row.name
+    try:
+        session.delete(row)
+        change_service.record(
+            session,
+            _project_id(session, scene),
+            target_type="scene",
+            target_id=scene.id,
+            target_label=_label(session, scene),
+            action="delete",
+            source="author",
+            summary=f"丢弃 A/B 分支「{name}」",
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    return {"removed": [name]}
+
