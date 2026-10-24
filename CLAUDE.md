@@ -1477,6 +1477,7 @@ pnpm build                                # 产物给后端同源托管
 | 静默安装 | 退出码 0，装到临时目录，文件齐全 |
 | 装后自检 | 已安装的 exe `--selftest` → 退出码 0 |
 | 静默卸载 | 退出码 0，目录、开始菜单、卸载注册表项都已清除 |
+| **零数据首次启动** | 安装版指向空数据目录：40 张表、10 个智能体、25 份工具、`/api/projects` 200、新建项目成功 |
 | 数据目录 | `%LOCALAPPDATA%\StoryForge\` **原样未动**（书的稿子不受安装/卸载影响） |
 
 **一处必须记下的降级**：Inno 6.7 官方安装包**不带**简体中文语言文件（它在 `jrsoftware/issrc` 的 `Files/Languages/Unofficial/` 里，要单独下载）。本机取不到，所以**安装向导是英文的**。`packaging/installer.iss` 里已把中文那两行注释掉并写明恢复办法：把 `ChineseSimplified.isl` 放进 Inno 的 `Languages\`（或 `packaging\languages\`），去掉注释重新编译即可。
