@@ -144,6 +144,10 @@ pnpm test                                 # vitest
 pnpm build                                # 产物给后端同源托管
 ```
 
+**本机推送 GitHub 的一个限制**：这台机器没有外网做证书吊销检查，`git push` 会报
+`schannel: CRYPT_E_NO_REVOCATION_CHECK`。仓库里已设 `http.schannelCheckRevoke=false` 绕过
+（只影响吊销检查，TLS 校验仍在）。换机器/换网络后可 `git config --unset http.schannelCheckRevoke` 恢复。
+
 ---
 
 ## 7. 当前进度
