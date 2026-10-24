@@ -118,9 +118,8 @@ def build_load(session: Session, project_id: str) -> dict:
         )
     )
     owners, forms_by_entry, targets = _wordlist(entries)
-    # 没有名字也没有别名的条目无法在正文里被找到，整条跳过：它不进词表，
-    # 也不进 totals —— 否则「条目总数」与「已投放 + 从未出现」会对不上。
-    counted = [entry for entry in entries if forms_by_entry[entry.id]]
+    # 没有名字也没有别名的条目无法在正文里被找到 —— 它们不进词表、不参与扫描，
+    # 但仍是「条目」：计入 entries / never_seen，否则「从未出现」会漏掉它们。
     pattern = _compile_pattern(owners)
 
     tree = chapter_service.build_tree(session, project_id)
@@ -128,6 +127,10 @@ def build_load(session: Session, project_id: str) -> dict:
 
     seen_forms: set[str] = set()
     first_seen: set[str] = set()
+    # 条目在阅读顺序里第一次被提到过没有。柱状图数的是**条目**：同一角色的多个
+    # 称呼各按 form 列进 new_terms，但这个角色只在首次出现的那一章计 1 ——
+    # 否则「11 个称呼」会让柱状之和远超顶部的已投放条目数。
+    entry_first_seen: set[str] = set()
     chapters: list[dict] = []
     for volume in tree:
         for chapter in volume["chapters"]:
@@ -135,6 +138,7 @@ def build_load(session: Session, project_id: str) -> dict:
             chars = 0
             has_body = False
             new_terms: list[dict] = []
+            new_entry_ids: set[str] = set()
             for scene in chapter["scenes"]:
                 body = bodies.get(scene["id"]) or ""
                 chars += count_words(body)
@@ -157,6 +161,9 @@ def build_load(session: Session, project_id: str) -> dict:
                     new_terms.append(
                         {"entry_id": entry.id, "name": entry.name, "form": form}
                     )
+                    if entry.id not in entry_first_seen:
+                        entry_first_seen.add(entry.id)
+                        new_entry_ids.add(entry.id)
             chapters.append(
                 {
                     "id": chapter["id"],
@@ -165,23 +172,24 @@ def build_load(session: Session, project_id: str) -> dict:
                     "has_body": has_body,
                     "chars": chars,
                     "new_terms": new_terms,
-                    "new_count": len(new_terms),
+                    "new_count": len(new_entry_ids),
                     "mentions": mentions,
                     "density": _density(mentions, chars),
                 }
             )
 
     # 已投放 / 从未出现按**条目**判定：只要它的一个 form 在正文里出现过就算投放，
-    # 与 form 最后归到哪个条目无关（重名由 ambiguities 交代）。
-    delivered = sum(1 for entry in counted if forms_by_entry[entry.id] & seen_forms)
+    # 与 form 最后归到哪个条目无关（重名由 ambiguities 交代）。没有可用 form 的
+    # 条目永远不可能命中，自然落在 never_seen 里。
+    delivered = sum(1 for entry in entries if forms_by_entry[entry.id] & seen_forms)
     totals = {
-        "entries": len(counted),
+        "entries": len(entries),
         "delivered": delivered,
-        "never_seen": len(counted) - delivered,
+        "never_seen": len(entries) - delivered,
         "ambiguities": sum(1 for candidates in owners.values() if len(candidates) > 1),
     }
 
-    if not counted:
+    if not entries:
         reason = "还没有设定条目"
     elif not any(chapter["has_body"] for chapter in chapters):
         reason = "还没有已采纳正文"

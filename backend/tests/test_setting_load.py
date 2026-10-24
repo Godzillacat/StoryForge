@@ -180,6 +180,19 @@ def test_regex_metacharacters_do_not_overmatch(session):
     assert {term["form"] for term in row["new_terms"]} == {"A.B"}
 
 
+def test_parentheses_and_pipes_are_escaped_too(session):
+    """未转义的 `A(B|C)` 会把正文里的 AB / AC 当成命中。"""
+    project = _project(session)
+    chapter = _chapter(session, _volume(session, project), 0, "雨夜")
+    _scene(session, chapter, 0, body="A(B|C) 与 AB 与 AC。")
+    _entry(session, project, "A(B|C)")
+
+    row = setting_load_service.build_load(session, project.id)["chapters"][0]
+
+    assert row["mentions"] == 1
+    assert {term["form"] for term in row["new_terms"]} == {"A(B|C)"}
+
+
 def test_wordlist_tolerates_broken_alias_json(session):
     project = _project(session)
     chapter = _chapter(session, _volume(session, project), 0, "雨夜")
@@ -200,7 +213,7 @@ def test_wordlist_tolerates_broken_alias_json(session):
     assert data["totals"]["entries"] == 2
 
 
-def test_entries_without_any_usable_form_are_skipped(session):
+def test_entries_without_any_usable_form_are_counted_as_never_seen(session):
     project = _project(session)
     chapter = _chapter(session, _volume(session, project), 0, "雨夜")
     _scene(session, chapter, 0, body="雨。")
@@ -208,13 +221,14 @@ def test_entries_without_any_usable_form_are_skipped(session):
 
     data = setting_load_service.build_load(session, project.id)
 
+    # 没有可用 form 的条目仍是条目：计入总数，也必然「从未出现」。
     assert data["totals"] == {
-        "entries": 0,
+        "entries": 1,
         "delivered": 0,
-        "never_seen": 0,
+        "never_seen": 1,
         "ambiguities": 0,
     }
-    assert data["reason"] == "还没有设定条目"
+    assert data["reason"] == ""
 
 
 def test_project_without_entries_says_so(session):
@@ -241,6 +255,84 @@ def test_project_without_bodies_says_so(session):
     assert data["reason"] == "还没有已采纳正文"
     assert data["chapters"][0]["has_body"] is False
     assert data["totals"]["never_seen"] == 1
+
+
+def test_new_count_dedupes_aliases_of_one_entry_in_a_chapter(session):
+    """`new_terms` 按 form 列，但柱子数的是条目：同一角色的两个称呼只算 1。"""
+    project = _project(session)
+    chapter = _chapter(session, _volume(session, project), 0, "雨夜")
+    _scene(session, chapter, 0, body="阿明哥和阿明都来了。")
+    _entry(session, project, "阿明", aliases=["阿明哥"])
+
+    row = setting_load_service.build_load(session, project.id)["chapters"][0]
+
+    assert {term["form"] for term in row["new_terms"]} == {"阿明", "阿明哥"}
+    assert row["new_count"] == 1
+
+
+def test_an_alias_of_an_already_delivered_entry_is_not_counted_as_new(session):
+    project = _project(session)
+    volume = _volume(session, project)
+    first = _chapter(session, volume, 0, "雨夜")
+    _scene(session, first, 0, body="阿明来了。")
+    second = _chapter(session, volume, 1, "天亮")
+    _scene(session, second, 0, body="阿明哥来了。")
+    _entry(session, project, "阿明", aliases=["阿明哥"])
+
+    data = setting_load_service.build_load(session, project.id)
+
+    assert data["chapters"][0]["new_count"] == 1
+    # 第二个称呼仍作为 form 首次出现列出来，但这个条目已经投放过，不再计「新」。
+    assert {term["form"] for term in data["chapters"][1]["new_terms"]} == {"阿明哥"}
+    assert data["chapters"][1]["new_count"] == 0
+    assert sum(chapter["new_count"] for chapter in data["chapters"]) == (
+        data["totals"]["delivered"]
+    ) == 1
+
+
+def test_a_form_seen_in_an_earlier_chapter_is_not_listed_again(session):
+    project = _project(session)
+    volume = _volume(session, project)
+    first = _chapter(session, volume, 0, "雨夜")
+    _scene(session, first, 0, body="雾港的雨。")
+    second = _chapter(session, volume, 1, "天亮")
+    _scene(session, second, 0, body="雾港又起雾了。")
+    _entry(session, project, "雾港")
+
+    data = setting_load_service.build_load(session, project.id)
+
+    assert data["chapters"][0]["new_count"] == 1
+    assert data["chapters"][1]["new_terms"] == []
+    assert data["chapters"][1]["new_count"] == 0
+    assert data["chapters"][1]["mentions"] == 1
+
+
+def test_first_appearance_follows_volume_order(session):
+    """第二卷第一章的首次出现必须晚于第一卷末章。"""
+    project = _project(session)
+    first_volume = _volume(session, project, seq=0, name="第一卷")
+    opening = _chapter(session, first_volume, 0, "起点")
+    _scene(session, opening, 0, body="风。")
+    last_of_first = _chapter(session, first_volume, 1, "末章")
+    _scene(session, last_of_first, 0, body="阿明来了。")
+    second_volume = _volume(session, project, seq=1, name="第二卷")
+    first_of_second = _chapter(session, second_volume, 0, "新篇")
+    _scene(session, first_of_second, 0, body="雾港。")
+    _entry(session, project, "阿明")
+    _entry(session, project, "雾港")
+
+    data = setting_load_service.build_load(session, project.id)
+
+    assert [chapter["volume_label"] for chapter in data["chapters"]] == [
+        "第一卷",
+        "第一卷",
+        "第二卷",
+    ]
+    assert [
+        [term["name"] for term in chapter["new_terms"]]
+        for chapter in data["chapters"]
+    ] == [[], ["阿明"], ["雾港"]]
+    assert data["chapters"][2]["id"] == first_of_second.id
 
 
 def test_another_projects_entries_and_bodies_do_not_leak(session):
