@@ -4,6 +4,7 @@ from app.db.models.audit import AuditIssue
 from app.db.models.batch import BatchJob
 from app.db.models.branch import BranchRevision, SceneBranch
 from app.db.models.chapter import Chapter, Foreshadow, Scene, Volume
+from app.db.models.character_state import CharacterState
 from app.db.models.config_models import ModelPrice, Provider, Setting
 from app.db.models.history import ChangeLog
 from app.db.models.idea import Idea
@@ -28,6 +29,7 @@ __all__ = [
     "BranchRevision",
     "ChangeLog",
     "Chapter",
+    "CharacterState",
     "EntryRelation",
     "Foreshadow",
     "GenerationRun",
