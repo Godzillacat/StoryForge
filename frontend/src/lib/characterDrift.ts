@@ -4,6 +4,8 @@ import type { CharacterDriftData, CharacterDriftTotals } from '../api/client'
 export interface DriftChapter {
   id: string
   label: string
+  /** 卷名：两卷都可能有「第1章 雨夜」，悬停提示靠它区分。没有就是空串。 */
+  volumeLabel: string
 }
 
 /**
@@ -49,6 +51,7 @@ export function buildDriftGrid(
   const chapters: DriftChapter[] = (data?.chapters ?? []).map((chapter) => ({
     id: chapter.id,
     label: chapter.label,
+    volumeLabel: chapter.volume_label ?? '',
   }))
   const indexById = new Map(chapters.map((chapter, index) => [chapter.id, index]))
 

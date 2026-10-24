@@ -12,6 +12,13 @@ function shortLabel(label: string): string {
   return label.length > 8 ? `${label.slice(0, 7)}…` : label
 }
 
+/** 悬停 / 提示里的完整章名。两卷都可能有「第1章 雨夜」，带上卷名才分得开。 */
+function chapterTitle(chapter: DriftChapter): string {
+  return chapter.volumeLabel
+    ? `${chapter.volumeLabel} · ${chapter.label}`
+    : chapter.label
+}
+
 /** 正在编辑的格子。`exists` = 这一格已经有记录（决定是否给「删除」）。 */
 interface EditTarget {
   chapterId: string
@@ -70,7 +77,7 @@ export default function CharacterDrift({
     setEditing({
       chapterId: chapter.id,
       entryId: row.entryId,
-      chapterLabel: chapter.label,
+      chapterLabel: chapterTitle(chapter),
       name: row.name,
       note: cell?.note ?? '',
       exists: cell !== null,
@@ -189,7 +196,7 @@ export default function CharacterDrift({
                   key={chapter.id}
                   scope="col"
                   className="whitespace-nowrap px-2 py-2 font-normal"
-                  title={chapter.label}
+                  title={chapterTitle(chapter)}
                 >
                   {shortLabel(chapter.label)}
                 </th>
@@ -224,10 +231,10 @@ export default function CharacterDrift({
                           onClick={() => openEditor(row, chapter, cell)}
                           title={
                             cell
-                              ? `${row.name} · ${chapter.label}\n${cell.note}`
-                              : `${row.name} · ${chapter.label}\n没有记录（点一下记一条）`
+                              ? `${row.name} · ${chapterTitle(chapter)}\n${cell.note}`
+                              : `${row.name} · ${chapterTitle(chapter)}\n没有记录（点一下记一条）`
                           }
-                          aria-label={`${row.name} · ${chapter.label}：${
+                          aria-label={`${row.name} · ${chapterTitle(chapter)}：${
                             cell ? cell.note : '没有记录'
                           }`}
                           className={`block w-full truncate rounded border px-2 py-1 text-left text-xs outline-none focus:ring-2 focus:ring-indigo-500 ${

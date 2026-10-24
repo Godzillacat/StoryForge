@@ -1048,7 +1048,8 @@ export interface CharacterDriftData {
   // 只列有记录的人物；没记过的人不占一行空白。
   characters: CharacterDriftRow[]
   // 全项目章列表（卷序 → 章序），与有无记录无关：它负责给表格对齐列。
-  chapters: { id: string; label: string }[]
+  // 两卷都可能有「第1章 雨夜」，多卷时靠 `volume_label` 区分（缺了也能用）。
+  chapters: { id: string; label: string; volume_label?: string }[]
   totals: CharacterDriftTotals
   // 非空 = 没东西可画（无人物 / 无记录），直接用后端的文案做空态。
   reason: string

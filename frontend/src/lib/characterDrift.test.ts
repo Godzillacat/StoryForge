@@ -152,6 +152,35 @@ describe('buildDriftGrid', () => {
     expect(row.cells[0]?.chapterId).toBe('c1')
   })
 
+  it('carries the volume label so same-numbered chapters stay distinguishable', () => {
+    // 两卷都可能有「第1章 雨夜」：表头截断后只剩「第1章 …」，悬停提示得靠卷名分开。
+    const data = makeData({
+      chapters: [
+        { id: 'v1c1', label: '第1章 雨夜', volume_label: '第一卷' },
+        { id: 'v2c1', label: '第1章 雨夜', volume_label: '第二卷' },
+      ],
+      characters: [
+        makeRow('e1', '阿明', [
+          makeCell('v1c1', '第1章 雨夜', '犹豫', false),
+          makeCell('v2c1', '第1章 雨夜', '决意', true),
+        ]),
+      ],
+    })
+
+    const grid = buildDriftGrid(data)
+    expect(grid.chapters.map((chapter) => chapter.volumeLabel)).toEqual(['第一卷', '第二卷'])
+    // 格子各自落在自己的卷的列上，不会被同名标签挤到同一列。
+    expect(grid.rows[0].cells[0]?.note).toBe('犹豫')
+    expect(grid.rows[0].cells[1]?.note).toBe('决意')
+  })
+
+  it('falls back to an empty volume label when the payload has none', () => {
+    expect(buildDriftGrid(makeData()).chapters.map((chapter) => chapter.volumeLabel)).toEqual([
+      '',
+      '',
+    ])
+  })
+
   it('labels cells from the chapter list so headers and cells always agree', () => {
     const data = makeData({
       chapters: [{ id: 'c1', label: '第1章 雨夜（改过标题）' }],
