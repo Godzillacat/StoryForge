@@ -75,3 +75,20 @@ def test_the_first_occurring_marker_is_reported():
 
     assert chain[0]["kind"] == "cause"
     assert chain[0]["marker"] == "于是"
+
+
+def test_count_paragraphs_ignores_blank_runs():
+    from app.logic_chain import count_paragraphs
+
+    assert count_paragraphs("第一段。\n\n\n第二段。\n\n   \n第三段。") == 3
+    assert count_paragraphs("") == 0
+    assert count_paragraphs(None) == 0
+
+
+def test_count_paragraphs_agrees_with_extract_chain():
+    from app.logic_chain import count_paragraphs, extract_chain
+
+    text = "开头。\n\n因为下雨，他留下。\n\n\n结尾。"
+    chain = extract_chain(text)
+    assert count_paragraphs(text) == 3
+    assert max(item["paragraph"] for item in chain) <= count_paragraphs(text)
