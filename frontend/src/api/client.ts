@@ -329,6 +329,8 @@ export const api = {
     request<ForeshadowSummary>(`/api/projects/${projectId}/foreshadows/summary`),
   causalMap: (projectId: string) =>
     request<CausalMapData>(`/api/projects/${projectId}/causal-map`),
+  settingLoad: (projectId: string) =>
+    request<SettingLoadData>(`/api/projects/${projectId}/setting-load`),
   logicChain: (sceneId: string) =>
     request<LogicChainResponse>(`/api/scenes/${sceneId}/logic-chain`),
   listForeshadows: (projectId: string) =>
@@ -964,6 +966,41 @@ export interface CausalMapData {
   totals: { scenes: number; breaks: number; chapters: number }
   // false = 从没跑过场景卡阶段的逻辑自检，图里只有结构断点。
   logic_checked: boolean
+}
+
+export interface SettingLoadTerm {
+  entry_id: string
+  name: string
+  form: string
+}
+
+export interface SettingLoadChapter {
+  id: string
+  label: string
+  volume_label: string
+  // false = 这一章还没有已采纳正文；此时 new_count / density 一定是 0，
+  // 但界面上不能画成 0 柱 —— 「还没写」不是「没投放」。
+  has_body: boolean
+  chars: number
+  new_terms: SettingLoadTerm[]
+  new_count: number
+  mentions: number
+  density: number
+}
+
+export interface SettingLoadTotals {
+  entries: number
+  delivered: number
+  never_seen: number
+  // 同一个 form（名字或别名）对应多个条目的处数；命中归属由后端裁定。
+  ambiguities: number
+}
+
+export interface SettingLoadData {
+  chapters: SettingLoadChapter[]
+  totals: SettingLoadTotals
+  // 非空 = 曲线没有可比的意义（没有条目 / 没有正文），直接用后端的文案做空态。
+  reason: string
 }
 
 export interface Foreshadow {
