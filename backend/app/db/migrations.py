@@ -161,6 +161,18 @@ MIGRATIONS: tuple[Migration, ...] = (
         requires=("scene_branch",),
         statements=("ALTER TABLE scene_branch ADD COLUMN ab_group TEXT",),
     ),
+    # 分支树：派生关系只记父分支 id。
+    # **只加可空列**：存量分支一律 NULL —— 它们全是根，不回填。
+    # **不加外键**：SQLite 的 ALTER ADD COLUMN 加 REFERENCES 有历史坑，且
+    # 「父分支被丢弃 → 子分支提升为根」本来就是服务层语义（见 branch_service）。
+    Migration(
+        version=13,
+        note="scene_branch 加父分支（分支树）",
+        requires=("scene_branch",),
+        statements=(
+            "ALTER TABLE scene_branch ADD COLUMN parent_branch_id TEXT",
+        ),
+    ),
 )
 
 BASELINE_VERSION = 0

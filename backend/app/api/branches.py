@@ -54,11 +54,13 @@ def create_branch(
 ) -> dict:
     try:
         row = branch_service.create_branch(
-            session, scene_id, payload.name, payload.note
+            session, scene_id, payload.name, payload.note, parent_id=payload.parent_id
         )
     except ValueError as exc:
         raise _value_error(exc) from exc
-    return branch_service.serialize_branch_detail(row)
+    # 走 get_branch 而不是直接序列化：响应的 `depth` 要按父链算，
+    # 派生出来的新分支不是根。
+    return branch_service.get_branch(session, row.id)
 
 
 # ---- A/B 并排生成 ----

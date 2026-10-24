@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from sqlalchemy import literal_column, select
+from sqlalchemy import literal_column, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -71,24 +71,102 @@ def _label(session: Session, scene: Scene) -> str:
     return _scene_label(session, scene)
 
 
+def _depth_map(session: Session, scene_id: str) -> dict[str, int]:
+    """全场景分支的深度表：根 = 1，子 = 父 + 1。
+
+    **一次取全场景、在内存里沿父链算** —— 列表一次要几十条，逐条回库就是
+    N+1；深度只取决于同一场景内的派生关系。
+
+    **成环保护**：正常接口建不出环，但手工改库能。碰到环时把整条未定链
+    一律当根（深度 1）—— 脏数据不该让列表接口转不出来，也不该让某条分支
+    拿到无穷大或负数。指向别的场景 / 已删分支的父同样按根处理（父不在
+    这张表里，链自然断掉）。
+    """
+    rows = session.execute(
+        select(SceneBranch.id, SceneBranch.parent_branch_id).where(
+            SceneBranch.scene_id == scene_id
+        )
+    ).all()
+    parent_of = {branch_id: parent_id for branch_id, parent_id in rows}
+    depths: dict[str, int] = {}
+
+    def _resolve(start: str) -> int:
+        if start in depths:
+            return depths[start]
+        chain = [start]
+        seen = {start}
+        node = parent_of.get(start)
+        while node is not None and node not in depths and node not in seen:
+            seen.add(node)
+            chain.append(node)
+            node = parent_of.get(node)
+        if node is not None and node not in depths:
+            # 成环：链上没有合法的根，整条链按根处理。
+            for item in chain:
+                depths[item] = 1
+            return 1
+        base = depths[node] if node is not None else 0
+        for item in reversed(chain):
+            base += 1
+            depths[item] = base
+        return depths[start]
+
+    return {branch_id: _resolve(branch_id) for branch_id in parent_of}
+
+
+def _parent_branch(
+    session: Session, scene_id: str, parent_id: str | None
+) -> SceneBranch | None:
+    """派生起点。`None` 表示从主版起一条根分支。
+
+    跨场景与不存在同一口径（都报「分支不存在」）：不告诉调用方「那个 id
+    确实存在，只是不归你」。A/B 临时分支采纳或丢弃后即删，不能当父。
+    """
+    if parent_id is None or parent_id == "":
+        return None
+    parent = session.get(SceneBranch, parent_id)
+    if parent is None or parent.scene_id != scene_id:
+        raise ValueError(f"分支不存在：{parent_id}")
+    if parent.ab_group is not None:
+        raise ValueError("A/B 分支不能作为派生起点")
+    if _depth_map(session, scene_id).get(parent.id, 1) >= 3:
+        raise ValueError("最多三层分支")
+    return parent
+
+
 def create_branch(
     session: Session,
     scene_id: str,
     name: str,
     note: str = "",
+    parent_id: str | None = None,
     commit: bool = True,
 ) -> SceneBranch:
-    """开一条分支。`commit=False` 把提交时机交给调用方（A/B 要一次提交）。"""
+    """开一条分支。`commit=False` 把提交时机交给调用方（A/B 要一次提交）。
+
+    `parent_id` 给定时是**派生**：新分支复制父分支的正文作为起点，挂在父
+    下面，树的深度最多三层。不给时仍从主版正文起步（原有行为）。
+    """
     scene = _scene(session, scene_id)
     clean = _clean_name(name)
+    parent = _parent_branch(session, scene_id, parent_id)
     if _find_by_name(session, scene_id, clean) is not None:
         raise ValueError(f"这个场景里已经有叫「{clean}」的分支了")
+    if parent is not None:
+        # 派生是「在这一版的基础上再试一版」，所以复制的是**父分支正文**，
+        # 不是主版正文。父没有正文时从空开始，与主版为空的既有行为一致。
+        content = parent.content or ""
+        note_text = (note or "").strip() or f"派生自 {parent.name}"
+    else:
+        # 从主版正文起步：作者的典型路径是「主版写得差不多了，想试另一版」。
+        content = scene.body or ""
+        note_text = (note or "").strip()
     row = SceneBranch(
         scene_id=scene_id,
         name=clean,
-        # 从主版正文起步：作者的典型路径是「主版写得差不多了，想试另一版」。
-        content=scene.body or "",
-        note=(note or "").strip(),
+        content=content,
+        note=note_text,
+        parent_branch_id=parent.id if parent is not None else None,
     )
     session.add(row)
     try:
@@ -117,11 +195,20 @@ def _project_id(session: Session, scene: Scene) -> str:
     return get_project_for_chapter(session, scene.chapter_id).id
 
 
-def serialize_branch(row: SceneBranch) -> dict:
+def serialize_branch(
+    row: SceneBranch, depths: dict[str, int] | None = None
+) -> dict:
+    """`depths` 是 `_depth_map` 的产物：列表一次算全场景，不逐条回库。
+
+    没传时按根（1）返回；单条路径应当传（见 `_detail`），否则派生分支的
+    `depth` 会被报成 1。
+    """
     return {
         "id": row.id,
         "scene_id": row.scene_id,
         "name": row.name,
+        "parent_id": row.parent_branch_id,
+        "depth": (depths or {}).get(row.id, 1),
         "note": row.note,
         "chars": count_words(row.content),
         "has_draft": bool((row.draft_content or "").strip()),
@@ -130,9 +217,11 @@ def serialize_branch(row: SceneBranch) -> dict:
     }
 
 
-def serialize_branch_detail(row: SceneBranch) -> dict:
+def serialize_branch_detail(
+    row: SceneBranch, depths: dict[str, int] | None = None
+) -> dict:
     return {
-        **serialize_branch(row),
+        **serialize_branch(row, depths),
         "content": row.content,
         "draft": (
             {"content": row.draft_content, "run_id": row.draft_run_id}
@@ -140,6 +229,11 @@ def serialize_branch_detail(row: SceneBranch) -> dict:
             else None
         ),
     }
+
+
+def _detail(session: Session, row: SceneBranch) -> dict:
+    """单条分支的完整序列化：深度也要对（写作台会拿它渲染树）。"""
+    return serialize_branch_detail(row, _depth_map(session, row.scene_id))
 
 
 def list_branches(session: Session, scene_id: str) -> list[dict]:
@@ -151,11 +245,13 @@ def list_branches(session: Session, scene_id: str) -> list[dict]:
         .where(SceneBranch.scene_id == scene_id, SceneBranch.ab_group.is_(None))
         .order_by(SceneBranch.created_at, SceneBranch.id)
     ).all()
-    return [serialize_branch(row) for row in rows]
+    # 深度一次算全场景（含 A/B 行，脏数据里它们也可能被挂上子分支）。
+    depths = _depth_map(session, scene_id)
+    return [serialize_branch(row, depths) for row in rows]
 
 
 def get_branch(session: Session, branch_id: str) -> dict:
-    return serialize_branch_detail(_branch(session, branch_id))
+    return _detail(session, _branch(session, branch_id))
 
 
 def update_branch(
@@ -175,7 +271,7 @@ def update_branch(
     except Exception:
         session.rollback()
         raise
-    return serialize_branch_detail(row)
+    return _detail(session, row)
 
 
 def save_branch_body(session: Session, branch_id: str, content: str) -> dict:
@@ -186,7 +282,7 @@ def save_branch_body(session: Session, branch_id: str, content: str) -> dict:
         _add_revision(session, row, new_content, "author")
         row.content = new_content
         session.commit()
-    return serialize_branch_detail(row)
+    return _detail(session, row)
 
 
 def _add_revision(
@@ -227,7 +323,7 @@ def save_branch_draft(session: Session, branch_id: str, content: str) -> dict:
     row = _branch(session, branch_id)
     row.draft_content = content or ""
     session.commit()
-    return serialize_branch_detail(row)
+    return _detail(session, row)
 
 
 def _reject_if_locked(session: Session, scene: Scene) -> None:
@@ -259,7 +355,7 @@ def adopt_branch_draft(session: Session, branch_id: str, commit: bool = True) ->
     row.draft_run_id = None
     if commit:
         session.commit()
-    return serialize_branch_detail(row)
+    return _detail(session, row)
 
 
 def merge_branch(session: Session, branch_id: str, commit: bool = True) -> dict:
@@ -312,7 +408,7 @@ def merge_branch(session: Session, branch_id: str, commit: bool = True) -> dict:
     if commit:
         session.commit()
     return {
-        "branch": serialize_branch_detail(row),
+        "branch": _detail(session, row),
         "scene_id": scene.id,
         "body": scene.body,
         "chars": count_words(scene.body),
@@ -320,10 +416,21 @@ def merge_branch(session: Session, branch_id: str, commit: bool = True) -> dict:
 
 
 def discard_branch(session: Session, branch_id: str) -> None:
+    """丢弃一条分支。**子分支不跟着死** —— 它们是作者写过的正文。
+
+    删父之前先把指向它的 `parent_branch_id` 置空，子分支提升为根（深度
+    变回 1，正文与草稿一个字不动）。**不用 FK 的 ON DELETE SET NULL**：
+    这条语义由服务层显式表达，改表时才不会藏着一层看不见的级联。
+    """
     row = _branch(session, branch_id)
     scene = _scene(session, row.scene_id)
     project_id = _project_id(session, scene)
     name = row.name
+    session.execute(
+        update(SceneBranch)
+        .where(SceneBranch.parent_branch_id == row.id)
+        .values(parent_branch_id=None)
+    )
     session.delete(row)
     change_service.record(
         session,
