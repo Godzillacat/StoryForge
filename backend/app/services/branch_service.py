@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import literal_column, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -346,6 +346,19 @@ _AB_NAME_PREFIX = "A/B · "
 _AB_SIDES = ("A", "B")
 
 
+def _ab_side(name: str, index: int) -> str:
+    """从库名解析侧别；作者改过名或格式不符时按位置兜底。
+
+    名字形如 `A/B · A`，同场景已有同名分支时会变成 `A/B · A 2` —— 序号
+    只负责让名字唯一，不改变它是 A 版。
+    """
+    if name.startswith(_AB_NAME_PREFIX):
+        head = name[len(_AB_NAME_PREFIX) :].split(" ", 1)[0]
+        if head in _AB_SIDES:
+            return head
+    return _AB_SIDES[index] if index < len(_AB_SIDES) else str(index + 1)
+
+
 def _ab_branch(
     session: Session, scene_id: str, branch_id: str
 ) -> tuple[SceneBranch, str]:
@@ -453,4 +466,49 @@ def ab_discard(session: Session, scene_id: str, branch_id: str) -> dict:
         session.rollback()
         raise
     return {"removed": [name]}
+
+
+def ab_current(session: Session, scene_id: str) -> dict:
+    """该场景**最近一组**未处理的 A/B；没有则 `{"group": None, "branches": []}`。
+
+    「最近一组」按创建顺序倒序的第一条定位组号：同一事务里的两条 `created_at`
+    可能落在同一微秒上，SQLite 的 `rowid` 才是真正的写入顺序 —— 只按时间排，
+    两组紧挨着建出时可能把旧组当成新组。
+    """
+    _scene(session, scene_id)
+    latest = session.scalars(
+        select(SceneBranch)
+        .where(
+            SceneBranch.scene_id == scene_id,
+            SceneBranch.ab_group.is_not(None),
+        )
+        .order_by(
+            SceneBranch.created_at.desc(),
+            literal_column("scene_branch.rowid").desc(),
+        )
+    ).first()
+    if latest is None:
+        return {"group": None, "branches": []}
+
+    rows = _ab_group_rows(session, latest.ab_group or "")
+    return {
+        "group": latest.ab_group,
+        "branches": [
+            {
+                "id": row.id,
+                # 作者看到的标签就是库里的名字（`A/B · A`），不是侧别。
+                "label": row.name,
+                "side": _ab_side(row.name, index),
+                "has_draft": bool((row.draft_content or "").strip()),
+                # 面板显示「这一版」的字数：生成先落草稿，所以有草稿看草稿，
+                # 没有才回落到分支正文（建组时它从主版继承而来）。
+                "chars": count_words(
+                    row.draft_content
+                    if (row.draft_content or "").strip()
+                    else row.content
+                ),
+            }
+            for index, row in enumerate(rows)
+        ],
+    }
 

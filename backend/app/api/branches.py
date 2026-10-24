@@ -19,7 +19,7 @@ from app.services import branch_service, text_service
 
 router = APIRouter(prefix="/api", tags=["branches"])
 
-_MISSING_PREFIXES = ("场景不存在", "分支不存在")
+_MISSING_PREFIXES = ("场景不存在", "分支不存在", "分支不属于这个场景")
 
 
 def _value_error(exc: ValueError) -> HTTPException:
@@ -54,6 +54,45 @@ def create_branch(
     except ValueError as exc:
         raise _value_error(exc) from exc
     return branch_service.serialize_branch_detail(row)
+
+
+# ---- A/B 并排生成 ----
+
+
+@router.post("/scenes/{scene_id}/ab", status_code=201)
+def create_ab(scene_id: str, session: Session = Depends(get_session)) -> dict:
+    try:
+        return branch_service.ab_create(session, scene_id)
+    except ValueError as exc:
+        raise _value_error(exc) from exc
+
+
+@router.get("/scenes/{scene_id}/ab")
+def current_ab(scene_id: str, session: Session = Depends(get_session)) -> dict:
+    try:
+        return branch_service.ab_current(session, scene_id)
+    except ValueError as exc:
+        raise _value_error(exc) from exc
+
+
+@router.post("/scenes/{scene_id}/ab/{branch_id}/adopt")
+def adopt_ab(
+    scene_id: str, branch_id: str, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        return branch_service.ab_adopt(session, scene_id, branch_id)
+    except ValueError as exc:
+        raise _value_error(exc) from exc
+
+
+@router.post("/scenes/{scene_id}/ab/{branch_id}/discard")
+def discard_ab(
+    scene_id: str, branch_id: str, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        return branch_service.ab_discard(session, scene_id, branch_id)
+    except ValueError as exc:
+        raise _value_error(exc) from exc
 
 
 @router.get("/branches/{branch_id}")
