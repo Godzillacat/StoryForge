@@ -75,6 +75,10 @@ _FIELD_PREFIXES = ("场景的", "章的", "的", "字段")
 # 应用时只认这份解析结果 —— 下标与生成时的 before 都钉在这里。
 _RESOLVED_KEY = "resolved_suggestions"
 
+# 已经应用过的建议下标。值比对在「建议值 == 现值」时分辨不出「第一次」与
+# 「第二次」（写进去的还是同一个值），所以单独留一份服务端标记来保证幂等。
+_APPLIED_KEY = "applied_indices"
+
 # 逐条应用时跳过某条的原因。放在一处，界面与测试都对着同一份文案。
 _SKIP_BAD_INDEX = "下标无效"
 _SKIP_MISSING = "对象已删除"
@@ -171,6 +175,27 @@ def _build_candidates(session: Session, report: dict) -> list[dict]:
                 }
             )
     return candidates
+
+
+def _pick_candidates(candidates: list[dict]) -> list[dict]:
+    """场景与章交替取样，避免章多时把场景饿死。
+
+    影响面里章整组排在场景前面，项目章数 ≥ 上限时按顺序截断会让 12 个候选
+    全是章摘要，场景一条也进不了模型。这里先场景后章轮流取，直到上限 ——
+    两类对象都进得了模型视野。场景先取是因为场景卡的可改字段更多、建议
+    也更具体。
+    """
+    scenes = [c for c in candidates if c["target_type"] == "scene"]
+    chapters = [c for c in candidates if c["target_type"] == "chapter"]
+    picked: list[dict] = []
+    while len(picked) < MAX_SUGGESTIONS and (scenes or chapters):
+        if scenes:
+            picked.append(scenes.pop(0))
+        if len(picked) >= MAX_SUGGESTIONS:
+            break
+        if chapters:
+            picked.append(chapters.pop(0))
+    return picked
 
 
 def _current_values(session: Session, kind: str, target_id: str) -> dict[str, str] | None:
@@ -359,7 +384,10 @@ def _suggest(
     client,
 ) -> dict:
     report = impact_service.analyze(session, project_id, target_type, target_id)
-    candidates = _build_candidates(session, report)[:MAX_SUGGESTIONS]
+    all_candidates = _build_candidates(session, report)
+    candidates = _pick_candidates(all_candidates)
+    # 没进模型的不是「模型没建议」：数量要如实告诉作者，否则会被读成全覆盖。
+    omitted = len(all_candidates) - len(candidates)
     if not candidates:
         return _skipped("没有可建议的下游对象：受影响的场景与章都已锁定，或者还没有下游内容")
 
@@ -398,17 +426,20 @@ def _suggest(
 
     suggestions, dropped = _parse_suggestions(run.parsed_json, candidates)
     _persist_suggestions(session, run, suggestions)
-    warning = (
-        f"有 {dropped} 条建议没被采用（对不上对象、字段不可改，或超过 {MAX_SUGGESTIONS} 条上限），已丢弃"
-        if dropped
-        else ""
-    )
+    warnings: list[str] = []
+    if omitted:
+        warnings.append(f"另有 {omitted} 个对象未纳入本轮建议")
+    if dropped:
+        warnings.append(
+            f"有 {dropped} 条建议没被采用（对不上对象、字段不可改，或超过 "
+            f"{MAX_SUGGESTIONS} 条上限），已丢弃"
+        )
     return {
         "run_id": run.id,
         "llm_status": "ok",
         "suggestions": suggestions,
         "dropped": dropped,
-        "warning": warning,
+        "warning": "；".join(warnings),
     }
 
 
@@ -429,21 +460,28 @@ def _locked(session: Session, target_type: str, row) -> bool:
     return bool(row.locked or (volume is not None and volume.locked))
 
 
-def _belongs_to_project(session: Session, target_type: str, row, project_id: str) -> bool:
-    """对象是否真属于这个项目：场景经章→卷，章经卷。
+def _ownership_issue(
+    session: Session, target_type: str, row, project_id: str
+) -> str | None:
+    """对象归属检查：返回跳过原因，没问题返回 None。
 
     运行记录里的建议理论上都由本项目的服务端生成，但 `apply()` 只凭 run_id
     取对象；万一同一 id 落在别的项目名下（或被手改过运行记录），写入就会
-    越项目。这里退一步确认归属，不如「已删除」那样一概而论。
+    越项目。取不到祖先（章/卷已删）时报「对象已删除」，不能把「不存在」
+    说成「不属于这个项目」。
     """
     if target_type == "scene":
         chapter = session.get(Chapter, row.chapter_id)
         if chapter is None:
-            return False
+            return _SKIP_MISSING
         volume = session.get(Volume, chapter.volume_id)
     else:
         volume = session.get(Volume, row.volume_id)
-    return volume is not None and volume.project_id == project_id
+    if volume is None:
+        return _SKIP_MISSING
+    if volume.project_id != project_id:
+        return _SKIP_FOREIGN
+    return None
 
 
 def apply(session: Session, project_id: str, run_id: str, accepted: list[int]) -> dict:
@@ -475,6 +513,14 @@ def apply(session: Session, project_id: str, run_id: str, accepted: list[int]) -
     applied: list[dict] = []
     skipped: list[dict] = []
     seen: set[int] = set()
+    # 已经应用过的下标存在运行记录里：建议值与现值相同（`after == before`）时
+    # 值比对分不出第一次与第二次，只能靠这份标记保证幂等。
+    applied_indices: set[int] = set()
+    for stored in parsed.get(_APPLIED_KEY) or []:
+        try:
+            applied_indices.add(int(stored))
+        except (TypeError, ValueError):
+            continue
     for raw_index in accepted or []:
         try:
             index = int(raw_index)
@@ -492,6 +538,11 @@ def apply(session: Session, project_id: str, run_id: str, accepted: list[int]) -
         item = suggestions[index] if isinstance(suggestions[index], dict) else None
         if item is None:
             skipped.append({"index": index, "reason": _SKIP_BAD_INDEX})
+            continue
+
+        # 这一条已经应用过（哪怕对象后来被锁/被删/被改）：先报「已应用」。
+        if index in applied_indices:
+            skipped.append({"index": index, "reason": _SKIP_APPLIED})
             continue
 
         target_type = str(item.get("target_type") or "")
@@ -513,8 +564,9 @@ def apply(session: Session, project_id: str, run_id: str, accepted: list[int]) -
         if row is None:
             skipped.append({"index": index, "reason": _SKIP_MISSING})
             continue
-        if not _belongs_to_project(session, target_type, row, project_id):
-            skipped.append({"index": index, "reason": _SKIP_FOREIGN})
+        issue = _ownership_issue(session, target_type, row, project_id)
+        if issue is not None:
+            skipped.append({"index": index, "reason": issue})
             continue
         if _locked(session, target_type, row):
             skipped.append({"index": index, "reason": _SKIP_LOCKED})
@@ -522,7 +574,7 @@ def apply(session: Session, project_id: str, run_id: str, accepted: list[int]) -
 
         current = str(getattr(row, field, "") or "")
         if current != before:
-            # 现值已经等于建议值：说明这一批之前应用过一次。单独给「已应用」，
+            # 没有应用标记（旧运行记录）时，值等于建议值也判为「已应用」。
             # 与「作者手改过」区分开 —— 两者都写不得，但作者在意的不是一回事。
             reason = _SKIP_APPLIED if current == after else _SKIP_STALE
             skipped.append({"index": index, "reason": reason})
@@ -539,6 +591,7 @@ def apply(session: Session, project_id: str, run_id: str, accepted: list[int]) -
             source="ai",
             summary=f"修订建议 · {field_label}",
         )
+        applied_indices.add(index)
         applied.append(
             {
                 "index": index,
@@ -548,5 +601,8 @@ def apply(session: Session, project_id: str, run_id: str, accepted: list[int]) -
             }
         )
 
+    if applied:
+        # 与写入同事务提交：失败时标记跟着回滚，不会出现「标记说应用过、库里没有」。
+        run.parsed_json = {**parsed, _APPLIED_KEY: sorted(applied_indices)}
     session.commit()
     return {"applied": applied, "skipped": skipped}

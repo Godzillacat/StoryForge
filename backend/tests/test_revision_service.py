@@ -1070,3 +1070,130 @@ def test_apply_skips_object_from_another_project(session, project, scenes):
     assert out["applied"] == []
     assert out["skipped"] == [{"index": 0, "reason": "对象不属于这个项目"}]
     assert session.get(Scene, foreign.id).goal == "别处的目标"
+
+
+# ---- 审查修复：候选交替取样、幂等与文案 ----
+
+
+def test_candidates_alternate_scenes_and_chapters():
+    """章整组排在场景前：交替取样让场景先占位，不被 12 条上限饿死。"""
+    from app.services import revision_service
+
+    def make(kind: str, count: int) -> list[dict]:
+        return [
+            {
+                "target_type": kind,
+                "target_id": f"{kind}-{i}",
+                "target_label": f"{kind}{i}",
+                "values": {},
+            }
+            for i in range(count)
+        ]
+
+    # 影响面的真实形状：20 个章候选在前，3 个场景候选在后。
+    picked = revision_service._pick_candidates(make("chapter", 20) + make("scene", 3))
+
+    assert len(picked) == revision_service.MAX_SUGGESTIONS
+    # 先场景后章轮流取：场景只有 3 个，所以前 6 条是 场景/章 交替。
+    assert [c["target_type"] for c in picked[:6]] == ["scene", "chapter"] * 3
+    assert sum(1 for c in picked if c["target_type"] == "scene") == 3
+    # 场景用完后剩下的名额全给章。
+    assert [c["target_type"] for c in picked[6:]] == ["chapter"] * 6
+
+
+def test_suggest_warns_about_omitted_objects(session, project, runtime_ready):
+    """对象多于上限时，没进模型的数量要写进 warning，不能被读成全覆盖。"""
+    from app.services import impact_service, revision_service
+
+    volume = Volume(project_id=project.id, seq=0, name="长卷")
+    session.add(volume)
+    session.flush()
+    for index in range(13):
+        chapter = Chapter(
+            volume_id=volume.id,
+            seq=index,
+            title=f"章{index + 1}",
+            summary=f"摘要{index + 1}",
+        )
+        session.add(chapter)
+        session.flush()
+        session.add(Scene(chapter_id=chapter.id, seq=0, goal=f"目标{index + 1}"))
+    session.commit()
+
+    arch = _architecture_of(session, project)
+    report = impact_service.analyze(session, project.id, "architecture", arch.id)
+    all_candidates = revision_service._build_candidates(session, report)
+    # 先确认这确实是「章多到能饿死场景」的形状。
+    assert {c["target_type"] for c in all_candidates} == {"scene", "chapter"}
+    expected_omitted = len(all_candidates) - revision_service.MAX_SUGGESTIONS
+    assert expected_omitted > 0
+
+    result = revision_service.suggest(
+        session,
+        project.id,
+        "architecture",
+        arch.id,
+        client=_model_client(_content([])),
+    )
+
+    assert result["llm_status"] == "ok"
+    assert result["suggestions"] == []
+    assert f"另有 {expected_omitted} 个对象未纳入本轮建议" in result["warning"]
+
+
+def test_apply_is_idempotent_when_after_equals_before(
+    session, project, scenes, runtime_ready
+):
+    """建议值与现值相同：第一次仍算应用（写一条历史），第二次报「已应用」。"""
+    from app.services import revision_service
+
+    arch = _architecture_of(session, project)
+    result = revision_service.suggest(
+        session,
+        project.id,
+        "architecture",
+        arch.id,
+        client=_model_client(
+            _content(
+                [
+                    {
+                        "target_label": "第1卷 第1章 场景2",
+                        "field": "冲突",
+                        # 与现值完全相同：值比对分不出第一次与第二次。
+                        "after": "船票上的日期是三年前",
+                        "reason": "建议值与现值相同",
+                    }
+                ]
+            )
+        ),
+    )
+    assert result["suggestions"][0]["before"] == result["suggestions"][0]["after"]
+
+    first = revision_service.apply(session, project.id, result["run_id"], [0])
+
+    assert [a["index"] for a in first["applied"]] == [0]
+    assert len(_changes_of(session, scenes["second"].id)) == 1
+
+    second = revision_service.apply(session, project.id, result["run_id"], [0])
+
+    assert second["applied"] == []
+    assert second["skipped"] == [{"index": 0, "reason": "已应用"}]
+    # 幂等：不能写出第二条历史。
+    assert len(_changes_of(session, scenes["second"].id)) == 1
+
+
+def test_ownership_check_reports_deleted_ancestors(session, project, scenes):
+    """章/卷查不到时报「对象已删除」，不能把「不存在」说成「不属于这个项目」。"""
+    from app.services import revision_service
+
+    orphan_scene = Scene(chapter_id="no-such-chapter", seq=0)
+    assert (
+        revision_service._ownership_issue(session, "scene", orphan_scene, project.id)
+        == "对象已删除"
+    )
+
+    orphan_chapter = Chapter(volume_id="no-such-volume", seq=0, title="孤儿章")
+    assert (
+        revision_service._ownership_issue(session, "chapter", orphan_chapter, project.id)
+        == "对象已删除"
+    )
