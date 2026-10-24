@@ -243,7 +243,8 @@ git commit -m "feat: 逻辑链图形布局纯函数"
 颜色常量与注释（实施时用实测值）：
 
 ```tsx
-// 深色底 #020617 上实测：sky-500 8.2:1、amber-500 9.6:1、emerald-500 7.4:1（≥ 3:1）
+// 深色底 #020617 上实测（WCAG 相对亮度公式）：sky-500 7.28:1、amber-500 9.39:1、
+// emerald-500 7.95:1 —— 三者都 ≥ 4.5:1，正文级文字也够用。
 const COLORS: Record<string, string> = { cause: '#0ea5e9', turn: '#f59e0b', reveal: '#10b981' }
 ```
 
