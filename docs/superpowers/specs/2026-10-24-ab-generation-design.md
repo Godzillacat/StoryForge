@@ -55,9 +55,10 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/scenes/{id}/ab` | 建两条 A/B 分支（`ab_group` 同值，名字 `A` / `B`，重名自动加序号），返回 `{group, branches:[{id,label}]}`；场景锁定时 409 |
+| POST | `/api/scenes/{id}/ab` | 建两条 A/B 分支（`ab_group` 同值，名字 `A/B · A` / `A/B · B`，重名自动加序号），返回 `{group, branches:[{id,label,side}]}`（`label` 是库名、`side` 是 A/B）；场景锁定时 409；**本场已有未处理的 A/B 组时 409**（先采纳或丢弃，不静默删旧组） |
 | POST | `/api/scenes/{id}/ab/{branch_id}/adopt` | 采纳这一版：校验分支属于本次 A/B 且属于该场景 → adopt 草稿（段落锁）→ merge 到正文（场景锁）→ 删除同组两条分支；返回 `{revision_id, discarded:[...]}` |
-| POST | `/api/scenes/{id}/ab/{branch_id}/discard` | 丢弃一版：删该分支；同组只剩一条时把它也删掉（A/B 结束） |
+| POST | `/api/scenes/{id}/ab/{branch_id}/discard` | 丢弃一版：**只删该条**；同组另一条保留，可继续采纳或再丢弃。两条都丢弃后 A/B 结束 |
+| GET | `/api/scenes/{id}/ab` | 查当前未完成的 A/B 组（最近一组），返回 `{group, branches:[{id,label,has_draft,chars}]}`；没有则 `{group:null, branches:[]}` |
 
 生成不新增接口：前端对每条分支调既有的 `POST /api/branches/{id}/generate`（SSE），**先 A 后 B 顺序跑**。
 理由：SQLite 单写者，两条流同时写库会互相等；顺序跑至少失败时能说清哪一版没出来。
@@ -100,7 +101,8 @@
 | 段落锁 | 采纳时缺段拒绝（沿用 adopt 的检查），B 不受影响 |
 | A 生成成功、B 失败 | 界面保留 A，B 显示失败原因；可单独重试 B，或只用 A / 都不要 |
 | 已有一组 A/B 未处理时再点 | 先丢弃旧的一组（界面确认），或禁用按钮直到处理完 |
-| 刷新页面 | A/B 中间态丢失，两条分支留在库里但被列表过滤 —— 下次进入提示「有未完成的 A/B」并给「继续/丢弃」 |
+| 刷新页面 | A/B 中间态丢失；`GET /scenes/{id}/ab` 仍能找回最近一组（两条分支被普通列表过滤），界面给「继续 / 丢弃」 |
+| 丢弃一条 | 只删该条，另一条仍可采纳；两条都丢弃后 A/B 结束 |
 | 采纳时分支已被删 | 404，界面提示重新生成 |
 | 两版完全相同 | 正常显示，差异 0 段，作者随便选一版（不特殊处理） |
 

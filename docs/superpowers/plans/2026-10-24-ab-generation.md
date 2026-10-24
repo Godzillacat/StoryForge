@@ -137,7 +137,7 @@ def test_ab_adopt_rejects_a_branch_from_another_group(session, scene):
 - Test: `backend/tests/test_ab_api.py`（新建）
 
 **Interfaces:**
-- Produces: `POST /api/scenes/{id}/ab`、`POST /api/scenes/{id}/ab/{branch_id}/adopt`、`POST /api/scenes/{id}/ab/{branch_id}/discard`
+- Produces: `POST /api/scenes/{id}/ab`、`GET /api/scenes/{id}/ab`（查最近一组）、`POST /api/scenes/{id}/ab/{branch_id}/adopt`、`POST /api/scenes/{id}/ab/{branch_id}/discard`（只删该条）
 
 - [ ] **Step 1: 写失败的测试**：正常创建返回两条；锁定场景 409；采纳 200 且 `discarded` 含另一条；别的场景的 branch 404；丢弃后 `GET /scenes/{id}/branches` 看不到。
 - [ ] **Step 2: 跑测试确认失败**
