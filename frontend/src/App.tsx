@@ -15,7 +15,10 @@ import World from './pages/World'
 import Writing from './pages/Writing'
 import { KEY_SIDEBAR_COLLAPSED, readFlag, writeFlag } from './lib/persisted'
 import { NAV_GROUPS } from './lib/nav'
+import { summaryLine } from './lib/projectMeta'
 import { ProjectSwitcher } from './components/ProjectSwitcher'
+import { useCurrentProject } from './state/ProjectContext'
+import { useProjectMeta } from './state/useProjectMeta'
 import { cn } from './ui/cn'
 import { Icon } from './ui/icons'
 
@@ -40,6 +43,8 @@ const LEGACY_DARK = new Set([
 export default function App() {
   const pathname = useLocation().pathname
   const [collapsed, setCollapsed] = useState(() => readFlag(KEY_SIDEBAR_COLLAPSED, false))
+  const { projectId } = useCurrentProject()
+  const meta = useProjectMeta(projectId)
 
   function applyCollapsed(next: boolean) {
     setCollapsed(next)
@@ -90,12 +95,23 @@ export default function App() {
                   >
                     <Icon name={item.icon} size={18} />
                     {collapsed ? null : <span className="truncate">{item.label}</span>}
+                    {collapsed || !item.badge ? null : (
+                      <span className="ml-auto text-[11px] text-faint">
+                        {item.badge === 'entries' ? (meta.entryCount ?? '—') : null}
+                      </span>
+                    )}
                   </NavLink>
                 ))}
               </div>
             </div>
           ))}
         </nav>
+
+        {collapsed ? null : (
+          <div className="mt-2 truncate px-1 text-[11px] text-faint" title={summaryLine(meta)}>
+            {summaryLine(meta)}
+          </div>
+        )}
 
         <div className={cn('mt-2 border-t border-line pt-2', collapsed ? 'flex justify-center' : 'flex justify-end')}>
           <button
