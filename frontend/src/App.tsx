@@ -27,6 +27,7 @@ import { Icon } from './ui/icons'
  * 每迁移完一页就从这里删掉一条；批次 3 结束后整个常量连同使用处一起删除。
  */
 const LEGACY_DARK = new Set([
+  '/dashboard',
   '/idea',
   '/architecture',
   '/world',
