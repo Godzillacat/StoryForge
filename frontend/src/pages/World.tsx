@@ -4,7 +4,6 @@ import {
   api,
   type EntryRelation,
   type EntryTypesResponse,
-  type Project,
   type RunView,
   type SettingEntry,
 } from '../api/client'
@@ -18,6 +17,7 @@ import EntryEditor, {
   splitList,
   type EntryDraft,
 } from '../components/EntryEditor'
+import { useCurrentProject } from '../state/ProjectContext'
 
 function draftOf(entry: SettingEntry, characterFields: { key: string }[]): EntryDraft {
   return {
@@ -33,8 +33,8 @@ function draftOf(entry: SettingEntry, characterFields: { key: string }[]): Entry
 }
 
 export default function World() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectId, setProjectId] = useState('')
+  // 当前项目由外壳持有；`projects` 只用来核对审校深链带来的 ?project= 是否有效。
+  const { projects, projectId, select } = useCurrentProject()
   const [types, setTypes] = useState<EntryTypesResponse | null>(null)
   const [entries, setEntries] = useState<SettingEntry[]>([])
   const [relations, setRelations] = useState<EntryRelation[]>([])
@@ -59,16 +59,18 @@ export default function World() {
 
   useEffect(() => {
     api.listEntryTypes().then(setTypes)
-    api.listProjects().then((list) => {
-      setProjects(list)
-      // 审校深链会带上项目 id；不认它就会落到列表第一个（最新）项目。
-      const preferred =
-        requestedProjectId && list.some((project) => project.id === requestedProjectId)
-          ? requestedProjectId
-          : list[0]?.id
-      if (preferred) setProjectId(preferred)
-    })
   }, [])
+
+  // 审校深链会带 `?project=<id>`：认它，但不绕过外壳。
+  // 链接里的项目不在列表里就明说一句，而不是静默落到别的项目上。
+  useEffect(() => {
+    if (!requestedProjectId || projects.length === 0) return
+    if (projects.some((project) => project.id === requestedProjectId)) {
+      if (requestedProjectId !== projectId) select(requestedProjectId)
+      return
+    }
+    setNotice('链接里的项目不存在，已显示当前项目')
+  }, [requestedProjectId, projects, projectId, select])
 
   // 类型与硬度是**两份**词表，都从接口来 —— 合到一张 map 里，
   // 否则硬度的键（hard / soft / atmosphere）会在界面上原样露出来。
@@ -293,17 +295,6 @@ export default function World() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-xl font-semibold">世界观</h2>
-        <select
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-          value={projectId}
-          onChange={(e) => setProjectId(e.target.value)}
-        >
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
         <button
           className="rounded border border-slate-700 px-4 py-2 text-sm disabled:opacity-50"
           onClick={startCreating}

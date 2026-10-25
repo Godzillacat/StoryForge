@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api/client'
+import { runProjectGuard } from '../lib/projectGuard'
 import { useCurrentProject } from '../state/ProjectContext'
 import { Button, IconButton } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
@@ -66,7 +67,9 @@ export function ProjectSwitcher({ collapsed, onExpand }: { collapsed: boolean; o
         <Select
           aria-label="当前项目"
           value={projectId}
-          onChange={(event) => select(event.target.value)}
+          onChange={(event) => {
+            if (runProjectGuard()) select(event.target.value)
+          }}
           options={projects.map((row) => ({ value: row.id, label: row.name }))}
         />
       ) : (

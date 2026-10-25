@@ -11,7 +11,6 @@ import {
   type ChangeRow,
   type LockState,
   type LogicStage,
-  type Project,
   type RevisionDetail,
   type SceneTextState,
   type VolumeNode,
@@ -24,6 +23,8 @@ import BatchPanel from '../components/writing/BatchPanel'
 import ContextPreview from '../components/writing/ContextPreview'
 import BranchPanel, { BranchBodyEditor } from '../components/writing/BranchPanel'
 import { ChangeList } from '../components/Snapshots'
+import { setProjectGuard } from '../lib/projectGuard'
+import { useCurrentProject } from '../state/ProjectContext'
 import ParagraphLocks from '../components/writing/ParagraphLocks'
 import DiffPanel from '../components/writing/DiffPanel'
 import GenerationStream from '../components/writing/GenerationStream'
@@ -61,9 +62,8 @@ function findScene(volumes: VolumeNode[], sceneId: string) {
 
 export default function Writing() {
   const navigate = useNavigate()
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectsLoading, setProjectsLoading] = useState(true)
-  const [projectId, setProjectId] = useState('')
+  // 当前项目由外壳持有；这里只读。切换项目前的「未保存」确认由 projectGuard 承担。
+  const { projectId, loading: projectsLoading } = useCurrentProject()
   const [volumes, setVolumes] = useState<VolumeNode[]>([])
   const [treeLoading, setTreeLoading] = useState(false)
   const [textLoading, setTextLoading] = useState(false)
@@ -138,17 +138,6 @@ export default function Writing() {
       setStopCooldown(false)
     }, 1000)
   }
-
-  useEffect(() => {
-    api
-      .listProjects()
-      .then((list) => {
-        setProjects(list)
-        if (list[0]) setProjectId(list[0].id)
-      })
-      .catch((error) => setNotice((error as Error).message))
-      .finally(() => setProjectsLoading(false))
-  }, [])
 
   // 页面卸载时中止在途生成，避免流读取器悬挂或向已卸载组件写状态。
   useEffect(
@@ -259,11 +248,13 @@ export default function Writing() {
       (bodyDraft !== (text?.body ?? '') || aiDraft !== (text?.draft?.content ?? ''))) ||
     branchDirty
 
-  const changeProject = (nextId: string) => {
-    if (nextId === projectId) return
-    if (hasUnsaved && !window.confirm('当前场景有未保存的修改，确定切换项目吗？')) return
-    setProjectId(nextId)
-  }
+  // 切项目的入口在外壳里；这里登记一次「还有未保存的改动就别走」。
+  useEffect(() => {
+    setProjectGuard(() =>
+      hasUnsaved ? window.confirm('当前场景有未保存的修改，确定切换项目吗？') : true,
+    )
+    return () => setProjectGuard(null)
+  }, [hasUnsaved])
 
   async function loadBranch(id: string) {
     // 持场景令牌：切场景后迟到的响应不许把旧场景的分支挂到新场景上。
@@ -1017,17 +1008,6 @@ export default function Writing() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-xl font-semibold">写作台</h2>
-        <select
-          value={projectId}
-          onChange={(event) => changeProject(event.target.value)}
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm"
-        >
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
         {sceneLabel && <span className="text-xs text-slate-500">{sceneLabel}</span>}
       </div>
 

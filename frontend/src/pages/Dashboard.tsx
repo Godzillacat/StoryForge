@@ -8,6 +8,7 @@ import {
   type SnapshotView,
 } from '../api/client'
 import { ChangeList, SnapshotPanel } from '../components/Snapshots'
+import { runProjectGuard } from '../lib/projectGuard'
 import { useCurrentProject } from '../state/ProjectContext'
 import { EmptyState } from '../ui/EmptyState'
 
@@ -144,7 +145,9 @@ export default function Dashboard() {
           {projects.map((p) => (
             <button
               key={p.id}
-              onClick={() => select(p.id)}
+              onClick={() => {
+                if (runProjectGuard()) select(p.id)
+              }}
               className={`block w-full rounded border px-4 py-3 text-left ${
                 projectId === p.id ? 'border-indigo-500 bg-slate-900' : 'border-slate-800'
               }`}

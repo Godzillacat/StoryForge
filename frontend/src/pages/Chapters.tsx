@@ -10,7 +10,6 @@ import {
   type ForeshadowSummary,
   type PlanScene,
   type PlanVolume,
-  type Project,
   type ReviewMark,
   type ScenePlanResponse,
   type SettingEntry,
@@ -18,6 +17,7 @@ import {
   type VolumeNode,
 } from '../api/client'
 import RunTrace from '../components/RunTrace'
+import { useCurrentProject } from '../state/ProjectContext'
 import {
   ImpactPanel,
   LockToggle,
@@ -57,8 +57,8 @@ const TABS: { key: ViewTab; label: string }[] = [
 ]
 
 export default function Chapters() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectId, setProjectId] = useState('')
+  // 当前项目由外壳持有；页面只读，切换入口在侧栏。
+  const { projectId } = useCurrentProject()
   const [statuses, setStatuses] = useState<ChapterStatusOption[]>([])
   const [volumes, setVolumes] = useState<VolumeNode[]>([])
   const [entries, setEntries] = useState<SettingEntry[]>([])
@@ -111,13 +111,6 @@ export default function Chapters() {
   const projectIdRef = useRef('')
 
   useEffect(() => {
-    api.listProjects().then((list) => {
-      setProjects(list)
-      if (list[0]) {
-        projectIdRef.current = list[0].id
-        setProjectId(list[0].id)
-      }
-    }).catch((error) => setNotice((error as Error).message))
     api.listChapterTypes().then((data) => setStatuses(data.statuses))
       .catch((error) => setNotice((error as Error).message))
     api.listForeshadowTypes().then((data) => setForeshadowStatuses(data.statuses))
@@ -517,21 +510,6 @@ export default function Chapters() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-xl font-semibold">章节设计</h2>
-        <select
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-          value={projectId}
-          onChange={(e) => {
-            projectIdRef.current = e.target.value
-            setDataProjectId('')
-            setProjectId(e.target.value)
-          }}
-        >
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
         {view === 'structure' && (
           <button
             className="rounded bg-indigo-600 px-4 py-2 text-sm disabled:opacity-50"
