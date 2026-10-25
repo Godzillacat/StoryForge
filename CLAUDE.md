@@ -1498,7 +1498,7 @@ pnpm run lint                             # oxlint
 
 **2026-10-25 · 前端界面重塑 · 0a/0b 地基（实施完成；页面外观待批次 1–3）**
 
-设计 `docs/superpowers/specs/2026-10-25-frontend-redesign-design.md`；实施计划 `docs/superpowers/plans/2026-10-25-frontend-redesign-0a-0b.md`；走查记录 `docs/superpowers/plans/2026-10-25-frontend-redesign-0a-0b-walkthrough.md`。分支 `worktree-frontend-redesign`，11 个任务，master 未动。
+设计 `docs/superpowers/specs/2026-10-25-frontend-redesign-design.md`；实施计划 `docs/superpowers/plans/2026-10-25-frontend-redesign-0a-0b.md`；走查记录 `docs/superpowers/plans/2026-10-25-frontend-redesign-0a-0b-walkthrough.md`。分支 `worktree-frontend-redesign`，11 个任务 + 1 轮复查修复波，共 **12 个提交**；**master 未动，分支尚未合并**。
 
 **这一段解决什么。** 界面此前没有设计过：全站 4 行全局样式、`slate-` 约 1025 处、字号只有 12/14 两档、`transition` 零处、圆角几乎全是默认 4px（裸 `rounded` 418 处）；13 个入口等权平铺在 224px 侧栏，且**13 个页面各自拉项目列表、各自放一个下拉**。本段只做地基：令牌、组件层、外壳与导航、以及把「当前项目」收归外壳。**页面级重排（写作台专注模式、右栏四页签、正文排版、表格密度）在批次 1–4，不在本段。**
 
@@ -1514,11 +1514,13 @@ pnpm run lint                             # oxlint
 
 | 项 | 结果 |
 |---|---|
-| 前端测试 | **149 passed**（基线 129；本段 +20，全部是纯逻辑：对比度、palette 一致性、`cn`、导航数据、持久化读取、项目选择、守卫、摘要格式） |
-| 构建 / lint | `pnpm run build` 干净；`pnpm run lint` 0 error（28 条既有 warning 未增） |
+| 前端测试 | **150 passed**（基线 129；本段 +21，除 Dialog 焦点回归外全是纯逻辑：对比度、palette 一致性、`cn`、导航数据、持久化读取、项目选择、守卫、摘要格式） |
+| 构建 / lint | `pnpm run build` 干净；`pnpm run lint` 0 error（warning 28 → 32，均为 React Compiler 对 `setState-in-effect` 的建议） |
 | 真实数据走查 | 临时数据目录 + 真后端 + Vite dev：两个项目、侧栏选择器、角标 0、底部「0 卷 · 0 章 · 0 字」、仪表盘按当前项目取数，控制台无报错 |
 | 手点清单 | 7 条（切项目、新建、折叠持久化、未保存确认、深链失效、清空 localStorage、后端停机），见走查记录 |
 | 后端 / 数据库 | **零改动** |
+
+**整支复查（2026-10-25 晚，独立 reviewer 通看 12 个提交）**：1 Critical + 6 Important，全部修复；3 条 Minor 修复、1 条记账。最要命的一条是 `Dialog` 的 ESC effect 依赖内联 `onClose`，父组件每渲染一次就重装监听并 `focus()` 到容器上，**把新建项目输入框的焦点抢走** —— 首次启动唯一的建项目路径等于走不通；修法是 `onClose` 进 ref、只在 `open` 变化时接管焦点，并补了一条 RTL 回归测试（先红后绿）。其余：新建项目绕过未保存守卫、侧栏角标用了 3.2:1 的装饰灰、世界观深链会把切走的项目拽回来、深链失效提示被下一行清空、侧栏元数据缓存永不失效（写完十二章仍显示 0 章）、后端不可用被显示成「还没有项目」、世界观/关系网/时间线缺加载令牌。逐条对照见走查 §5。
 
 **已知中间态（有意为之）**：外壳已是浅色纸感，页面内容仍用旧深色样式，直到批次 1–3 逐页重排。`App.tsx` 的 `LEGACY_DARK` 让未迁移页面继续用 `slate-950` 底以保持可读，**每迁移一页删一条，批次 3 结束后整体删除**。这是本段唯一的临时脚手架，必须记账。
 
@@ -1526,8 +1528,10 @@ pnpm run lint                             # oxlint
 
 **遗留**：
 
+- **分支尚未合并 master**：12 个提交都在 `worktree-frontend-redesign` 上。合不合、什么时候合，等作者定（见走查 §4 的取舍：外观要等批次 1 才统一）。
 - **页面外观未动**：13 页仍是旧样式，写作台三栏 / 右栏 11 面板 / 正文排版都还没改 —— 批次 1–4 各写一份计划。
 - **浏览器级交互未自动化**：本机无 Playwright，切项目、新建对话框、折叠持久化、未保存确认、深链提示五条只能手点。
+- **打包/启动器（2026-10-25 试过、当天回退）**：为做「一键启动的 exe」重新打了包，`--selftest` 通过，但**本机 pywebview → pythonnet 这一步起不来**（`Failed to resolve Python.Runtime.Loader.Initialize`），桌面窗口创建失败；浏览器退路也因打包产物缺 `tkinter` 而未成。改动与产物**全部回退**（`desktop.py` 复原、`dist`/`build`/`.venv` 软链/临时数据删除），**仓库里 10-24 那个旧构建仍能正常服务页面**。要做启动器，得先解决 pythonnet 或换一条不依赖它的外壳路径 —— 另立项，不塞进前端重塑。
 - `pnpm test` 这个脚本不存在（`package.json` 只有 dev/build/lint/preview），文档已改为 `pnpm vitest run`。
 - 图表配色、阅读器纸张主题、动效与骨架屏都还没接（批次 4）。
 
@@ -1791,6 +1795,8 @@ pnpm run lint                             # oxlint
 | 2026-10-25 | `LEGACY_DARK` 过渡脚手架：未迁移页面继续用深色底 | 「新外壳 + 白底旧页」在中间批次里读不清；每迁移一页删一条，批次 3 结束后整体删除。**这是临时项，必须记账** |
 | 2026-10-25 | 正文首行缩进**只放阅读器与 EPUB 传统模板**，编辑区用段间距 | 编辑面是 `<textarea>`，`text-indent` 只缩第一行；写全角空格会污染 Markdown、导出与检索 |
 | 2026-10-25 | 表格行高 44px、动效 120–160ms、`prefers-reduced-motion` 下全关 | 作者选定；与「一次写作四小时」的可读性目标一致 |
+| 2026-10-25 | **前端重塑分批合并**：0a/0b 完成后分支先不合 master，等批次 1 把高频四页换完再决定 | 0a/0b 只换外壳，页面仍是旧深色（`LEGACY_DARK` 兜着）；现在合会让作者日常用的应用「浅色外壳 + 深色页面」，观感割裂。功能与测试都已就绪，纯属发布时机判断 |
+| 2026-10-25 | **打包/启动器尝试当天回退**：本机 pywebview→pythonnet 在打包产物里起不来，不做临时绕过 | 实测 `--selftest` 通过但桌面窗口创建失败（`Failed to resolve Python.Runtime.Loader.Initialize`）；用 tkinter 兜底又因产物未带 `tkinter` 失败。绕过会留下一条与正式外壳并行的临时路径，且掩盖真正的打包缺陷 —— 回退、另立项更干净 |
 
 ---
 
