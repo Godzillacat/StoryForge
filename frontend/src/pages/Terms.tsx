@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api, type EntryTypesResponse, type Project, type TermRow } from '../api/client'
+import { api, type EntryTypesResponse, type TermRow } from '../api/client'
+import { useCurrentProject } from '../state/ProjectContext'
 
 export default function Terms() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectId, setProjectId] = useState('')
+  // 当前项目由外壳持有；切换入口在侧栏。
+  const { projectId } = useCurrentProject()
   const [terms, setTerms] = useState<TermRow[]>([])
   const [types, setTypes] = useState<EntryTypesResponse | null>(null)
   const [keyword, setKeyword] = useState('')
@@ -12,10 +13,6 @@ export default function Terms() {
 
   useEffect(() => {
     api.listEntryTypes().then(setTypes)
-    api.listProjects().then((list) => {
-      setProjects(list)
-      if (list[0]) setProjectId(list[0].id)
-    })
   }, [])
 
   useEffect(() => {
@@ -46,17 +43,6 @@ export default function Terms() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-xl font-semibold">术语表</h2>
-        <select
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-          value={projectId}
-          onChange={(e) => setProjectId(e.target.value)}
-        >
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
         <input
           className="w-64 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
           placeholder="查标准写法"

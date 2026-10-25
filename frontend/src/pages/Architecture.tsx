@@ -4,11 +4,11 @@ import {
   type Act,
   type AdoptPayload,
   type ArchitectureOption,
-  type Project,
   type RecommendResponse,
 } from '../api/client'
 import RunTrace from '../components/RunTrace'
 import { ImpactPanel, LockToggle } from '../components/Locking'
+import { useCurrentProject } from '../state/ProjectContext'
 
 interface DraftAct {
   seq: number
@@ -29,8 +29,8 @@ function actsFromBible(bible: { acts?: { name: string; purpose?: string; target_
 }
 
 export default function Architecture() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectId, setProjectId] = useState('')
+  // 当前项目由外壳持有；切换入口在侧栏。
+  const { projectId } = useCurrentProject()
   const [recommendation, setRecommendation] = useState<RecommendResponse | null>(null)
   const [chosen, setChosen] = useState<ArchitectureOption | null>(null)
   const [savedActs, setSavedActs] = useState<Act[]>([])
@@ -46,16 +46,6 @@ export default function Architecture() {
   const [archLocked, setArchLocked] = useState(false)
   // 作废在途推荐响应用的令牌：递增即代表「这次推荐的结果已经不要了」
   const runToken = useRef(0)
-
-  useEffect(() => {
-    api
-      .listProjects()
-      .then((list) => {
-        setProjects(list)
-        if (list[0]) setProjectId(list[0].id)
-      })
-      .catch((error) => setMessage((error as Error).message))
-  }, [])
 
   useEffect(() => {
     if (!projectId) return
@@ -204,17 +194,6 @@ export default function Architecture() {
       <h2 className="text-xl font-semibold">架构推荐</h2>
 
       <div className="flex flex-wrap items-center gap-3">
-        <select
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-          value={projectId}
-          onChange={(e) => setProjectId(e.target.value)}
-        >
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
         <button
           className="rounded bg-indigo-600 px-4 py-2 text-sm disabled:opacity-50"
           onClick={recommend}
