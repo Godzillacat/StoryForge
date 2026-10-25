@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import Architecture from './pages/Architecture'
 import Chapters from './pages/Chapters'
@@ -12,50 +13,91 @@ import Terms from './pages/Terms'
 import Timeline from './pages/Timeline'
 import World from './pages/World'
 import Writing from './pages/Writing'
-
-const NAV = [
-  { to: '/dashboard', label: '故事仪表盘' },
-  { to: '/idea', label: '灵感与解析' },
-  { to: '/architecture', label: '架构推荐' },
-  { to: '/world', label: '世界观' },
-  { to: '/relations', label: '关系网' },
-  { to: '/timeline', label: '时间线' },
-  { to: '/terms', label: '术语表' },
-  { to: '/chapters', label: '章节设计' },
-  { to: '/write', label: '写作台' },
-  { to: '/read', label: '阅读器' },
-  { to: '/pipeline', label: '管线编排' },
-  { to: '/studio', label: '智能体工作室' },
-  { to: '/models', label: '模型与费用' },
-]
+import { KEY_SIDEBAR_COLLAPSED, readFlag, writeFlag } from './lib/persisted'
+import { NAV_GROUPS } from './lib/nav'
+import { cn } from './ui/cn'
+import { Icon } from './ui/icons'
 
 export default function App() {
-  const paddingless = useLocation().pathname
+  const pathname = useLocation().pathname
+  const [collapsed, setCollapsed] = useState(() => readFlag(KEY_SIDEBAR_COLLAPSED, false))
+
+  function toggleSidebar() {
+    setCollapsed((prev) => {
+      const next = !prev
+      writeFlag(KEY_SIDEBAR_COLLAPSED, next)
+      return next
+    })
+  }
+
   return (
-    <div className="flex h-screen">
-      <aside className="w-56 shrink-0 border-r border-slate-800 p-4">
-        <h1 className="mb-6 text-lg font-semibold tracking-wide">StoryForge</h1>
-        <nav className="space-y-1">
-          {NAV.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `block rounded px-3 py-2 text-sm ${
-                  isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-900'
-                }`
-              }
-            >
-              {item.label}
-            </NavLink>
+    <div className="flex h-screen bg-paper text-ink">
+      <aside
+        className={cn(
+          'flex shrink-0 flex-col border-r border-line bg-surface py-4 transition-[width] duration-150',
+          collapsed ? 'w-14 px-2' : 'w-[236px] px-3',
+        )}
+      >
+        <div className={cn('mb-4 flex items-center', collapsed ? 'justify-center' : 'px-2')}>
+          {collapsed ? (
+            <span className="font-serif text-[17px] font-semibold text-accent-ink" title="StoryForge">
+              S
+            </span>
+          ) : (
+            <h1 className="font-serif text-[19px] font-semibold tracking-[.02em]">StoryForge</h1>
+          )}
+        </div>
+
+        <nav className="min-h-0 flex-1 overflow-y-auto">
+          {NAV_GROUPS.map((group) => (
+            <div key={group.title} className="mt-3 first:mt-0">
+              {collapsed ? null : (
+                <div className="mb-1 px-2 text-[11px] tracking-[.12em] text-muted">{group.title}</div>
+              )}
+              <div className="space-y-0.5">
+                {group.items.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    title={collapsed ? item.label : undefined}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex h-8 items-center gap-2 rounded-control text-[13.5px] transition-colors duration-[120ms]',
+                        collapsed ? 'justify-center' : 'px-2',
+                        isActive
+                          ? 'bg-accent-soft font-semibold text-accent-ink'
+                          : 'text-ink-2 hover:bg-sunken hover:text-ink',
+                      )
+                    }
+                  >
+                    <Icon name={item.icon} size={18} />
+                    {collapsed ? null : <span className="truncate">{item.label}</span>}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
+
+        <div className={cn('mt-2 border-t border-line pt-2', collapsed ? 'flex justify-center' : 'flex justify-end')}>
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label={collapsed ? '展开侧栏' : '收起侧栏'}
+            aria-expanded={!collapsed}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-control text-muted transition-colors duration-[120ms] hover:bg-sunken hover:text-ink-2"
+          >
+            <Icon name="chevron" className={collapsed ? '' : 'rotate-180'} />
+          </button>
+        </div>
       </aside>
+
       <main
-        className={`flex min-h-0 flex-1 flex-col overflow-auto ${
-          // 阅读器要通铺自己的配色与滚动区；其余页面统一内边距。
-          paddingless === '/read' ? '' : 'p-6'
-        }`}
+        className={cn(
+          'flex min-h-0 flex-1 flex-col overflow-auto',
+          // 阅读器要通铺自己的配色与滚动区；其余页面统一内边距（页面级重排在各页批次里做）。
+          pathname === '/read' ? '' : 'p-6',
+        )}
       >
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
