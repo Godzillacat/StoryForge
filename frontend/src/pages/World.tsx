@@ -42,6 +42,8 @@ export default function World() {
   const [draft, setDraft] = useState<EntryDraft>(EMPTY_DRAFT)
   const [creating, setCreating] = useState(false)
   const [notice, setNotice] = useState('')
+  // 深链失效单独一条：页面里的 notice 会随项目切换被清空，这条不能。
+  const [linkWarning, setLinkWarning] = useState('')
   const [relationDraft, setRelationDraft] = useState({ to_id: '', kind: '', strength: '' })
   const [candidates, setCandidates] = useState<CandidateRow[]>([])
   const [openQuestions, setOpenQuestions] = useState<string[]>([])
@@ -50,6 +52,8 @@ export default function World() {
   // 作废在途候选请求用的令牌。真模型下单次要 100 秒以上，作者在等待期间
   // 切项目是常态；没有它，响应回来会把上一个项目的候选写进当前项目。
   const runToken = useRef(0)
+  // 条目 / 关联的加载令牌：切项目是常驻入口，迟到响应不许覆盖新项目的清单。
+  const dataToken = useRef(0)
   // 审校面板的「改设定 / 改人物」会带 ?entry=<id> 跳过来；等条目加载完再选中。
   const [searchParams] = useSearchParams()
   const deepEntryId = searchParams.get('entry')
@@ -62,14 +66,17 @@ export default function World() {
   }, [])
 
   // 审校深链会带 `?project=<id>`：认它，但不绕过外壳。
+  // 只认一次 —— 认完就把 URL 忘掉，否则作者在页内切项目会被它一直拽回去。
   // 链接里的项目不在列表里就明说一句，而不是静默落到别的项目上。
   useEffect(() => {
     if (!requestedProjectId || projects.length === 0) return
+    if (deepLinkApplied.current === requestedProjectId) return
+    deepLinkApplied.current = requestedProjectId
     if (projects.some((project) => project.id === requestedProjectId)) {
       if (requestedProjectId !== projectId) select(requestedProjectId)
       return
     }
-    setNotice('链接里的项目不存在，已显示当前项目')
+    setLinkWarning('链接里的项目不存在，已显示当前项目')
   }, [requestedProjectId, projects, projectId, select])
 
   // 类型与硬度是**两份**词表，都从接口来 —— 合到一张 map 里，
@@ -83,6 +90,7 @@ export default function World() {
 
   useEffect(() => {
     if (!projectId) return
+    const token = ++dataToken.current
     // 作废在途的候选请求：它属于上一个项目，回来时不能再写当前项目的状态。
     runToken.current++
     // 换项目即整体重置：选中项、草稿、提示都跟着换，避免上一条目的内容
@@ -101,14 +109,25 @@ export default function World() {
     api
       .listEntries(projectId)
       .then((list) => {
+        if (dataToken.current !== token) return
         setEntries(list)
         setLoadedProjectId(projectId)
       })
       .catch((e) => {
+        if (dataToken.current !== token) return
         setNotice((e as Error).message)
         setLoadedProjectId(projectId)
       })
-    api.listRelations(projectId).then(setRelations).catch((e) => setNotice((e as Error).message))
+    api
+      .listRelations(projectId)
+      .then((rows) => {
+        if (dataToken.current !== token) return
+        setRelations(rows)
+      })
+      .catch((e) => {
+        if (dataToken.current !== token) return
+        setNotice((e as Error).message)
+      })
   }, [projectId])
 
   function selectEntry(entry: SettingEntry) {
@@ -310,6 +329,12 @@ export default function World() {
           {suggesting ? '生成中…' : '让 AI 提候选'}
         </button>
       </div>
+
+      {linkWarning && (
+        <p className="rounded border border-amber-900 bg-amber-950/40 p-3 text-sm text-amber-300">
+          {linkWarning}
+        </p>
+      )}
 
       {notice && <p className="rounded bg-slate-900 p-3 text-sm text-slate-300">{notice}</p>}
 

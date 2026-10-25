@@ -20,6 +20,7 @@ export default function Dashboard() {
     projectId,
     select,
     refresh: reloadProjects,
+    error: listError,
   } = useCurrentProject()
   // 封面是否已设置。**与项目对象分开存**：它一变就替换项目的话，
   // 下面的 report effect 会重跑、整张导出卡片塌成占位。
@@ -136,7 +137,12 @@ export default function Dashboard() {
 
       {notice && <p className="rounded bg-amber-950/40 p-3 text-sm text-amber-300">{notice}</p>}
 
-      {projects.length === 0 && !notice && (
+      {projects.length === 0 && listError && (
+        <p className="rounded border border-amber-900 bg-amber-950/40 p-3 text-sm text-amber-300">
+          读取项目列表失败：{listError}。这不是「没有项目」，请确认后端在运行后重试。
+        </p>
+      )}
+      {projects.length === 0 && !listError && (
         <EmptyState title="还没有项目" hint="用左侧项目选择器新建一个 —— 建项目的入口只有那一处。" />
       )}
 

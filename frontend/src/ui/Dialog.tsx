@@ -22,16 +22,24 @@ export function Dialog({
   className?: string
 }) {
   const boxRef = useRef<HTMLDivElement | null>(null)
+  // onClose 通常是内联箭头（每次渲染都是新函数）。放进 ref 里，ESC 监听就不会
+  // 因为父组件重渲染而重装 —— 重装时顺手 focus() 会把输入框的焦点抢走。
+  const closeRef = useRef(onClose)
+  useEffect(() => {
+    closeRef.current = onClose
+  })
 
   useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') closeRef.current()
     }
     window.addEventListener('keydown', onKey)
-    boxRef.current?.focus()
+    // 只在焦点不在对话框里时才接管：否则会盖掉输入框的 autoFocus。
+    const box = boxRef.current
+    if (box && !box.contains(document.activeElement)) box.focus()
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
 

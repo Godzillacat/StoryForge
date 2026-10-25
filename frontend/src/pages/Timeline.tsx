@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, type SettingEntry, type TimelineEvent } from '../api/client'
 import { useCurrentProject } from '../state/ProjectContext'
 
@@ -26,16 +26,37 @@ export default function Timeline() {
   const [draft, setDraft] = useState<Draft>(EMPTY)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
+  // 迟到响应不许覆盖新项目的事件：切项目现在是常驻入口。
+  const dataToken = useRef(0)
 
   useEffect(() => {
     if (!projectId) return
+    const token = ++dataToken.current
     setNotice('')
     setDraft(EMPTY)
     setEditingId(null)
     setEntries([])
     setEvents([])
-    api.listEntries(projectId).then(setEntries).catch((e) => setNotice((e as Error).message))
-    api.listTimeline(projectId).then(setEvents).catch((e) => setNotice((e as Error).message))
+    api
+      .listEntries(projectId)
+      .then((rows) => {
+        if (dataToken.current !== token) return
+        setEntries(rows)
+      })
+      .catch((e) => {
+        if (dataToken.current !== token) return
+        setNotice((e as Error).message)
+      })
+    api
+      .listTimeline(projectId)
+      .then((rows) => {
+        if (dataToken.current !== token) return
+        setEvents(rows)
+      })
+      .catch((e) => {
+        if (dataToken.current !== token) return
+        setNotice((e as Error).message)
+      })
   }, [projectId])
 
   const byId = useMemo(() => new Map(entries.map((e) => [e.id, e])), [entries])

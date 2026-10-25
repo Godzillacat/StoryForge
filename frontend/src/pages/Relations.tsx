@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, type EntryRelation, type SettingEntry } from '../api/client'
 import { useCurrentProject } from '../state/ProjectContext'
 
@@ -28,13 +28,34 @@ export default function Relations() {
     note: '',
     reverse: true,
   })
+  // 迟到响应不许覆盖新项目的清单：切项目现在是常驻入口。
+  const dataToken = useRef(0)
 
   useEffect(() => {
     if (!projectId) return
+    const token = ++dataToken.current
     setNotice('')
     setDraft({ from_id: '', to_id: '', kind: '', strength: '', note: '', reverse: true })
-    api.listEntries(projectId).then(setEntries).catch((e) => setNotice((e as Error).message))
-    api.listRelations(projectId).then(setRelations).catch((e) => setNotice((e as Error).message))
+    api
+      .listEntries(projectId)
+      .then((rows) => {
+        if (dataToken.current !== token) return
+        setEntries(rows)
+      })
+      .catch((e) => {
+        if (dataToken.current !== token) return
+        setNotice((e as Error).message)
+      })
+    api
+      .listRelations(projectId)
+      .then((rows) => {
+        if (dataToken.current !== token) return
+        setRelations(rows)
+      })
+      .catch((e) => {
+        if (dataToken.current !== token) return
+        setNotice((e as Error).message)
+      })
   }, [projectId])
 
   const byId = useMemo(() => new Map(entries.map((e) => [e.id, e])), [entries])

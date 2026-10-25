@@ -12,7 +12,7 @@ import { Icon } from '../ui/icons'
  * 折叠态只留一个首字母按钮 —— 点它先展开侧栏，再切换。
  */
 export function ProjectSwitcher({ collapsed, onExpand }: { collapsed: boolean; onExpand: () => void }) {
-  const { projects, projectId, project, select, refresh } = useCurrentProject()
+  const { projects, projectId, project, loading, error: listError, select, refresh } = useCurrentProject()
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -21,6 +21,8 @@ export function ProjectSwitcher({ collapsed, onExpand }: { collapsed: boolean; o
   async function create() {
     const value = name.trim()
     if (!value || busy) return
+    // 新建之后会自动切到新项目 —— 和切项目一样要先过「未保存」这一关。
+    if (!runProjectGuard()) return
     setBusy(true)
     setError('')
     try {
@@ -72,9 +74,20 @@ export function ProjectSwitcher({ collapsed, onExpand }: { collapsed: boolean; o
           }}
           options={projects.map((row) => ({ value: row.id, label: row.name }))}
         />
+      ) : listError ? (
+        <p className="text-[11.5px] leading-relaxed text-warn">读取项目列表失败：{listError}</p>
       ) : (
-        <p className="text-[12px] text-muted">还没有项目</p>
+        <p className="text-[12px] text-muted">{loading ? '读取中…' : '还没有项目'}</p>
       )}
+      {listError ? (
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          className="mt-1 rounded-control px-1.5 py-0.5 text-[11.5px] text-warn transition-colors duration-[120ms] hover:bg-warn-soft"
+        >
+          重试
+        </button>
+      ) : null}
 
       <Dialog
         open={creating}

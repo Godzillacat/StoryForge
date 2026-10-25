@@ -43,6 +43,8 @@ const LEGACY_DARK = new Set([
 
 export default function App() {
   const pathname = useLocation().pathname
+  // 尾斜杠不算另一条路由：`/world/` 与 `/world` 必须是同一页、同一套底色。
+  const routePath = pathname.replace(/\/+$/, '') || '/'
   const [collapsed, setCollapsed] = useState(() => readFlag(KEY_SIDEBAR_COLLAPSED, false))
   const { projectId } = useCurrentProject()
   const meta = useProjectMeta(projectId)
@@ -97,7 +99,7 @@ export default function App() {
                     <Icon name={item.icon} size={18} />
                     {collapsed ? null : <span className="truncate">{item.label}</span>}
                     {collapsed || !item.badge ? null : (
-                      <span className="ml-auto text-[11px] text-faint">
+                      <span className="ml-auto text-[11px] text-muted">
                         {item.badge === 'entries' ? (meta.entryCount ?? '—') : null}
                       </span>
                     )}
@@ -109,7 +111,7 @@ export default function App() {
         </nav>
 
         {collapsed ? null : (
-          <div className="mt-2 truncate px-1 text-[11px] text-faint" title={summaryLine(meta)}>
+          <div className="mt-2 truncate px-1 text-[11px] text-muted" title={summaryLine(meta)}>
             {summaryLine(meta)}
           </div>
         )}
@@ -131,8 +133,8 @@ export default function App() {
         className={cn(
           'flex min-h-0 flex-1 flex-col overflow-auto',
           // 阅读器要通铺自己的配色与滚动区；其余页面统一内边距（页面级重排在各页批次里做）。
-          pathname === '/read' ? '' : 'p-6',
-          LEGACY_DARK.has(pathname) && 'bg-slate-950 text-slate-100',
+          routePath === '/read' ? '' : 'p-6',
+          LEGACY_DARK.has(routePath) && 'bg-slate-950 text-slate-100',
         )}
       >
         <Routes>

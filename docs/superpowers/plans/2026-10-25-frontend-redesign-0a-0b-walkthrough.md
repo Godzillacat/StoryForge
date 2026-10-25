@@ -9,9 +9,9 @@
 
 | 项 | 结果 |
 |---|---|
-| `pnpm vitest run` | **149 passed**（基线 129；本切片新增 20：对比度 2、palette 1、cn 2、nav 2、persisted 3、projectSelection 4、projectGuard 3、projectMeta 3） |
+| `pnpm vitest run` | **150 passed**（基线 129；本切片新增 21：对比度 2、palette 1、cn 2、nav 2、persisted 3、projectSelection 4、projectGuard 3、projectMeta 3、Dialog 焦点 1） |
 | `pnpm run build` | 干净 |
-| `pnpm run lint` | **0 error**，28 条既有 warning 未增 |
+| `pnpm run lint` | **0 error**（warning 28 → 32，全部是 React Compiler 对 `setState-in-effect` 的建议，与本切片前同类） |
 | `grep listProjects` | 只剩 `state/ProjectContext.tsx` 与 `api/client.ts` 两处 |
 
 ## 2. 真实数据下的观察（截图 `.cache/mock/v2-dashboard.png` / `v-world.png`）
@@ -38,3 +38,23 @@
 每迁移完一页删掉一条，批次 3 结束后整个常量连同使用处一起删除。
 
 如果你更希望「外观统一了再合并」，这一片可以先不合入 master —— 等批次 1 把仪表盘 / 世界观 / 章节 / 写作台四页换成新语言，整体观感就立住了。
+
+## 5. 整支复查与修复波（2026-10-25 晚）
+
+独立 reviewer 通看 `master...HEAD` 的 11 个提交，提 1 Critical、6 Important、4 Minor。**Critical 与 Important 全部修掉，Minor 3 条修复、1 条记账**：
+
+| 级别 | 问题 | 修法 |
+|---|---|---|
+| Critical | `Dialog` 的 ESC effect 依赖内联 `onClose`，每次父组件重渲染都重装并 `focus()`，**把输入框焦点抢走** —— 新建项目对话框每敲一个字就失焦 | `onClose` 存进 ref；effect 只在 `open` 变化时跑；焦点只在「不在对话框内」时才接管。**补了 `Dialog.test.tsx`（RTL），先红后绿** |
+| Important | 新建项目不走 `runProjectGuard`，从侧栏新建会静默丢掉写作台未保存的正文 | `create()` 先过守卫 |
+| Important | 侧栏角标与摘要用了 `text-faint`（3.2:1），违反 spec §6.1 | 改 `text-muted`（4.8:1） |
+| Important | 世界观深链 effect 依赖 `projectId`，在 `?project=B` 页里切到 C 会被拽回 B | 用 `deepLinkApplied` 保证只认一次 |
+| Important | 「链接里的项目不存在」的提示被随后的 `setNotice('')` 冲掉 | 单独一条 `linkWarning`，不随项目切换清空 |
+| Important | `useProjectMeta` 的缓存永不失效、失败也缓存 → 整会话停在首次数值 | 30 秒 TTL；失败结果不缓存；切到未缓存项目先清空为「—」 |
+| Important | `ProjectContext.error` 没人读，后端挂了会被显示成「还没有项目」 | 侧栏显示「读取项目列表失败 + 重试」；仪表盘区分「失败」与「真的没有项目」 |
+| Important | 世界观 / 关系网 / 时间线的条目加载没有代际令牌，迟到响应覆盖新项目 | 三页各加 `dataToken` |
+| Minor | `LEGACY_DARK` 用精确路径匹配，`/world/` 漏网 | 统一去掉尾斜杠再比 |
+| Minor | `refresh()` 无条件从 localStorage 推导当前项目，写入失败会换掉作者的选择 | 以内存中的选择为准，失效才回落 |
+| Minor（记） | `projectGuard` 只有一个槽位，多页登记会互相覆盖 | 批次 1 若第二页也要登记，再换成按 key 的注册表 |
+
+复查另有三条「需要作者拍板」，未动：中间态是否现在合 master、清空 localStorage 后默认落到哪一本、仪表盘是否保留自己的项目列表（与「入口只有一处」相抵）。

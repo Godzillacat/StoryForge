@@ -42,7 +42,13 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       if (token.current !== current) return
       setProjects(list)
       setError('')
-      setProjectId(pickProjectId(readString(KEY_CURRENT_PROJECT), list))
+      // 以内存里的当前选择为准；只有它失效了才回落到「上次选择 / 第一个」。
+      // 无条件从 localStorage 推导的话，一次写入失败就会把作者的选择悄悄换掉。
+      setProjectId((current) =>
+        current && list.some((project) => project.id === current)
+          ? current
+          : pickProjectId(readString(KEY_CURRENT_PROJECT), list),
+      )
     } catch (err) {
       if (token.current !== current) return
       setError((err as Error).message)
