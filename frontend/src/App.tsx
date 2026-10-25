@@ -15,19 +15,35 @@ import World from './pages/World'
 import Writing from './pages/Writing'
 import { KEY_SIDEBAR_COLLAPSED, readFlag, writeFlag } from './lib/persisted'
 import { NAV_GROUPS } from './lib/nav'
+import { ProjectSwitcher } from './components/ProjectSwitcher'
 import { cn } from './ui/cn'
 import { Icon } from './ui/icons'
+
+/**
+ * 过渡脚手架：还没换到新语言的页面，继续用旧的深色底，避免"新外壳 + 白底旧页"读不清。
+ * 每迁移完一页就从这里删掉一条；批次 3 结束后整个常量连同使用处一起删除。
+ */
+const LEGACY_DARK = new Set([
+  '/idea',
+  '/architecture',
+  '/world',
+  '/relations',
+  '/timeline',
+  '/terms',
+  '/chapters',
+  '/write',
+  '/pipeline',
+  '/studio',
+  '/models',
+])
 
 export default function App() {
   const pathname = useLocation().pathname
   const [collapsed, setCollapsed] = useState(() => readFlag(KEY_SIDEBAR_COLLAPSED, false))
 
-  function toggleSidebar() {
-    setCollapsed((prev) => {
-      const next = !prev
-      writeFlag(KEY_SIDEBAR_COLLAPSED, next)
-      return next
-    })
+  function applyCollapsed(next: boolean) {
+    setCollapsed(next)
+    writeFlag(KEY_SIDEBAR_COLLAPSED, next)
   }
 
   return (
@@ -47,6 +63,8 @@ export default function App() {
             <h1 className="font-serif text-[19px] font-semibold tracking-[.02em]">StoryForge</h1>
           )}
         </div>
+
+        <ProjectSwitcher collapsed={collapsed} onExpand={() => applyCollapsed(false)} />
 
         <nav className="min-h-0 flex-1 overflow-y-auto">
           {NAV_GROUPS.map((group) => (
@@ -82,7 +100,7 @@ export default function App() {
         <div className={cn('mt-2 border-t border-line pt-2', collapsed ? 'flex justify-center' : 'flex justify-end')}>
           <button
             type="button"
-            onClick={toggleSidebar}
+            onClick={() => applyCollapsed(!collapsed)}
             aria-label={collapsed ? '展开侧栏' : '收起侧栏'}
             aria-expanded={!collapsed}
             className="inline-flex h-7 w-7 items-center justify-center rounded-control text-muted transition-colors duration-[120ms] hover:bg-sunken hover:text-ink-2"
@@ -97,6 +115,7 @@ export default function App() {
           'flex min-h-0 flex-1 flex-col overflow-auto',
           // 阅读器要通铺自己的配色与滚动区；其余页面统一内边距（页面级重排在各页批次里做）。
           pathname === '/read' ? '' : 'p-6',
+          LEGACY_DARK.has(pathname) && 'bg-slate-950 text-slate-100',
         )}
       >
         <Routes>

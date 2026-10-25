@@ -4,22 +4,28 @@ import {
   type ChangeRow,
   type CostSummary,
   type ExportReport,
-  type Project,
   type Settings,
   type SnapshotView,
 } from '../api/client'
 import { ChangeList, SnapshotPanel } from '../components/Snapshots'
+import { useCurrentProject } from '../state/ProjectContext'
+import { EmptyState } from '../ui/EmptyState'
 
 export default function Dashboard() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [selected, setSelected] = useState<Project | null>(null)
-  // 封面是否已设置。**与 `selected` 分开存**：它一变就替换 `selected` 的话，
+  // 项目列表与「当前项目」由外壳持有；这里只读，不再自己拉、不再自己选。
+  const {
+    projects,
+    project: selected,
+    projectId,
+    select,
+    refresh: reloadProjects,
+  } = useCurrentProject()
+  // 封面是否已设置。**与项目对象分开存**：它一变就替换项目的话，
   // 下面的 report effect 会重跑、整张导出卡片塌成占位。
   const [coverSet, setCoverSet] = useState(false)
   const [cost, setCost] = useState<CostSummary | null>(null)
   const [report, setReport] = useState<ExportReport | null>(null)
   const [settings, setSettings] = useState<Settings | null>(null)
-  const [name, setName] = useState('')
   const [notice, setNotice] = useState('')
   const [snapshots, setSnapshots] = useState<SnapshotView[]>([])
   const [changes, setChanges] = useState<ChangeRow[]>([])
@@ -30,28 +36,27 @@ export default function Dashboard() {
   const coverInput = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
-    api
-      .listProjects()
-      .then(setProjects)
-      .catch((error) => setNotice((error as Error).message))
     api.getSettings().then(setSettings).catch(() => setSettings(null))
   }, [])
 
+  // 封面标记跟着项目走；单独一个 effect，免得刷新项目列表时把报告一起重拉。
+  useEffect(() => {
+    setCoverSet(Boolean(selected?.has_cover))
+  }, [projectId, selected?.has_cover])
+
   useEffect(() => {
     const token = ++reportToken.current
-    if (!selected) {
+    if (!projectId) {
       setCost(null)
       setReport(null)
-      setCoverSet(false)
       return
     }
-    setCoverSet(Boolean(selected.has_cover))
     setReport(null)
     setSnapshots([])
     setChanges([])
-    loadSnapshots(selected.id, token)
+    loadSnapshots(projectId, token)
     api
-      .projectCost(selected.id)
+      .projectCost(projectId)
       .then((value) => {
         if (reportToken.current === token) setCost(value)
       })
@@ -59,14 +64,14 @@ export default function Dashboard() {
         if (reportToken.current === token) setCost(null)
       })
     api
-      .getExportReport(selected.id)
+      .getExportReport(projectId)
       .then((value) => {
         if (reportToken.current === token) setReport(value)
       })
       .catch((error) => {
         if (reportToken.current === token) setNotice((error as Error).message)
       })
-  }, [selected])
+  }, [projectId])
 
   function loadSnapshots(projectId: string, token: number) {
     api
@@ -88,35 +93,8 @@ export default function Dashboard() {
   }
 
   function reloadSnapshots() {
-    if (!selected) return
-    loadSnapshots(selected.id, reportToken.current)
-  }
-
-  async function create() {
-    if (!name.trim()) return
-    try {
-      const project = await api.createProject({ name: name.trim() })
-      setProjects((prev) => [project, ...prev])
-      setSelected(project)
-      setName('')
-      setNotice('')
-    } catch (error) {
-      setNotice((error as Error).message)
-    }
-  }
-
-  /** 封面变了要把项目列表也刷新一次 —— `has_cover` 是列表接口给的。 */
-  async function refreshProjects() {
-    try {
-      const list = await api.listProjects()
-      setProjects(list)
-      // **不替换 `selected`**：它一换对象，下面的 report effect 就重跑，
-      // 整张导出卡片（连封面控件一起）会塌成占位再等一遍报告。
-      // 只需要把 has_cover 这一项同步过来。
-      setCoverSet(list.find((row) => row.id === selected?.id)?.has_cover ?? false)
-    } catch (error) {
-      setNotice((error as Error).message)
-    }
+    if (!projectId) return
+    loadSnapshots(projectId, reportToken.current)
   }
 
   async function uploadCover(file: File | undefined) {
@@ -125,7 +103,8 @@ export default function Dashboard() {
     setNotice('')
     try {
       await api.uploadCover(selected.id, file)
-      await refreshProjects()
+      setCoverSet(true)
+      await reloadProjects()
     } catch (error) {
       setNotice((error as Error).message)
     } finally {
@@ -141,7 +120,8 @@ export default function Dashboard() {
     setNotice('')
     try {
       await api.removeCover(selected.id)
-      await refreshProjects()
+      setCoverSet(false)
+      await reloadProjects()
     } catch (error) {
       setNotice((error as Error).message)
     } finally {
@@ -155,26 +135,18 @@ export default function Dashboard() {
 
       {notice && <p className="rounded bg-amber-950/40 p-3 text-sm text-amber-300">{notice}</p>}
 
-      <div className="flex gap-2">
-        <input
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-          placeholder="新项目名称"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <button className="rounded bg-indigo-600 px-4 py-2 text-sm" onClick={create}>
-          新建项目
-        </button>
-      </div>
+      {projects.length === 0 && !notice && (
+        <EmptyState title="还没有项目" hint="用左侧项目选择器新建一个 —— 建项目的入口只有那一处。" />
+      )}
 
       <div className="grid grid-cols-3 gap-4">
         <section className="col-span-2 space-y-2">
           {projects.map((p) => (
             <button
               key={p.id}
-              onClick={() => setSelected(p)}
+              onClick={() => select(p.id)}
               className={`block w-full rounded border px-4 py-3 text-left ${
-                selected?.id === p.id ? 'border-indigo-500 bg-slate-900' : 'border-slate-800'
+                projectId === p.id ? 'border-indigo-500 bg-slate-900' : 'border-slate-800'
               }`}
             >
               <div className="font-medium">{p.name}</div>
@@ -183,9 +155,6 @@ export default function Dashboard() {
               </div>
             </button>
           ))}
-          {projects.length === 0 && !notice && (
-            <p className="text-sm text-slate-500">还没有项目，先建一个。</p>
-          )}
         </section>
 
         <div className="space-y-4">
