@@ -5,8 +5,8 @@ import {
   type Pipeline,
   type PipelineNodeSpec,
   type PipelineRun,
-  type Project,
 } from '../api/client'
+import { useCurrentProject } from '../state/ProjectContext'
 
 const STATUS_LABELS: Record<string, string> = {
   pending: '待执行',
@@ -40,8 +40,8 @@ const RUN_COLORS: Record<string, string> = {
 }
 
 export default function Pipeline() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectId, setProjectId] = useState('')
+  // 当前项目由外壳持有；切换入口在侧栏。
+  const { projectId } = useCurrentProject()
   const [pipeline, setPipeline] = useState<Pipeline | null>(null)
   const [agents, setAgents] = useState<Agent[]>([])
   const [run, setRun] = useState<PipelineRun | null>(null)
@@ -50,10 +50,6 @@ export default function Pipeline() {
   const token = useRef(0)
 
   useEffect(() => {
-    api.listProjects().then((list) => {
-      setProjects(list)
-      if (list[0]) setProjectId(list[0].id)
-    })
     api.listAgents().then(setAgents).catch(() => setAgents([]))
   }, [])
 
@@ -222,17 +218,6 @@ export default function Pipeline() {
       {notice && <p className="rounded bg-slate-900 p-3 text-sm text-slate-300">{notice}</p>}
 
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <select
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-2"
-          value={projectId}
-          onChange={(e) => setProjectId(e.target.value)}
-        >
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
         {pipeline && (
           <>
             <label className="text-slate-400">检查点策略</label>

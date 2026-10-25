@@ -4,12 +4,12 @@ import {
   type CostBreakdown,
   type CostSummary,
   type ModelPrice,
-  type Project,
   type ProviderView,
   type Settings,
   type Tool,
 } from '../api/client'
 import { costLabel } from '../lib/format'
+import { useCurrentProject } from '../state/ProjectContext'
 
 export default function Models() {
   const [providers, setProviders] = useState<ProviderView[]>([])
@@ -22,8 +22,8 @@ export default function Models() {
   })
   const [settings, setSettings] = useState<Settings | null>(null)
   const [tools, setTools] = useState<Tool[]>([])
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectId, setProjectId] = useState('')
+  // 当前项目由外壳持有：费用页只看这本书的花费。
+  const { projectId } = useCurrentProject()
   const [cost, setCost] = useState<CostSummary | null>(null)
   const [form, setForm] = useState({ name: '', base_url: '', api_key: '' })
   const [notice, setNotice] = useState('')
@@ -33,10 +33,6 @@ export default function Models() {
     api.listModelPrices().then(setPrices).catch(() => setPrices([]))
     api.getSettings().then(setSettings)
     api.listTools().then(setTools)
-    api.listProjects().then((list) => {
-      setProjects(list)
-      if (list[0]) setProjectId(list[0].id)
-    })
   }, [])
 
   useEffect(() => {
@@ -409,17 +405,6 @@ export default function Models() {
 
       <section className="space-y-2 rounded border border-slate-800 p-4 text-sm">
         <h3 className="text-sm font-medium text-slate-300">费用</h3>
-        <select
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-          value={projectId}
-          onChange={(e) => setProjectId(e.target.value)}
-        >
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
         {cost && (
           <>
             <p className="text-slate-400">

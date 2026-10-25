@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, type BookResponse, type Project } from '../api/client'
+import { api, type BookResponse } from '../api/client'
 import MarkdownBody from '../components/reading/MarkdownBody'
 import { useSpeech } from '../components/reading/useSpeech'
 import { parseMarkdown } from '../lib/markdown'
+import { useCurrentProject } from '../state/ProjectContext'
 import {
   blockAtScroll,
   blockIndexOfChunk,
@@ -49,8 +50,6 @@ const LEADINGS = [
 
 const PREF_KEY = 'storyforge.reader.preferences'
 const PROGRESS_PREFIX = 'storyforge.reader.progress.'
-/** 上次在阅读器里打开的是哪一本 —— 刷新后要回到那里，而不是列表第一个。 */
-const LAST_PROJECT_KEY = 'storyforge.reader.lastProject'
 
 interface Preferences {
   theme: Theme
@@ -90,8 +89,8 @@ function loadProgress(projectId: string): Progress | null {
 }
 
 export default function Reader() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectId, setProjectId] = useState('')
+  // 当前项目由外壳持有：读哪本书跟全站一致，不再自己记「上次打开的书」。
+  const { projectId } = useCurrentProject()
   const [book, setBook] = useState<BookResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [notice, setNotice] = useState('')
@@ -107,33 +106,6 @@ export default function Reader() {
   // 切项目 / 切章时旧响应不能覆盖新的。
   const tokenRef = useRef(0)
   const scrollRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    api
-      .listProjects()
-      .then((list) => {
-        setProjects(list)
-        // 回到上次在阅读器里打开的那一本；书被删了就退回第一个。
-        let last = ''
-        try {
-          last = localStorage.getItem(LAST_PROJECT_KEY) ?? ''
-        } catch {
-          // 读不到就当没记过。
-        }
-        const restored = list.find((row) => row.id === last) ?? list[0]
-        if (restored) setProjectId(restored.id)
-      })
-      .catch((error) => setNotice((error as Error).message))
-  }, [])
-
-  useEffect(() => {
-    if (!projectId) return
-    try {
-      localStorage.setItem(LAST_PROJECT_KEY, projectId)
-    } catch {
-      // 存不下不影响阅读。
-    }
-  }, [projectId])
 
   useEffect(() => {
     if (!projectId) return
@@ -333,18 +305,6 @@ export default function Reader() {
   return (
     <div className={`flex h-full min-h-0 gap-4 ${theme.shell}`}>
       <aside className="w-64 shrink-0 space-y-3 overflow-auto p-4">
-        <select
-          className="w-full rounded border border-current/30 bg-transparent px-2 py-1.5 text-sm"
-          value={projectId}
-          onChange={(event) => setProjectId(event.target.value)}
-        >
-          {projects.map((row) => (
-            <option key={row.id} value={row.id} className="text-slate-900">
-              {row.name}
-            </option>
-          ))}
-        </select>
-
         {book && (
           <p className="text-xs opacity-60">
             {book.project_name} · 共 {book.total_words} 字 · 写完{' '}

@@ -8,6 +8,7 @@ import {
   type SlotSpec,
 } from '../api/client'
 import RunTrace from '../components/RunTrace'
+import { useCurrentProject } from '../state/ProjectContext'
 
 const PARAM_PROFILES = [
   { value: 'strict', label: '严谨' },
@@ -25,7 +26,8 @@ export default function Studio() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [providers, setProviders] = useState<ProviderView[]>([])
   const [slots, setSlots] = useState<SlotSpec[]>([])
-  const [projectId, setProjectId] = useState('')
+  // 当前项目由外壳持有：调试台要拿它跑一次真实调用。
+  const { projectId } = useCurrentProject()
   const [selected, setSelected] = useState<Agent | null>(null)
   const [versions, setVersions] = useState<AgentVersion[]>([])
   const [run, setRun] = useState<RunView | null>(null)
@@ -51,9 +53,6 @@ export default function Studio() {
     api.listAgents().then(setAgents)
     api.listProviders().then(setProviders)
     api.listSlots().then(setSlots)
-    api.listProjects().then((list) => {
-      if (list[0]) setProjectId(list[0].id)
-    })
   }, [])
 
   // 重置草稿的时机：换智能体，或当前版本变了（保存了新版本 / 回滚）。
