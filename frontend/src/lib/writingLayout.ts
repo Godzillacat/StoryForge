@@ -49,13 +49,24 @@ export function shapeFor(mode: WritingMode, rightCollapsed: boolean): LayoutShap
 }
 
 /**
- * 读回上次的模式。作者手动切过就以他的选择为准 —— 窗口宽度只在**没有存过**
- * 时决定初始值，否则拉一下窗口就会把作者的选择冲掉。
+ * 作者显式选过的模式；没选过返回 null。
+ *
+ * 与「跟随窗口」分开，是因为两者行为不同：显式选过就永远以他为谁（拉窗口
+ * 不该冲掉），没选过才按宽度走。`writeMode` 只在作者点切换时调用，所以
+ * 存里有没有值，恰好就等于「他有没有表达过偏好」。
  */
+export function readStoredMode(): WritingMode | null {
+  const raw = readString(KEY_WRITING_MODE)
+  return raw === 'work' || raw === 'focus' ? raw : null
+}
+
+export function resolveMode(stored: WritingMode | null, width: number): WritingMode {
+  return stored ?? modeForWidth(width)
+}
+
+/** 首屏的初始模式：显式选择优先，否则按当时的窗口宽度。 */
 export function readMode(width: number): WritingMode {
-  const stored = readString(KEY_WRITING_MODE)
-  if (stored === 'work' || stored === 'focus') return stored
-  return modeForWidth(width)
+  return resolveMode(readStoredMode(), width)
 }
 
 export function writeMode(mode: WritingMode): void {

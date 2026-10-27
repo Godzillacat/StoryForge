@@ -5,6 +5,8 @@ import {
   readAsideTab,
   readMode,
   readRightCollapsed,
+  readStoredMode,
+  resolveMode,
   shapeFor,
   writeAsideTab,
   writeMode,
@@ -36,6 +38,21 @@ it('没存过时按宽度推断，存过就以作者的选择为准', () => {
   expect(readMode(1600)).toBe('focus')
   writeMode('work')
   expect(readMode(1280)).toBe('work')
+})
+
+it('显式选过就永远以作者为准，没选过才跟随窗口', () => {
+  expect(readStoredMode()).toBeNull()
+  expect(resolveMode(null, 1280)).toBe('focus')
+  expect(resolveMode(null, 1600)).toBe('work')
+
+  // 选过之后，宽度再怎么变都不该翻盘。
+  expect(resolveMode('work', 1280)).toBe('work')
+  expect(resolveMode('focus', 1600)).toBe('focus')
+
+  writeMode('focus')
+  expect(readStoredMode()).toBe('focus')
+  localStorage.setItem(KEY_WRITING_MODE, '不是模式')
+  expect(readStoredMode()).toBeNull()
 })
 
 it('两种模式的形态：专注态把左树收成抽屉、右栏变浮层、多一条状态条', () => {

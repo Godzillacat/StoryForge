@@ -34,6 +34,17 @@ import RevisionHistory from '../components/writing/RevisionHistory'
 import SceneTextView from '../components/writing/SceneTextView'
 import WritebackPanel from '../components/writing/WritebackPanel'
 import WritingTree from '../components/writing/WritingTree'
+import {
+  readRightCollapsed,
+  readStoredMode,
+  resolveMode,
+  shapeFor,
+  writeMode,
+  writeRightCollapsed,
+  type WritingMode,
+} from '../lib/writingLayout'
+import { Button, IconButton } from '../ui/Button'
+import { Icon } from '../ui/icons'
 
 interface RunInfo {
   run_id: string
@@ -64,6 +75,17 @@ export default function Writing() {
   const navigate = useNavigate()
   // 当前项目由外壳持有；这里只读。切换项目前的「未保存」确认由 projectGuard 承担。
   const { projectId, loading: projectsLoading } = useCurrentProject()
+  // 布局：工作态 / 专注态、右栏折叠、左树抽屉。宽度只在**作者没表达过偏好**时
+  // 决定模式；他手动切过就永远以他为准（拉一下窗口不该把他的选择冲掉）。
+  // 注意与下面的 `mode`（正文 / AI 草稿）不是一回事，所以这里叫 layoutMode。
+  const [storedLayoutMode, setStoredLayoutMode] = useState<WritingMode | null>(() =>
+    readStoredMode(),
+  )
+  const [width, setWidth] = useState(() => window.innerWidth)
+  const [rightCollapsed, setRightCollapsed] = useState(() => readRightCollapsed())
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const layoutMode = resolveMode(storedLayoutMode, width)
+  const shape = shapeFor(layoutMode, rightCollapsed)
   const [volumes, setVolumes] = useState<VolumeNode[]>([])
   const [treeLoading, setTreeLoading] = useState(false)
   const [textLoading, setTextLoading] = useState(false)
@@ -151,6 +173,24 @@ export default function Writing() {
     },
     [],
   )
+
+  // 宽度只在作者没表达过偏好时才影响模式，所以存过就根本不挂这个监听。
+  useEffect(() => {
+    if (storedLayoutMode) return
+    const onResize = () => setWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [storedLayoutMode])
+
+  // 抽屉：ESC 关闭。只在打开时挂监听，不在页面上常驻一个 keydown。
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDrawerOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [drawerOpen])
 
   useEffect(() => {
     if (!projectId) return
@@ -1004,40 +1044,77 @@ export default function Writing() {
     ? `第${selected.volume.seq + 1}卷 第${selected.chapter.seq + 1}章 场景${selected.scene.seq + 1}`
     : ''
 
+  // 列宽取自 spec §8.2 的预算（1440 − 外壳 236 − 左树 236 − 右栏 336 − 32 间隙
+  // = 600，正文落在 600–680 的下沿）。专注态只有一列：左树走抽屉、右栏走浮层。
+  const gridClass =
+    shape.tree === 'drawer'
+      ? 'grid-cols-[minmax(0,1fr)]'
+      : shape.aside === 'rail'
+        ? 'grid-cols-[236px_minmax(0,1fr)_44px]'
+        : 'grid-cols-[236px_minmax(0,1fr)_336px]'
+  // 同一棵树要出现在两处（工作态的常驻列 / 专注态的抽屉），抽出来免得写两份。
+  const treePane = treeLoading ? (
+    <p className="text-[13px] text-muted">章节树加载中…</p>
+  ) : (
+    <WritingTree volumes={volumes} selectedSceneId={selectedSceneId} onSelect={selectScene} />
+  )
+
+  function toggleLayoutMode() {
+    const next: WritingMode = layoutMode === 'work' ? 'focus' : 'work'
+    setStoredLayoutMode(next)
+    writeMode(next)
+  }
+
+  function setRightCollapsedPersisted(collapsed: boolean) {
+    setRightCollapsed(collapsed)
+    writeRightCollapsed(collapsed)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-xl font-semibold">写作台</h2>
-        {sceneLabel && <span className="text-xs text-slate-500">{sceneLabel}</span>}
+        <h2 className="font-serif text-[19px] font-semibold text-ink">写作台</h2>
+        {shape.tree === 'drawer' && (
+          <Button size="sm" onClick={() => setDrawerOpen(true)}>
+            章节
+          </Button>
+        )}
+        {sceneLabel && <span className="text-[11.5px] text-muted">{sceneLabel}</span>}
+        <div className="ml-auto flex items-center gap-2">
+          {layoutMode === 'work' && (
+            <Button size="sm" onClick={() => setRightCollapsedPersisted(!rightCollapsed)}>
+              {rightCollapsed ? '展开右栏' : '收起右栏'}
+            </Button>
+          )}
+          <Button size="sm" onClick={toggleLayoutMode}>
+            {layoutMode === 'work' ? '专注模式' : '工作模式'}
+          </Button>
+        </div>
       </div>
 
-      {notice && (
-        <p className="rounded border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-300">
-          {notice}
-        </p>
-      )}
+      {notice && <p className="text-[13px] text-muted">{notice}</p>}
 
       {projectsLoading ? (
-        <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">加载中…</p>
+        <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
+          加载中…
+        </p>
       ) : !projectId ? (
-        <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
-          先创建一个项目。
+        <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
+          先在左侧项目选择器里新建一个项目。
         </p>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[240px_minmax(0,1fr)_320px]">
-          <aside className="rounded border border-slate-800 p-3">
-            {treeLoading ? (
-              <p className="text-sm text-slate-500">章节树加载中…</p>
-            ) : (
-              <WritingTree
-                volumes={volumes}
-                selectedSceneId={selectedSceneId}
-                onSelect={selectScene}
-              />
-            )}
-          </aside>
+        <div className={`grid items-start gap-4 ${gridClass}`}>
+          {shape.tree === 'column' && (
+            <aside className="rounded-card border border-line bg-surface p-3">{treePane}</aside>
+          )}
 
-          <section className="min-w-0 space-y-3">
+          {/* 正文列的宽度上限：工作态 680、专注态 620（spec §8.2 的区间），
+              余量作左右页边 —— 所以这里居中而不是撑满。 */}
+          <section
+            className={`mx-auto w-full min-w-0 space-y-3 ${
+              layoutMode === 'work' ? 'max-w-[680px]' : 'max-w-[620px]'
+            }`}
+          >
             {!selected ? (
               <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
                 从左侧选择一个场景开始写作。
@@ -1298,7 +1375,24 @@ export default function Writing() {
             )}
           </section>
 
-          <aside className="min-w-0 space-y-4">
+          {shape.aside === 'rail' ? (
+            <aside className="flex flex-col items-center gap-2 rounded-card border border-line bg-surface py-3">
+              <IconButton label="展开右栏" onClick={() => setRightCollapsedPersisted(false)}>
+                <Icon name="chevron" className="rotate-180" />
+              </IconButton>
+            </aside>
+          ) : (
+            /* 专注态下右栏是浮层：正文已经居中收窄（620），浮层落在右侧留白里，
+               不盖住稿子 —— spec §8.2 的「正文让位、不遮挡」。
+               top-20 是给页头留出的高度：浮层若从 top-4 起会盖住页头右侧的
+               模式切换，作者就回不到工作态了。 */
+            <aside
+              className={
+                shape.aside === 'overlay'
+                  ? 'fixed bottom-4 right-4 top-20 z-30 w-[320px] space-y-4 overflow-auto rounded-card border border-line bg-surface p-3 shadow-overlay'
+                  : 'min-w-0 space-y-4'
+              }
+            >
             {selectedSceneId && sceneChanges.length > 0 && (
               <section className="space-y-2 rounded border border-slate-800 p-3">
                 <h3 className="text-sm font-medium text-slate-300">这一场的改动</h3>
@@ -1504,6 +1598,21 @@ export default function Writing() {
                 onRestore={restoreRevision}
               />
             )}
+            </aside>
+          )}
+        </div>
+      )}
+
+      {/* 专注态的左树：浮层抽屉。ESC 关闭，点遮罩也关。 */}
+      {shape.tree === 'drawer' && drawerOpen && (
+        <div className="fixed inset-0 z-40">
+          <div
+            className="absolute inset-0 bg-ink/20"
+            onClick={() => setDrawerOpen(false)}
+            aria-hidden="true"
+          />
+          <aside className="relative h-full w-[236px] overflow-auto border-r border-line bg-surface p-3 shadow-overlay">
+            {treePane}
           </aside>
         </div>
       )}
