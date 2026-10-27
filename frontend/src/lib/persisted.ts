@@ -5,6 +5,11 @@
 
 export const KEY_CURRENT_PROJECT = 'storyforge.currentProject'
 export const KEY_SIDEBAR_COLLAPSED = 'storyforge.sidebarCollapsed'
+// 写作台的三项：模式（工作 / 专注）、右栏是否折叠成条、右栏当前页签。
+// 抽屉的开合**不持久化** —— 它是瞬时的，下次进来应该回到干净状态。
+export const KEY_WRITING_MODE = 'storyforge.writingMode'
+export const KEY_WRITING_RIGHT_COLLAPSED = 'storyforge.writingRightCollapsed'
+export const KEY_WRITING_ASIDE_TAB = 'storyforge.writingAsideTab'
 
 function store(): Storage | null {
   try {
