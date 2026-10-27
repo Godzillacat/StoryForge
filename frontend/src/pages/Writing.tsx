@@ -35,16 +35,21 @@ import SceneTextView from '../components/writing/SceneTextView'
 import WritebackPanel from '../components/writing/WritebackPanel'
 import WritingTree from '../components/writing/WritingTree'
 import {
+  ASIDE_TABS,
+  readAsideTab,
   readRightCollapsed,
   readStoredMode,
   resolveMode,
   shapeFor,
+  writeAsideTab,
   writeMode,
   writeRightCollapsed,
+  type AsideTab,
   type WritingMode,
 } from '../lib/writingLayout'
 import { Button, IconButton } from '../ui/Button'
 import { Icon } from '../ui/icons'
+import { Tabs } from '../ui/Tabs'
 
 interface RunInfo {
   run_id: string
@@ -84,6 +89,8 @@ export default function Writing() {
   const [width, setWidth] = useState(() => window.innerWidth)
   const [rightCollapsed, setRightCollapsed] = useState(() => readRightCollapsed())
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // 右栏的四个页签：上下文 / 分支 / 审校 / 日志。
+  const [asideTab, setAsideTab] = useState<AsideTab>(() => readAsideTab())
   // 工具栏的「更多」：次要动作收在这里，免得一行放九个按钮。
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement | null>(null)
@@ -1093,6 +1100,11 @@ export default function Writing() {
     writeRightCollapsed(collapsed)
   }
 
+  function setAsideTabPersisted(next: AsideTab) {
+    setAsideTab(next)
+    writeAsideTab(next)
+  }
+
   // 「更多」面板里的条目：左对齐、可禁用，与 `Button` 的中置对齐不同，所以不用
   // 组件而直接写类名。**文字色不写在这里**，由每个条目自己给一个 —— 同一元素上
   // 两个 text-* 谁生效取决于 CSS 顺序（`cn` 不消解冲突）。
@@ -1446,211 +1458,234 @@ export default function Writing() {
                   : 'min-w-0 space-y-4'
               }
             >
-            {selectedSceneId && sceneChanges.length > 0 && (
-              <section className="space-y-2 rounded border border-slate-800 p-3">
-                <h3 className="text-sm font-medium text-slate-300">这一场的改动</h3>
-                <ChangeList projectId={projectId} changes={sceneChanges} />
-              </section>
-            )}
-            {selectedSceneId && (
-              <AbPanel
-                sceneId={selectedSceneId}
-                locked={sceneLock?.locked === true}
-                disabled={busy || generating || branchBusy}
-                onAdopted={() => {
-                  // 采纳会换正文、删掉两条 A/B 分支：正文、改动历史与左树都要跟上。
-                  // 在途请求可能属于刚切走的场景，捕获当前令牌再比对。
-                  const token = sceneToken.current
-                  const sceneId = selectedSceneId
-                  void refreshText(sceneId).then((state) => {
-                    if (state !== null && sceneToken.current === token) {
-                      void refreshSceneChanges(sceneId, token)
+            <Tabs
+              items={ASIDE_TABS.map((tab) => ({ key: tab.key, label: tab.label }))}
+              active={asideTab}
+              onChange={(key) => {
+                const next = ASIDE_TABS.find((tab) => tab.key === key)
+                if (next) setAsideTabPersisted(next.key)
+              }}
+            />
+
+            {/* 四组都**保持挂载**，只切可见性（`hidden`）—— 面板里各有自己的
+                effect 与在途请求（A/B 与分支的 SSE、批量的轮询），按页签卸载会
+                打断正在跑的那一条。 */}
+            <div className={asideTab === 'context' ? 'space-y-4' : 'hidden'}>
+              {selectedSceneId && (
+                <ParagraphLocks
+                  sceneId={selectedSceneId}
+                  body={text?.body ?? null}
+                  locks={paragraphLocks}
+                  disabled={busy || generating}
+                  onChanged={setParagraphLocks}
+                />
+              )}
+              <ContextPreview
+                data={preview}
+                loading={previewLoading}
+                error={previewError}
+              />
+            </div>
+
+            <div className={asideTab === 'branch' ? 'space-y-4' : 'hidden'}>
+              {selectedSceneId && (
+                <AbPanel
+                  sceneId={selectedSceneId}
+                  locked={sceneLock?.locked === true}
+                  disabled={busy || generating || branchBusy}
+                  onAdopted={() => {
+                    // 采纳会换正文、删掉两条 A/B 分支：正文、改动历史与左树都要跟上。
+                    // 在途请求可能属于刚切走的场景，捕获当前令牌再比对。
+                    const token = sceneToken.current
+                    const sceneId = selectedSceneId
+                    void refreshText(sceneId).then((state) => {
+                      if (state !== null && sceneToken.current === token) {
+                        void refreshSceneChanges(sceneId, token)
+                      }
+                    })
+                    void refreshTree()
+                  }}
+                />
+              )}
+              {selectedSceneId && (
+                <BranchPanel
+                  sceneId={selectedSceneId}
+                  selectedBranchId={branchId}
+                  onSelect={(next) => {
+                    // 离开分支时若有未保存的改动，先问一句 —— 分支正文的
+                    // 编辑器是本地副本，切走就没了。
+                    if (branchDirty && !window.confirm('这条分支有未保存的修改，确定离开吗？')) {
+                      return
                     }
-                  })
-                  void refreshTree()
-                }}
+                    setBranchId(next)
+                  }}
+                  onMerged={() => {
+                    // 合并请求在途时作者可能切了场景：捕获当时的令牌，
+                    // 迟到时用它比对，别把旧场景的正文写进新场景。
+                    const token = sceneToken.current
+                    const sceneId = selectedSceneId
+                    void refreshText(sceneId).then((state) => {
+                      if (state !== null && sceneToken.current === token) {
+                        void refreshSceneChanges(sceneId, token)
+                      }
+                    })
+                    void refreshTree()
+                  }}
+                  disabled={busy || generating}
+                />
+              )}
+            </div>
+
+            <div className={asideTab === 'review' ? 'space-y-4' : 'hidden'}>
+              <AuditPanel
+                issues={auditIssues}
+                lastAuditedAt={auditLastAt}
+                running={auditLoading || busy || writebackBusy}
+                warning={auditWarning}
+                canRun={Boolean(text?.has_body) && !generating && !busy && !auditLoading && !logicLoading && !writebackBusy}
+                hasBody={Boolean(text?.has_body)}
+                onRun={runAudit}
+                onResolve={resolveIssue}
               />
-            )}
-            {selectedSceneId && (
-              <BranchPanel
-                sceneId={selectedSceneId}
-                selectedBranchId={branchId}
-                onSelect={(next) => {
-                  // 离开分支时若有未保存的改动，先问一句 —— 分支正文的
-                  // 编辑器是本地副本，切走就没了。
-                  if (branchDirty && !window.confirm('这条分支有未保存的修改，确定离开吗？')) {
-                    return
-                  }
-                  setBranchId(next)
-                }}
-                onMerged={() => {
-                  // 合并请求在途时作者可能切了场景：捕获当时的令牌，
-                  // 迟到时用它比对，别把旧场景的正文写进新场景。
-                  const token = sceneToken.current
-                  const sceneId = selectedSceneId
-                  void refreshText(sceneId).then((state) => {
-                    if (state !== null && sceneToken.current === token) {
-                      void refreshSceneChanges(sceneId, token)
-                    }
-                  })
-                  void refreshTree()
-                }}
-                disabled={busy || generating}
+              {selectedSceneId && (
+                <LogicChain sceneId={selectedSceneId} body={text?.body} />
+              )}
+              <LogicPanel
+                stage={logicStage}
+                issues={logicIssues}
+                lastCheckedAt={logicLastAt}
+                running={logicLoading || busy || writebackBusy}
+                warning={logicWarning}
+                canRun={
+                  Boolean(selectedSceneId) &&
+                  !generating &&
+                  !busy &&
+                  !auditLoading &&
+                  !logicLoading &&
+                  !writebackBusy
+                }
+                hasBody={Boolean(text?.has_body)}
+                onStageChange={changeLogicStage}
+                onRun={runLogic}
+                onResolve={resolveLogicIssue}
               />
-            )}
-            {selectedSceneId && (
-              <ParagraphLocks
-                sceneId={selectedSceneId}
-                body={text?.body ?? null}
-                locks={paragraphLocks}
-                disabled={busy || generating}
-                onChanged={setParagraphLocks}
+              <WritebackPanel
+                suggestion={writeback}
+                loading={writebackLoading}
+                applying={writebackApplying}
+                canRun={
+                  Boolean(selectedSceneId) &&
+                  !generating &&
+                  !busy &&
+                  !auditLoading &&
+                  !logicLoading &&
+                  !writebackBusy
+                }
+                hasBody={Boolean(text?.has_body)}
+                onRun={runWriteback}
+                onApply={applyWriteback}
               />
-            )}
-            <ContextPreview
-              data={preview}
-              loading={previewLoading}
-              error={previewError}
-            />
-            <AuditPanel
-              issues={auditIssues}
-              lastAuditedAt={auditLastAt}
-              running={auditLoading || busy || writebackBusy}
-              warning={auditWarning}
-              canRun={Boolean(text?.has_body) && !generating && !busy && !auditLoading && !logicLoading && !writebackBusy}
-              hasBody={Boolean(text?.has_body)}
-              onRun={runAudit}
-              onResolve={resolveIssue}
-            />
-            {selectedSceneId && (
-              <LogicChain sceneId={selectedSceneId} body={text?.body} />
-            )}
-            <LogicPanel
-              stage={logicStage}
-              issues={logicIssues}
-              lastCheckedAt={logicLastAt}
-              running={logicLoading || busy || writebackBusy}
-              warning={logicWarning}
-              canRun={
-                Boolean(selectedSceneId) &&
-                !generating &&
-                !busy &&
-                !auditLoading &&
-                !logicLoading &&
-                !writebackBusy
-              }
-              hasBody={Boolean(text?.has_body)}
-              onStageChange={changeLogicStage}
-              onRun={runLogic}
-              onResolve={resolveLogicIssue}
-            />
-            <WritebackPanel
-              suggestion={writeback}
-              loading={writebackLoading}
-              applying={writebackApplying}
-              canRun={
-                Boolean(selectedSceneId) &&
-                !generating &&
-                !busy &&
-                !auditLoading &&
-                !logicLoading &&
-                !writebackBusy
-              }
-              hasBody={Boolean(text?.has_body)}
-              onRun={runWriteback}
-              onApply={applyWriteback}
-            />
-            <BatchPanel
-              job={batchJob}
-              loading={batchLoading}
-              busy={batchBusy}
-              canStart={Boolean(selected)}
-              chapterId={selected?.chapter.id ?? ''}
-              chapterLabel={
-                selected ? `第${selected.chapter.seq + 1}章 ${selected.chapter.title}` : ''
-              }
-              volumeId={selected?.volume.id ?? ''}
-              volumeLabel={
-                selected ? `第${selected.volume.seq + 1}卷 ${selected.volume.name}` : ''
-              }
-              onStart={startBatch}
-              onPause={() => controlBatch(api.pauseBatch)}
-              onResume={() => controlBatch(api.resumeBatch)}
-              onCancel={() => controlBatch(api.cancelBatch)}
-              onRetryFailed={() => controlBatch(api.retryBatchFailed)}
-            />
-            {runInfo && (
-              <section className="space-y-1 rounded border border-slate-800 p-3 text-xs text-slate-400">
-                <h3 className="text-sm font-medium text-slate-300">本次运行</h3>
-                <p>
-                  {runInfo.agent} · {runInfo.model}
-                </p>
-                <p className="text-slate-500">run {runInfo.run_id.slice(0, 8)}</p>
-                <p>估算 {runInfo.estimated_tokens} tokens</p>
-                {runInfo.status && <p>状态：{runInfo.status}</p>}
-                {runInfo.prompt_tokens !== undefined && (
+            </div>
+
+            <div className={asideTab === 'log' ? 'space-y-4' : 'hidden'}>
+              {selectedSceneId && sceneChanges.length > 0 && (
+                <section className="space-y-2 rounded border border-slate-800 p-3">
+                  <h3 className="text-sm font-medium text-slate-300">这一场的改动</h3>
+                  <ChangeList projectId={projectId} changes={sceneChanges} />
+                </section>
+              )}
+              <BatchPanel
+                job={batchJob}
+                loading={batchLoading}
+                busy={batchBusy}
+                canStart={Boolean(selected)}
+                chapterId={selected?.chapter.id ?? ''}
+                chapterLabel={
+                  selected ? `第${selected.chapter.seq + 1}章 ${selected.chapter.title}` : ''
+                }
+                volumeId={selected?.volume.id ?? ''}
+                volumeLabel={
+                  selected ? `第${selected.volume.seq + 1}卷 ${selected.volume.name}` : ''
+                }
+                onStart={startBatch}
+                onPause={() => controlBatch(api.pauseBatch)}
+                onResume={() => controlBatch(api.resumeBatch)}
+                onCancel={() => controlBatch(api.cancelBatch)}
+                onRetryFailed={() => controlBatch(api.retryBatchFailed)}
+              />
+              {runInfo && (
+                <section className="space-y-1 rounded border border-slate-800 p-3 text-xs text-slate-400">
+                  <h3 className="text-sm font-medium text-slate-300">本次运行</h3>
                   <p>
-                    tokens：{runInfo.prompt_tokens} + {runInfo.completion_tokens ?? 0}
+                    {runInfo.agent} · {runInfo.model}
                   </p>
-                )}
-                {runInfo.cost_estimate !== undefined && (
-                  <p>费用估算：${runInfo.cost_estimate.toFixed(4)}</p>
-                )}
-                {runInfo.duration_ms !== undefined && (
-                  <p>耗时：{(runInfo.duration_ms / 1000).toFixed(1)} 秒</p>
-                )}
-                {runInfo.chars !== undefined && <p>已生成 {runInfo.chars} 字</p>}
-                {runInfo.error && (
-                  <p className="text-amber-300">
-                    {runInfo.error.kind}：{runInfo.error.message}
-                  </p>
-                )}
-                {Object.keys(runInfo.trimmed).length > 0 && (
-                  <details>
-                    <summary className="cursor-pointer text-slate-500">上下文裁剪</summary>
-                    <ul className="mt-1 space-y-1">
-                      {Object.entries(runInfo.trimmed).map(([key, note]) => (
-                        <li key={key}>
-                          {key}：{note}
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-              </section>
-            )}
-            {revision ? (
-              <section className="space-y-2 rounded border border-slate-800 p-3 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-medium text-slate-300">修订全文</h3>
+                  <p className="text-slate-500">run {runInfo.run_id.slice(0, 8)}</p>
+                  <p>估算 {runInfo.estimated_tokens} tokens</p>
+                  {runInfo.status && <p>状态：{runInfo.status}</p>}
+                  {runInfo.prompt_tokens !== undefined && (
+                    <p>
+                      tokens：{runInfo.prompt_tokens} + {runInfo.completion_tokens ?? 0}
+                    </p>
+                  )}
+                  {runInfo.cost_estimate !== undefined && (
+                    <p>费用估算：${runInfo.cost_estimate.toFixed(4)}</p>
+                  )}
+                  {runInfo.duration_ms !== undefined && (
+                    <p>耗时：{(runInfo.duration_ms / 1000).toFixed(1)} 秒</p>
+                  )}
+                  {runInfo.chars !== undefined && <p>已生成 {runInfo.chars} 字</p>}
+                  {runInfo.error && (
+                    <p className="text-amber-300">
+                      {runInfo.error.kind}：{runInfo.error.message}
+                    </p>
+                  )}
+                  {Object.keys(runInfo.trimmed).length > 0 && (
+                    <details>
+                      <summary className="cursor-pointer text-slate-500">上下文裁剪</summary>
+                      <ul className="mt-1 space-y-1">
+                        {Object.entries(runInfo.trimmed).map(([key, note]) => (
+                          <li key={key}>
+                            {key}：{note}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </section>
+              )}
+              {revision ? (
+                <section className="space-y-2 rounded border border-slate-800 p-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-medium text-slate-300">修订全文</h3>
+                    <button
+                      type="button"
+                      onClick={() => setRevision(null)}
+                      className="text-xs text-slate-400 hover:text-white"
+                    >
+                      关闭
+                    </button>
+                  </div>
+                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-300">
+                    {revision.content}
+                  </pre>
                   <button
                     type="button"
-                    onClick={() => setRevision(null)}
-                    className="text-xs text-slate-400 hover:text-white"
+                    disabled={busy || auditLoading || logicLoading || writebackBusy}
+                    onClick={() => restoreRevision(revision.id)}
+                    className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:text-white disabled:opacity-50"
                   >
-                    关闭
+                    恢复此版本
                   </button>
-                </div>
-                <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-300">
-                  {revision.content}
-                </pre>
-                <button
-                  type="button"
-                  disabled={busy || auditLoading || logicLoading || writebackBusy}
-                  onClick={() => restoreRevision(revision.id)}
-                  className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:text-white disabled:opacity-50"
-                >
-                  恢复此版本
-                </button>
-              </section>
-            ) : (
-              <RevisionHistory
-                revisions={text?.revisions ?? []}
-                busy={busy}
-                onOpen={openRevision}
-                onRestore={restoreRevision}
-              />
-            )}
+                </section>
+              ) : (
+                <RevisionHistory
+                  revisions={text?.revisions ?? []}
+                  busy={busy}
+                  onOpen={openRevision}
+                  onRestore={restoreRevision}
+                />
+              )}
+            </div>
             </aside>
           )}
         </div>
