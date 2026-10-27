@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import type { ChapterStatusOption, PlanChapter, PlanVolume } from '../../api/client'
+import { Button } from '../../ui/Button'
+import { Card } from '../../ui/Card'
+import { Input, Select, Textarea } from '../../ui/Field'
 
 const EMPTY_CHAPTER: PlanChapter = {
   title: '',
@@ -54,111 +57,112 @@ export default function ChapterPlanDraft({
   }
 
   return (
-    <section className="space-y-3 rounded border border-indigo-800 bg-slate-950/60 p-4 text-sm">
+    <Card className="space-y-3 text-[13.5px]">
       <div className="flex flex-wrap items-center gap-3">
-        <h3 className="font-medium text-indigo-300">章纲草稿（逐项可改）</h3>
-        <button className="text-xs text-indigo-400" onClick={() => setVolumes([...volumes, {
+        <h3 className="font-medium text-accent-ink">章纲草稿（逐项可改）</h3>
+        <Button variant="accent" size="sm" onClick={() => setVolumes([...volumes, {
           name: '新卷', purpose: '', summary: '', act_seq: null, target_words: null,
           status: 'planned', chapters: [{ ...EMPTY_CHAPTER, title: '新章' }],
-        }])}>+卷</button>
-        <button className="text-xs text-slate-400" onClick={onClose}>收起</button>
+        }])}>+卷</Button>
+        <Button variant="ghost" size="sm" onClick={onClose}>收起</Button>
       </div>
       {warnings.map((warning) => (
-        <p key={warning} className="text-xs text-amber-300">{warning}</p>
+        <p key={warning} className="text-[11.5px] text-warn">{warning}</p>
       ))}
       {openQuestions.map((question) => (
-        <p key={question} className="text-xs text-slate-400">待确认：{question}</p>
+        <p key={question} className="text-[11.5px] text-muted">待确认：{question}</p>
       ))}
 
       {volumes.map((volume, vIndex) => (
-        <div key={vIndex} className="space-y-2 rounded border border-slate-800 p-3">
+        <div key={vIndex} className="space-y-2 rounded-card border border-line p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <input className="w-44 rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                   value={volume.name} onChange={(e) => updateVolume(vIndex, { name: e.target.value })} />
-            <input className="flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                   placeholder="本卷要做什么" value={volume.purpose}
-                   onChange={(e) => updateVolume(vIndex, { purpose: e.target.value })} />
-            <input className="w-24 rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                   placeholder="幕序号" value={volume.act_seq ?? ''}
-                   onChange={(e) => updateVolume(vIndex, {
-                     act_seq: e.target.value.trim() ? Number(e.target.value) : null,
-                   })} />
-            <input type="number" className="w-24 rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                   placeholder="目标字数" value={volume.target_words ?? ''}
-                   onChange={(e) => updateVolume(vIndex, {
-                     target_words: e.target.value.trim() ? Number(e.target.value) : null,
-                   })} />
-            <select className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
-                    value={volume.status} onChange={(e) => updateVolume(vIndex, { status: e.target.value })}>
-              {statuses.map((status) => (
-                <option key={status.key} value={status.key}>{status.label}</option>
-              ))}
-            </select>
-            <button className="text-xs text-slate-500" onClick={() => setVolumes(volumes.filter((_, i) => i !== vIndex))}>
+            <div className="w-44">
+              <Input value={volume.name} onChange={(e) => updateVolume(vIndex, { name: e.target.value })} />
+            </div>
+            <div className="flex-1">
+              <Input placeholder="本卷要做什么" value={volume.purpose}
+                     onChange={(e) => updateVolume(vIndex, { purpose: e.target.value })} />
+            </div>
+            <div className="w-24">
+              <Input placeholder="幕序号" value={volume.act_seq ?? ''}
+                     onChange={(e) => updateVolume(vIndex, {
+                       act_seq: e.target.value.trim() ? Number(e.target.value) : null,
+                     })} />
+            </div>
+            <div className="w-24">
+              <Input type="number" placeholder="目标字数" value={volume.target_words ?? ''}
+                     onChange={(e) => updateVolume(vIndex, {
+                       target_words: e.target.value.trim() ? Number(e.target.value) : null,
+                     })} />
+            </div>
+            <div className="w-32">
+              <Select options={statuses.map((status) => ({ value: status.key, label: status.label }))}
+                      value={volume.status} onChange={(e) => updateVolume(vIndex, { status: e.target.value })} />
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setVolumes(volumes.filter((_, i) => i !== vIndex))}>
               删卷
-            </button>
-            <button className="text-xs text-indigo-400" onClick={() => updateVolume(vIndex, {
+            </Button>
+            <Button variant="accent" size="sm" onClick={() => updateVolume(vIndex, {
               chapters: [...volume.chapters, { ...EMPTY_CHAPTER, title: '新章' }],
-            })}>+章</button>
+            })}>+章</Button>
           </div>
-          <textarea className="h-14 w-full rounded border border-slate-700 bg-slate-900 p-2 text-xs"
-                    placeholder="本卷摘要" value={volume.summary}
+          <Textarea placeholder="本卷摘要" value={volume.summary}
                     onChange={(e) => updateVolume(vIndex, { summary: e.target.value })} />
           {volume.chapters.map((chapter, cIndex) => (
-            <div key={cIndex} className="ml-4 space-y-1 rounded border border-slate-800 p-2">
+            <div key={cIndex} className="ml-4 space-y-1 rounded-card border border-line p-2">
               <div className="flex flex-wrap items-center gap-2">
-                <input className="w-40 rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                       value={chapter.title} onChange={(e) => updateChapter(vIndex, cIndex, { title: e.target.value })} />
-                <input className="w-28 rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                       placeholder="视角" value={chapter.pov}
-                       onChange={(e) => updateChapter(vIndex, cIndex, { pov: e.target.value })} />
-                <input className="w-24 rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                       placeholder="目标字数" value={chapter.target_words ?? ''}
-                       onChange={(e) => updateChapter(vIndex, cIndex, {
-                         target_words: e.target.value.trim() ? Number(e.target.value) : null,
-                       })} />
-                <input className="w-24 rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                       placeholder="冲突 1-5" value={chapter.conflict_level ?? ''}
-                       onChange={(e) => updateChapter(vIndex, cIndex, {
-                         conflict_level: e.target.value.trim() ? Number(e.target.value) : null,
-                       })} />
+                <div className="w-40">
+                  <Input value={chapter.title} onChange={(e) => updateChapter(vIndex, cIndex, { title: e.target.value })} />
+                </div>
+                <div className="w-28">
+                  <Input placeholder="视角" value={chapter.pov}
+                         onChange={(e) => updateChapter(vIndex, cIndex, { pov: e.target.value })} />
+                </div>
+                <div className="w-24">
+                  <Input placeholder="目标字数" value={chapter.target_words ?? ''}
+                         onChange={(e) => updateChapter(vIndex, cIndex, {
+                           target_words: e.target.value.trim() ? Number(e.target.value) : null,
+                         })} />
+                </div>
+                <div className="w-24">
+                  <Input placeholder="冲突 1-5" value={chapter.conflict_level ?? ''}
+                         onChange={(e) => updateChapter(vIndex, cIndex, {
+                           conflict_level: e.target.value.trim() ? Number(e.target.value) : null,
+                         })} />
+                </div>
                 {/* 界面按百分比编辑；草稿内部与写入载荷仍是 0–1，和章编辑器一致。 */}
-                <input className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                       placeholder="对话占比（%）"
-                       value={chapter.dialogue_ratio == null ? '' : String(Math.round(chapter.dialogue_ratio * 100))}
-                       onChange={(e) => updateChapter(vIndex, cIndex, {
-                         dialogue_ratio: e.target.value.trim() ? Number(e.target.value) / 100 : null,
-                       })} />
-                <input className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                       placeholder="钩子强度" value={chapter.hook_strength ?? ''}
-                       onChange={(e) => updateChapter(vIndex, cIndex, {
-                         hook_strength: e.target.value.trim() ? Number(e.target.value) : null,
-                       })} />
-                <select className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
-                        value={chapter.status}
-                        onChange={(e) => updateChapter(vIndex, cIndex, { status: e.target.value })}>
-                  {statuses.map((status) => (
-                    <option key={status.key} value={status.key}>{status.label}</option>
-                  ))}
-                </select>
-                <button className="text-xs text-slate-500"
+                <div className="w-20">
+                  <Input placeholder="对话占比（%）"
+                         value={chapter.dialogue_ratio == null ? '' : String(Math.round(chapter.dialogue_ratio * 100))}
+                         onChange={(e) => updateChapter(vIndex, cIndex, {
+                           dialogue_ratio: e.target.value.trim() ? Number(e.target.value) / 100 : null,
+                         })} />
+                </div>
+                <div className="w-20">
+                  <Input placeholder="钩子强度" value={chapter.hook_strength ?? ''}
+                         onChange={(e) => updateChapter(vIndex, cIndex, {
+                           hook_strength: e.target.value.trim() ? Number(e.target.value) : null,
+                         })} />
+                </div>
+                <div className="w-32">
+                  <Select options={statuses.map((status) => ({ value: status.key, label: status.label }))}
+                          value={chapter.status}
+                          onChange={(e) => updateChapter(vIndex, cIndex, { status: e.target.value })} />
+                </div>
+                <Button variant="ghost" size="sm"
                         onClick={() => updateVolume(vIndex, {
                           chapters: volume.chapters.filter((_, i) => i !== cIndex),
-                        })}>删章</button>
+                        })}>删章</Button>
               </div>
-              <input className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                     placeholder="情绪基调" value={chapter.emotional_tone}
+              <Input placeholder="情绪基调" value={chapter.emotional_tone}
                      onChange={(e) => updateChapter(vIndex, cIndex, { emotional_tone: e.target.value })} />
-              <input className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                     placeholder="推进的线（顿号分隔）" value={chapter.lines.join('、')}
+              <Input placeholder="推进的线（顿号分隔）" value={chapter.lines.join('、')}
                      onChange={(e) => updateChapter(vIndex, cIndex, {
                        lines: e.target.value.split(/[、,，]/).map((v) => v.trim()).filter(Boolean),
                      })} />
-              <input className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                     placeholder="章末钩子" value={chapter.hook}
+              <Input placeholder="章末钩子" value={chapter.hook}
                      onChange={(e) => updateChapter(vIndex, cIndex, { hook: e.target.value })} />
-              <textarea className="h-14 w-full rounded border border-slate-700 bg-slate-900 p-2 text-xs"
-                        placeholder="本章摘要" value={chapter.summary}
+              <Textarea placeholder="本章摘要" value={chapter.summary}
                         onChange={(e) => updateChapter(vIndex, cIndex, { summary: e.target.value })} />
             </div>
           ))}
@@ -166,16 +170,14 @@ export default function ChapterPlanDraft({
       ))}
 
       <div className="flex items-center gap-3">
-        <select className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
-                value={mode} onChange={(e) => setMode(e.target.value as 'replace' | 'append')}>
-          <option value="replace">替换现有结构</option>
-          <option value="append">追加到末尾</option>
-        </select>
-        <button className="rounded bg-indigo-600 px-4 py-2 disabled:opacity-50" disabled={busy}
-                onClick={write}>
+        <div className="w-44">
+          <Select options={[{ value: 'replace', label: '替换现有结构' }, { value: 'append', label: '追加到末尾' }]}
+                  value={mode} onChange={(e) => setMode(e.target.value as 'replace' | 'append')} />
+        </div>
+        <Button variant="primary" disabled={busy} onClick={write}>
           写入项目
-        </button>
+        </Button>
       </div>
-    </section>
+    </Card>
   )
 }

@@ -332,9 +332,8 @@ export default function Dashboard() {
                         换一张
                       </Button>
                       <Button
-                        variant="ghost"
+                        variant="warn"
                         size="sm"
-                        className="text-warn"
                         disabled={coverBusy}
                         onClick={() => void removeCover()}
                       >

@@ -13,6 +13,8 @@ import {
   type LedgerLocation,
   type LedgerRow,
 } from '../../lib/chapterViews'
+import { Select } from '../../ui/Field'
+import { Table, Td, Th } from '../../ui/Table'
 
 const FILTERS: { key: LedgerFilter; label: string }[] = [
   { key: 'all', label: '全部' },
@@ -43,10 +45,10 @@ function LocationCell({
   location: LedgerLocation | null
   onSelect: (id: string) => void
 }) {
-  if (!location) return <span className="text-amber-300">未安排</span>
+  if (!location) return <span className="text-warn">未安排</span>
   return (
     <button
-      className="text-left text-indigo-300 hover:underline"
+      className="text-left text-accent-ink hover:underline"
       title={location.fullLabel}
       onClick={() => onSelect(location.sceneId)}
     >
@@ -128,7 +130,7 @@ export default function ForeshadowLedger({
 
   if (foreshadows.length === 0) {
     return (
-      <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+      <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
         还没有伏笔。在结构设计的场景编辑器里挂上伏笔后，这里会按故事顺序列出。
       </p>
     )
@@ -143,9 +145,9 @@ export default function ForeshadowLedger({
   return (
     <div className="space-y-3">
       <div>
-        <h3 className="text-sm font-medium text-slate-300">伏笔账本</h3>
+        <h3 className="text-[13.5px] font-medium text-ink-2">伏笔账本</h3>
         {summary ? (
-          <p className="text-xs text-slate-500">
+          <p className="text-[11.5px] text-muted">
             共 {summary.total} 条 · 已收 {summary.paid} · 已埋未收 {summary.planted} ·
             规划中 {summary.planned} · 已弃 {summary.dropped} · 回收率{' '}
             {(summary.rate * 100).toFixed(0)}%
@@ -153,20 +155,20 @@ export default function ForeshadowLedger({
           </p>
         ) : (
           // 列表拉到了、统计没拉到：显示一排 0 会被读成「一条都没收」。
-          <p className="text-xs text-amber-400">
+          <p className="text-[11.5px] text-warn">
             统计不可用（表格里的数据是好的）。共 {rows.length} 条。
           </p>
         )}
-        <p className="text-xs text-slate-600">回收率不算已弃的伏笔。</p>
+        <p className="text-[11.5px] text-faint">回收率不算已弃的伏笔。</p>
       </div>
       <div className="flex flex-wrap gap-2">
         {FILTERS.map((item) => (
           <button
             key={item.key}
-            className={`rounded border px-3 py-1 text-sm ${
+            className={`rounded-control border px-3 py-1 text-[13.5px] ${
               filter === item.key
-                ? 'border-indigo-500 bg-slate-800 text-white'
-                : 'border-slate-700 text-slate-400 hover:bg-slate-900'
+                ? 'border-accent bg-accent-soft text-accent-ink'
+                : 'border-line-strong text-muted hover:bg-sunken'
             }`}
             onClick={() => setFilter(item.key)}
           >
@@ -174,116 +176,112 @@ export default function ForeshadowLedger({
           </button>
         ))}
       </div>
-      <div className="overflow-x-auto rounded border border-slate-800">
-        <table className="min-w-full text-left text-sm">
-          <thead className="bg-slate-900 text-xs text-slate-400">
-            <tr>
-              <th className="px-3 py-2">名称</th>
-              <th className="px-3 py-2">备注</th>
-              <th className="px-3 py-2">埋设位置</th>
-              <th className="px-3 py-2">计划回收位置</th>
-              <th className="px-3 py-2">实际回收位置</th>
-              <th className="px-3 py-2">状态</th>
-              <th className="px-3 py-2">提示</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((row) => (
-              <tr key={row.id} className="border-t border-slate-800 align-top">
-                <td className="px-3 py-2 font-medium">{row.name}</td>
-                <td className="px-3 py-2 text-slate-400">
-                  <span
-                    className="block max-w-[16rem] truncate"
-                    title={row.note}
-                  >
-                    {row.note || '—'}
-                  </span>
-                </td>
-                <td className="px-3 py-2">
-                  <LocationCell location={row.plant} onSelect={onSelectScene} />
-                </td>
-                <td className="px-3 py-2">
-                  <LocationCell location={row.pay} onSelect={onSelectScene} />
-                </td>
-                <td className="px-3 py-2">
-                  <div className="space-y-1">
-                    <LocationCell location={row.actualPay} onSelect={onSelectScene} />
-                    {row.actualPay && (
-                      <button
-                        className="block text-xs text-slate-500 hover:text-red-300 hover:underline disabled:opacity-50"
-                        disabled={busy || savingId !== ''}
-                        onClick={() => void clearActualPay(row)}
-                        title="回写助手可能匹配错了场景；清掉后状态会退回按埋设位置派生"
-                      >
-                        清掉实际回收
-                      </button>
-                    )}
-                  </div>
-                </td>
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-1">
-                    <select
-                      className="rounded border border-slate-700 bg-slate-900 px-1 py-0.5 text-xs text-slate-200 disabled:opacity-50"
+      <Table className="rounded-card border border-line">
+        <thead>
+          <tr>
+            <Th>名称</Th>
+            <Th>备注</Th>
+            <Th>埋设位置</Th>
+            <Th>计划回收位置</Th>
+            <Th>实际回收位置</Th>
+            <Th>状态</Th>
+            <Th>提示</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {visible.map((row) => (
+            <tr key={row.id} className="align-top">
+              <Td className="font-medium">{row.name}</Td>
+              <Td className="text-muted">
+                <span
+                  className="block max-w-[16rem] truncate"
+                  title={row.note}
+                >
+                  {row.note || '—'}
+                </span>
+              </Td>
+              <Td>
+                <LocationCell location={row.plant} onSelect={onSelectScene} />
+              </Td>
+              <Td>
+                <LocationCell location={row.pay} onSelect={onSelectScene} />
+              </Td>
+              <Td>
+                <div className="space-y-1">
+                  <LocationCell location={row.actualPay} onSelect={onSelectScene} />
+                  {row.actualPay && (
+                    <button
+                      className="block text-[11.5px] text-muted hover:text-danger hover:underline disabled:opacity-50"
+                      disabled={busy || savingId !== ''}
+                      onClick={() => void clearActualPay(row)}
+                      title="回写助手可能匹配错了场景；清掉后状态会退回按埋设位置派生"
+                    >
+                      清掉实际回收
+                    </button>
+                  )}
+                </div>
+              </Td>
+              <Td>
+                <div className="flex items-center gap-1">
+                  {/* 宽度交给外层这个 div：`Select` 自带 w-full，而 `cn` 只拼接、
+                      不消解冲突 —— 直接给它传宽度类会被 CSS 顺序盖掉（实测产物里
+                      `.w-full` 排在 `.w-auto` 之后）。包一层无宽度 div 即「按内容宽」。 */}
+                  <div>
+                    <Select
                       value={row.effectiveStatus}
                       disabled={busy || savingId !== ''}
                       onChange={(event) => void changeStatus(row, event.target.value)}
                       title="作者显式设置的状态；位置字段与它不一致时会显示派生值"
-                    >
-                      {statuses.map((status) => (
-                        <option key={status.key} value={status.key}>
-                          {status.label}
-                        </option>
-                      ))}
-                      {/* 词表没拉到时下拉会是一片空白；用服务端给的中文名兜底，
-                          至少让作者看得出现在是什么状态（只是选不了）。 */}
-                      {statuses.length === 0 && (
-                        <option value={row.effectiveStatus}>{row.statusLabel}</option>
-                      )}
-                    </select>
-                    {savingId === row.id && (
-                      <span className="text-xs text-slate-500">保存中…</span>
-                    )}
-                    {/* 旧值那一行也「不等」，但那是词表归一、不是位置派生，
-                        两个标记同时出现会让作者以为位置字段改过。 */}
-                    {row.statusIsDerived && !row.statusIsLegacy && savingId !== row.id && (
-                      <span
-                        className="text-xs text-slate-500"
-                        title={`作者设的状态是「${row.status}」，位置字段显示它已经走到这一步`}
-                      >
-                        派生
-                      </span>
-                    )}
-                    {row.statusIsLegacy && (
-                      <button
-                        className="text-xs text-amber-400 hover:underline disabled:opacity-50"
-                        disabled={busy || savingId !== ''}
-                        onClick={() => void changeStatus(row, row.effectiveStatus)}
-                        title="旧版本用的是「已确认」，它已归入「规划中」。点一下把库里的值改成「规划中」。"
-                      >
-                        旧值 · 点此更新
-                      </button>
-                    )}
+                      options={
+                        // 词表没拉到时下拉会是一片空白；用服务端给的中文名兜底，
+                        // 至少让作者看得出现在是什么状态（只是选不了）。
+                        statuses.length === 0
+                          ? [{ value: row.effectiveStatus, label: row.statusLabel }]
+                          : statuses.map((status) => ({
+                              value: status.key,
+                              label: status.label,
+                            }))
+                      }
+                    />
                   </div>
-                </td>
-                <td className="px-3 py-2 text-xs text-amber-300">
-                  {hints(row)}
-                </td>
-              </tr>
-            ))}
-            {visible.length === 0 && (
-              <tr>
-                <td
-                  colSpan={7}
-                  className="px-3 py-4 text-center text-sm text-slate-500"
-                >
-                  这个筛选下没有伏笔。
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      <p className="text-xs text-slate-500">
+                  {savingId === row.id && (
+                    <span className="text-[11.5px] text-muted">保存中…</span>
+                  )}
+                  {/* 旧值那一行也「不等」，但那是词表归一、不是位置派生，
+                      两个标记同时出现会让作者以为位置字段改过。 */}
+                  {row.statusIsDerived && !row.statusIsLegacy && savingId !== row.id && (
+                    <span
+                      className="text-[11.5px] text-muted"
+                      title={`作者设的状态是「${row.status}」，位置字段显示它已经走到这一步`}
+                    >
+                      派生
+                    </span>
+                  )}
+                  {row.statusIsLegacy && (
+                    <button
+                      className="text-[11.5px] text-warn hover:underline disabled:opacity-50"
+                      disabled={busy || savingId !== ''}
+                      onClick={() => void changeStatus(row, row.effectiveStatus)}
+                      title="旧版本用的是「已确认」，它已归入「规划中」。点一下把库里的值改成「规划中」。"
+                    >
+                      旧值 · 点此更新
+                    </button>
+                  )}
+                </div>
+              </Td>
+              <Td className="text-warn">{hints(row)}</Td>
+            </tr>
+          ))}
+          {visible.length === 0 && (
+            <tr>
+              <Td colSpan={7} className="text-center text-muted">
+                这个筛选下没有伏笔。
+              </Td>
+            </tr>
+          )}
+        </tbody>
+      </Table>
+      <p className="text-[11.5px] text-muted">
         状态可以从位置字段派生（埋了就是「已埋」、正文里收了就是「已收」），只有「已弃」是作者判断、
         不会被派生覆盖。实际回收由写作台「回写建议」经作者确认后写入。埋设与计划回收在结构设计的
         场景编辑器里改。

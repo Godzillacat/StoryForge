@@ -505,7 +505,7 @@ export default function World() {
                       </option>
                     ))}
                 </select>
-                <Button variant="ghost" size="sm" className="text-accent-ink" onClick={addRelation}>
+                <Button variant="accent" size="sm" onClick={addRelation}>
                   建立关联
                 </Button>
               </div>

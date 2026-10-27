@@ -494,8 +494,8 @@ export function ReviewMarkList({
       <div className="flex items-center gap-2">
         <span className="text-warn">{marks.length} 条待复核</span>
         <Button
+          variant="warn"
           size="sm"
-          className="text-warn"
           onClick={async () => {
             try {
               await api.clearReviewMarks(

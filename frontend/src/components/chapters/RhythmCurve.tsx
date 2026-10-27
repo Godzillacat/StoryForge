@@ -1,5 +1,6 @@
 import type { VolumeNode } from '../../api/client'
 import { buildRhythmSeries } from '../../lib/chapterViews'
+import { CHART } from '../../ui/chartTokens'
 
 const COL_WIDTH = 44
 const LABEL_WIDTH = 88
@@ -9,15 +10,10 @@ const ROW_HEIGHT = 88
 const ROW_GAP = 12
 const DIALOGUE_HEIGHT = 64
 
-// 深色底（slate-950 #020617）上经 dataviz 校验的三条序列色：
-// 亮度落在深色带 0.48–0.67，对比度 ≥ 3:1；emerald 与 amber 的 CVD 差
-// 落在 6–8 警告带，由「钩子用虚线 + 每行独立标签」承担次级编码。
-const CONFLICT_COLOR = '#4f46e5'
-const HOOK_COLOR = '#059669'
-const DIALOGUE_COLOR = '#d97706'
-const TARGET_BAR_COLOR = '#6366f1'
-const SURFACE_COLOR = '#020617'
-const GRID_COLOR = '#1e293b'
+// 用色一律从 `ui/chartTokens` 取，这里不再写裸十六进制。
+// 四行是各自独立的小图、左侧各有文字标签，**颜色不承担区分职责** —— 所以
+// 冲突与对话同用主序列色；「钩子」沿用虚线这一层级编码（原先靠 emerald 与
+// amber 两种颜色区分，而那两个色的 CVD 差正落在警告带里）。
 
 export default function RhythmCurve({
   volumes,
@@ -29,7 +25,7 @@ export default function RhythmCurve({
   const series = buildRhythmSeries(volumes)
   if (series.chapters.length === 0) {
     return (
-      <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+      <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
         还没有卷章。去「结构设计」建卷，或先用 AI 排卷章。
       </p>
     )
@@ -99,22 +95,22 @@ export default function RhythmCurve({
   return (
     <div className="space-y-3">
       <div>
-        <h3 className="text-sm font-medium text-slate-300">节奏曲线</h3>
-        <p className="text-xs text-slate-500">
+        <h3 className="text-[14px] font-semibold text-ink">节奏曲线</h3>
+        <p className="text-[11.5px] text-muted">
           目标字数（P1 尚无正文，不是实际字数）· 点任意一章可回到结构设计
         </p>
       </div>
       {!hasAny && (
-        <p className="rounded border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-300">
+        <p className="rounded-control bg-warn-soft p-3 text-[13.5px] text-warn">
           章还没填节奏指标，去结构设计里补。
         </p>
       )}
-      <p className="text-xs text-slate-500">
+      <p className="text-[11.5px] text-muted">
         冲突未评 {series.missing.conflict} 章 · 钩子未评 {series.missing.hook} 章 ·
         对话未评 {series.missing.dialogue} 章 · 目标字数未填{' '}
         {series.missing.targetWords} 章
       </p>
-      <div className="overflow-x-auto rounded border border-slate-800 bg-slate-950 p-3">
+      <div className="overflow-x-auto rounded-card border border-line bg-surface p-3">
         <svg width={width} height={height} role="img" aria-label="节奏曲线">
           {series.bands.map((band, index) =>
             band.end > band.start ? (
@@ -124,14 +120,14 @@ export default function RhythmCurve({
                   y={TOP - 8}
                   width={(band.end - band.start) * COL_WIDTH}
                   height={dialogueBottom - TOP + 8}
-                  fill="#0f172a"
+                  fill={CHART.band}
                   opacity={volumeOpacity(index)}
                 />
                 <text
                   x={LABEL_WIDTH + ((band.start + band.end) / 2) * COL_WIDTH}
                   y={TOP - 14}
                   textAnchor="middle"
-                  fill="#94a3b8"
+                  fill={CHART.axisLabel}
                   fontSize={11}
                 >
                   {band.name}
@@ -146,19 +142,19 @@ export default function RhythmCurve({
               x2={width - RIGHT_PAD}
               y1={top}
               y2={top}
-              stroke={GRID_COLOR}
+              stroke={CHART.grid}
             />
           ))}
-          <text x={0} y={targetTop + 16} fill="#94a3b8" fontSize={11}>
+          <text x={0} y={targetTop + 16} fill={CHART.axisLabel} fontSize={11}>
             目标字数
           </text>
-          <text x={0} y={conflictTop + 16} fill="#94a3b8" fontSize={11}>
+          <text x={0} y={conflictTop + 16} fill={CHART.axisLabel} fontSize={11}>
             冲突强度
           </text>
-          <text x={0} y={hookTop + 16} fill="#94a3b8" fontSize={11}>
+          <text x={0} y={hookTop + 16} fill={CHART.axisLabel} fontSize={11}>
             钩子强度
           </text>
-          <text x={0} y={dialogueTop + 16} fill="#94a3b8" fontSize={11}>
+          <text x={0} y={dialogueTop + 16} fill={CHART.axisLabel} fontSize={11}>
             对话占比
           </text>
           {[1, 3, 5].map((level) => (
@@ -168,7 +164,7 @@ export default function RhythmCurve({
                 x2={width - RIGHT_PAD}
                 y1={levelY(level, conflictTop, conflictBottom)}
                 y2={levelY(level, conflictTop, conflictBottom)}
-                stroke={GRID_COLOR}
+                stroke={CHART.grid}
                 opacity={0.6}
               />
               <line
@@ -176,7 +172,7 @@ export default function RhythmCurve({
                 x2={width - RIGHT_PAD}
                 y1={levelY(level, hookTop, hookBottom)}
                 y2={levelY(level, hookTop, hookBottom)}
-                stroke={GRID_COLOR}
+                stroke={CHART.grid}
                 opacity={0.6}
               />
             </g>
@@ -186,7 +182,7 @@ export default function RhythmCurve({
               <path
                 key={`bar-${chapter.id}`}
                 d={barPath(index, chapter.targetWords)}
-                fill={TARGET_BAR_COLOR}
+                fill={CHART.series}
                 opacity={0.8}
               />
             ),
@@ -196,7 +192,7 @@ export default function RhythmCurve({
               levelY(value, conflictTop, conflictBottom),
             )}
             fill="none"
-            stroke={CONFLICT_COLOR}
+            stroke={CHART.series}
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -206,7 +202,7 @@ export default function RhythmCurve({
               levelY(value, hookTop, hookBottom),
             )}
             fill="none"
-            stroke={HOOK_COLOR}
+            stroke={CHART.dashed}
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -215,7 +211,7 @@ export default function RhythmCurve({
           <path
             d={path(dialogueValues, ratioY)}
             fill="none"
-            stroke={DIALOGUE_COLOR}
+            stroke={CHART.series}
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -227,8 +223,8 @@ export default function RhythmCurve({
                   cx={x(index)}
                   cy={levelY(chapter.conflict, conflictTop, conflictBottom)}
                   r={4}
-                  fill={CONFLICT_COLOR}
-                  stroke={SURFACE_COLOR}
+                  fill={CHART.series}
+                  stroke={CHART.pointStroke}
                   strokeWidth={2}
                 />
               )}
@@ -237,8 +233,8 @@ export default function RhythmCurve({
                   cx={x(index)}
                   cy={levelY(chapter.hook, hookTop, hookBottom)}
                   r={4}
-                  fill={HOOK_COLOR}
-                  stroke={SURFACE_COLOR}
+                  fill={CHART.dashed}
+                  stroke={CHART.pointStroke}
                   strokeWidth={2}
                 />
               )}
@@ -247,8 +243,8 @@ export default function RhythmCurve({
                   cx={x(index)}
                   cy={ratioY(chapter.dialogue)}
                   r={4}
-                  fill={DIALOGUE_COLOR}
-                  stroke={SURFACE_COLOR}
+                  fill={CHART.series}
+                  stroke={CHART.pointStroke}
                   strokeWidth={2}
                 />
               )}
@@ -260,7 +256,7 @@ export default function RhythmCurve({
               x={x(index)}
               y={height - 8}
               textAnchor="middle"
-              fill="#64748b"
+              fill={CHART.axisTick}
               fontSize={10}
             >
               {chapter.chapterSeq + 1}
@@ -276,7 +272,7 @@ export default function RhythmCurve({
               fill="transparent"
               role="button"
               tabIndex={0}
-              className="cursor-pointer outline-none focus:fill-slate-800/40"
+              className="cursor-pointer outline-none focus:fill-accent-soft"
               onClick={() => onSelectChapter(chapter.id)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {

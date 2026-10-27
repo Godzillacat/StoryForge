@@ -6,6 +6,7 @@ import {
   type DriftChapter,
   type DriftRow,
 } from '../../lib/characterDrift'
+import { Button } from '../../ui/Button'
 
 /** 表头只放得下几个字：章标题截断，全文进悬停提示。 */
 function shortLabel(label: string): string {
@@ -52,14 +53,14 @@ export default function CharacterDrift({
 
   if (error) {
     return (
-      <p className="rounded border border-rose-900/60 bg-rose-950/20 p-4 text-sm text-rose-300">
+      <p className="rounded-card border-l-2 border-danger bg-surface p-4 text-[13.5px] text-danger">
         读取性格漂移失败：{error}
       </p>
     )
   }
   if (loading || !data) {
     return (
-      <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+      <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
         正在读取性格漂移…
       </p>
     )
@@ -136,10 +137,10 @@ export default function CharacterDrift({
   if (rows.length === 0) {
     return (
       <div className="space-y-2">
-        <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+        <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
           {data.reason || '还没有状态记录'}
         </p>
-        <p className="text-xs text-slate-600">
+        <p className="text-[11.5px] text-faint">
           先在「结构设计」排好卷章、在「世界观」建好人物；之后在这里点任意格子，
           给人物记一行当时的状态。
         </p>
@@ -150,8 +151,8 @@ export default function CharacterDrift({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-baseline gap-3">
-        <h3 className="text-sm font-medium text-slate-300">性格漂移</h3>
-        <span className="text-xs text-slate-500">
+        <h3 className="text-[13.5px] font-medium text-ink-2">性格漂移</h3>
+        <span className="text-[11.5px] text-muted">
           {totals.characters} 人 · {totals.changes} 处变化 ·{' '}
           <span
             title={
@@ -163,39 +164,39 @@ export default function CharacterDrift({
             {totals.sparse} 人只有一条记录
           </span>
         </span>
-        <span className="text-xs text-slate-600">点格子记状态或改已记的状态</span>
+        <span className="text-[11.5px] text-faint">点格子记状态或改已记的状态</span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
+      <div className="flex flex-wrap items-center gap-4 text-[11.5px] text-muted">
         <span className="flex items-center gap-1.5">
-          <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-600" />
+          <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-sm bg-warn" />
           与上一条不同
         </span>
         <span className="flex items-center gap-1.5">
-          <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-sm bg-slate-600" />
+          <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-sm bg-line-strong" />
           与上一条相同
         </span>
         <span className="flex items-center gap-1.5">
           <span
             aria-hidden="true"
-            className="inline-block h-2.5 w-2.5 rounded-sm border border-dashed border-slate-600"
+            className="inline-block h-2.5 w-2.5 rounded-sm border border-dashed border-line-strong"
           />
           没有记录
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded border border-slate-800">
-        <table className="min-w-full text-left text-sm">
-          <thead className="bg-slate-900 text-xs text-slate-400">
+      <div className="overflow-x-auto rounded-card border border-line">
+        <table className="min-w-full text-left text-[13.5px]">
+          <thead>
             <tr>
-              <th scope="col" className="whitespace-nowrap px-3 py-2 font-normal">
+              <th scope="col" className="whitespace-nowrap px-3 py-2 text-[11.5px] font-normal text-muted">
                 人物
               </th>
               {chapters.map((chapter) => (
                 <th
                   key={chapter.id}
                   scope="col"
-                  className="whitespace-nowrap px-2 py-2 font-normal"
+                  className="whitespace-nowrap px-2 py-2 text-[11.5px] font-normal text-muted"
                   title={chapterTitle(chapter)}
                 >
                   {shortLabel(chapter.label)}
@@ -206,13 +207,13 @@ export default function CharacterDrift({
           <tbody>
             {rows.map((row) => (
               <Fragment key={row.entryId}>
-                <tr className="border-t border-slate-800 align-middle">
+                <tr className="border-t border-line align-middle">
                   <th
                     scope="row"
-                    className="whitespace-nowrap px-3 py-2 text-left font-medium text-slate-200"
+                    className="whitespace-nowrap px-3 py-2 text-left font-medium text-ink"
                   >
                     {row.name}
-                    <span className="ml-2 text-xs font-normal text-slate-500">
+                    <span className="ml-2 text-[11.5px] font-normal text-muted">
                       {row.changes > 0 && `${row.changes} 变`}
                       {row.changes > 0 && row.recorded === 1 && ' · '}
                       {row.recorded === 1 && '仅一条'}
@@ -237,16 +238,16 @@ export default function CharacterDrift({
                           aria-label={`${row.name} · ${chapterTitle(chapter)}：${
                             cell ? cell.note : '没有记录'
                           }`}
-                          className={`block w-full truncate rounded border px-2 py-1 text-left text-xs outline-none focus:ring-2 focus:ring-indigo-500 ${
-                            active ? 'ring-2 ring-indigo-500' : ''
+                          className={`block w-full truncate rounded-control border px-2 py-1 text-left text-[11.5px] outline-none focus:ring-2 focus:ring-accent-soft ${
+                            active ? 'ring-2 ring-accent-soft' : ''
                           } ${
                             cell === null
                               ? // 空留白：不写「没变」，也不写 0。加号只在悬停/聚焦时露出来，
                                 // 否则整张表的空白会被一串符号填满。
-                                'border-transparent text-transparent hover:border-slate-700 hover:text-slate-500 focus:text-slate-500'
+                                'border-transparent text-transparent hover:border-line-strong hover:text-muted focus:text-muted'
                               : cell.changed
-                                ? 'border-amber-700/60 bg-amber-950/40 text-amber-200 hover:border-amber-600'
-                                : 'border-slate-700 bg-slate-800/60 text-slate-300 hover:border-slate-500'
+                                ? 'border-warn bg-warn-soft text-warn hover:border-warn'
+                                : 'border-line-strong bg-sunken text-ink-2 hover:border-accent'
                           }`}
                         >
                           {cell ? cell.note : '＋'}
@@ -256,18 +257,18 @@ export default function CharacterDrift({
                   })}
                 </tr>
                 {editing !== null && editing.entryId === row.entryId && (
-                  <tr className="border-t border-slate-800 bg-slate-900/60">
+                  <tr className="border-t border-line bg-sunken">
                     <td colSpan={chapters.length + 1} className="px-3 py-2">
                       <div className="space-y-2">
-                        <div className="flex flex-wrap items-baseline gap-2 text-xs">
-                          <span className="text-slate-200">{editing.name}</span>
-                          <span className="text-slate-400" title={editing.chapterLabel}>
+                        <div className="flex flex-wrap items-baseline gap-2 text-[11.5px]">
+                          <span className="text-ink">{editing.name}</span>
+                          <span className="text-muted" title={editing.chapterLabel}>
                             {editing.chapterLabel}
                           </span>
-                          <span className="text-slate-500">
+                          <span className="text-muted">
                             {editing.exists ? '改这一条' : '新增一条'}
                           </span>
-                          <span className="text-slate-600">一行状态，≤500 字</span>
+                          <span className="text-faint">一行状态，≤500 字</span>
                         </div>
                         <textarea
                           autoFocus
@@ -290,38 +291,37 @@ export default function CharacterDrift({
                               ? ''
                               : '如「怕水，遇事先退半步」——当时的状态，不是评价'
                           }
-                          className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 disabled:opacity-50"
+                          className="w-full rounded-control border border-line-strong bg-surface px-3 py-2 text-[13.5px] text-ink disabled:opacity-50"
                         />
                         <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
+                          <Button
+                            variant="primary"
+                            size="sm"
                             disabled={saving || !text.trim()}
                             onClick={() => void save()}
                             title={text.trim() ? '保存后重取整本，变化标记由服务端重算' : '状态不能为空'}
-                            className="rounded bg-indigo-600 px-3 py-1 text-xs disabled:opacity-50"
                           >
                             {saving ? '保存中…' : '保存'}
-                          </button>
+                          </Button>
                           {editing.exists && (
-                            <button
-                              type="button"
+                            <Button
+                              variant="danger"
+                              size="sm"
                               disabled={saving}
                               onClick={() => void remove()}
-                              className="rounded border border-rose-800 px-3 py-1 text-xs text-rose-300 disabled:opacity-50"
                             >
                               删除
-                            </button>
+                            </Button>
                           )}
-                          <button
-                            type="button"
+                          <Button
+                            size="sm"
                             disabled={saving}
                             onClick={closeEditor}
-                            className="rounded border border-slate-700 px-3 py-1 text-xs text-slate-400 disabled:opacity-50"
                           >
                             取消
-                          </button>
+                          </Button>
                           {editError && (
-                            <span className="text-xs text-rose-300">{editError}</span>
+                            <span className="text-[11.5px] text-danger">{editError}</span>
                           )}
                         </div>
                       </div>
@@ -334,7 +334,7 @@ export default function CharacterDrift({
         </table>
       </div>
 
-      <p className="text-xs text-slate-500">
+      <p className="text-[11.5px] text-muted">
         只列有记录的人物。琥珀格 = 与这个人上一条记录不同（不是与上一章比）；
         灰格 = 记了但没变；空白 = 没有记录。变化是否合理属逻辑自检，这里不做判断。
       </p>
