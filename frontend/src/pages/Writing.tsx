@@ -84,6 +84,9 @@ export default function Writing() {
   const [width, setWidth] = useState(() => window.innerWidth)
   const [rightCollapsed, setRightCollapsed] = useState(() => readRightCollapsed())
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // 工具栏的「更多」：次要动作收在这里，免得一行放九个按钮。
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreRef = useRef<HTMLDivElement | null>(null)
   const layoutMode = resolveMode(storedLayoutMode, width)
   const shape = shapeFor(layoutMode, rightCollapsed)
   const [volumes, setVolumes] = useState<VolumeNode[]>([])
@@ -191,6 +194,24 @@ export default function Writing() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [drawerOpen])
+
+  // 「更多」：点面板外或按 ESC 关掉。点面板内的条目由面板自己的 onClick 收
+  // —— 那样每个条目仍能保留原来的 `onClick={handler}`，不必包一层箭头函数。
+  useEffect(() => {
+    if (!moreOpen) return
+    const onDown = (event: MouseEvent) => {
+      if (!moreRef.current?.contains(event.target as Node)) setMoreOpen(false)
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMoreOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [moreOpen])
 
   useEffect(() => {
     if (!projectId) return
@@ -1045,10 +1066,12 @@ export default function Writing() {
     : ''
 
   // 列宽取自 spec §8.2 的预算（1440 − 外壳 236 − 左树 236 − 右栏 336 − 32 间隙
-  // = 600，正文落在 600–680 的下沿）。专注态只有一列：左树走抽屉、右栏走浮层。
+  // = 600，正文落在 600–680 的下沿）。专注态只有一列：左树走抽屉、右栏走浮层，
+  // 并在右侧留出 336px 给浮层 —— 这就是 spec 说的「正文让位」，同时也保证工具栏
+  // 右端（采纳 / 更多）不被浮层盖住。
   const gridClass =
     shape.tree === 'drawer'
-      ? 'grid-cols-[minmax(0,1fr)]'
+      ? 'grid-cols-[minmax(0,1fr)] pr-[336px]'
       : shape.aside === 'rail'
         ? 'grid-cols-[236px_minmax(0,1fr)_44px]'
         : 'grid-cols-[236px_minmax(0,1fr)_336px]'
@@ -1070,6 +1093,12 @@ export default function Writing() {
     writeRightCollapsed(collapsed)
   }
 
+  // 「更多」面板里的条目：左对齐、可禁用，与 `Button` 的中置对齐不同，所以不用
+  // 组件而直接写类名。**文字色不写在这里**，由每个条目自己给一个 —— 同一元素上
+  // 两个 text-* 谁生效取决于 CSS 顺序（`cn` 不消解冲突）。
+  const moreItemClass =
+    'rounded-control px-2.5 py-1.5 text-left text-[12.5px] transition-colors duration-[120ms] hover:bg-sunken disabled:cursor-not-allowed disabled:opacity-45'
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -1079,7 +1108,6 @@ export default function Writing() {
             章节
           </Button>
         )}
-        {sceneLabel && <span className="text-[11.5px] text-muted">{sceneLabel}</span>}
         <div className="ml-auto flex items-center gap-2">
           {layoutMode === 'work' && (
             <Button size="sm" onClick={() => setRightCollapsedPersisted(!rightCollapsed)}>
@@ -1151,153 +1179,178 @@ export default function Writing() {
                   </p>
                 ) : (
                   <>
+                    {/* 工具栏收成一行（spec §9.9）：面包屑 · 保存状态 · 字数 |
+                        生成正文 · 采纳为正文 · 更多。次要动作收进「更多」——
+                        每个按钮的 onClick 与 disabled 表达式逐字保留，只换位置。 */}
                     <div className="flex flex-wrap items-center gap-2">
-                      {generating ? (
-                        <button
-                          type="button"
-                          onClick={stop}
-                          className="rounded bg-amber-600 px-3 py-1.5 text-sm text-white hover:bg-amber-500"
-                        >
-                          停止
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={generate}
+                      <span className="text-[13px] text-ink-2">{sceneLabel}</span>
+                      <span className="text-[11.5px] text-muted">
+                        {hasUnsaved ? '有未保存的改动' : '已保存'}
+                      </span>
+                      <span className="text-[11.5px] text-faint tabular-nums">
+                        {text.word_count} 字
+                      </span>
+
+                      <div className="ml-auto flex items-center gap-2">
+                        {generating ? (
+                          <Button variant="warn" onClick={stop}>
+                            停止
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="primary"
+                            onClick={generate}
+                            disabled={
+                              busy ||
+                              stopCooldown ||
+                              auditLoading ||
+                              logicLoading ||
+                              writebackBusy ||
+                              sceneLock?.locked === true
+                            }
+                            title={
+                              sceneLock?.locked
+                                ? '这一场已锁定，AI 不会改动它'
+                                : stopCooldown
+                                  ? '生成刚结束，请稍候'
+                                  : undefined
+                            }
+                          >
+                            生成正文
+                          </Button>
+                        )}
+                        {/* 采纳用 secondary：生成是入口动作、最常点，让它独占主色，
+                            两个同色主按钮会互相稀释。 */}
+                        <Button
+                          onClick={adopt}
                           disabled={
                             busy ||
-                            stopCooldown ||
+                            generating ||
                             auditLoading ||
                             logicLoading ||
                             writebackBusy ||
+                            !text.draft ||
                             sceneLock?.locked === true
                           }
                           title={
                             sceneLock?.locked
-                              ? '这一场已锁定，AI 不会改动它'
-                              : stopCooldown
-                                ? '生成刚结束，请稍候'
-                                : undefined
+                              ? '这一场已锁定，AI 草稿不能采纳'
+                              : undefined
                           }
-                          className="rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
                         >
-                          生成正文
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={runAudit}
-                        disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.has_body}
-                        title={text.has_body ? undefined : '采纳正文后才能审校'}
-                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
-                      >
-                        {auditLoading ? '审校中…' : '审校'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={runLogic}
-                        disabled={
-                          busy ||
-                          generating ||
-                          auditLoading ||
-                          logicLoading ||
-                          writebackBusy ||
-                          (logicStage === 'text' && !text.has_body)
-                        }
-                        title={
-                          logicStage === 'text' && !text.has_body
-                            ? '采纳正文后才能检查正文'
-                            : undefined
-                        }
-                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
-                      >
-                        {logicLoading ? '逻辑检查中…' : '逻辑自检'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={runWriteback}
-                        disabled={
-                          busy ||
-                          generating ||
-                          auditLoading ||
-                          logicLoading ||
-                          writebackBusy ||
-                          !text.has_body
-                        }
-                        title={text.has_body ? undefined : '采纳正文后才能生成回写建议'}
-                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
-                      >
-                        {writebackLoading ? '生成中…' : '回写建议'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={saveBody}
-                        disabled={
-                          busy ||
-                          generating ||
-                          auditLoading ||
-                          logicLoading ||
-                          writebackBusy ||
-                          mode !== 'body' ||
-                          bodyDraft === (text.body ?? '')
-                        }
-                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
-                      >
-                        保存正文
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setBodyDraft(text.body ?? '')}
-                        disabled={
-                          busy ||
-                          generating ||
-                          auditLoading ||
-                          logicLoading ||
-                          writebackBusy ||
-                          mode !== 'body' ||
-                          bodyDraft === (text.body ?? '')
-                        }
-                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-400 hover:text-white disabled:opacity-50"
-                      >
-                        取消修改
-                      </button>
-                      <button
-                        type="button"
-                        onClick={saveDraft}
-                        disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.draft || mode !== 'draft'}
-                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
-                      >
-                        保存草稿
-                      </button>
-                      <button
-                        type="button"
-                        onClick={adopt}
-                        disabled={
-                          busy ||
-                          generating ||
-                          auditLoading ||
-                          logicLoading ||
-                          writebackBusy ||
-                          !text.draft ||
-                          sceneLock?.locked === true
-                        }
-                        title={
-                          sceneLock?.locked
-                            ? '这一场已锁定，AI 草稿不能采纳'
-                            : undefined
-                        }
-                        className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
-                      >
-                        采纳为正文
-                      </button>
-                      <button
-                        type="button"
-                        onClick={discard}
-                        disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.draft}
-                        className="rounded border border-amber-800 px-3 py-1.5 text-sm text-amber-300 hover:text-amber-200 disabled:opacity-50"
-                      >
-                        丢弃草稿
-                      </button>
+                          采纳为正文
+                        </Button>
+                        <div className="relative" ref={moreRef}>
+                          <Button
+                            onClick={() => setMoreOpen((open) => !open)}
+                            aria-expanded={moreOpen}
+                          >
+                            更多
+                          </Button>
+                          {moreOpen && (
+                            /* 点面板里任意一条即收起（靠冒泡），所以每个条目仍能
+                               直接写 onClick={handler}，不必包一层箭头函数。 */
+                            <div
+                              className="absolute right-0 top-9 z-20 flex w-44 flex-col items-stretch gap-0.5 rounded-card border border-line bg-surface p-1.5 shadow-overlay"
+                              onClick={() => setMoreOpen(false)}
+                            >
+                              <button
+                                type="button"
+                                onClick={runAudit}
+                                disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.has_body}
+                                title={text.has_body ? undefined : '采纳正文后才能审校'}
+                                className={`${moreItemClass} text-ink-2`}
+                              >
+                                {auditLoading ? '审校中…' : '审校'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={runLogic}
+                                disabled={
+                                  busy ||
+                                  generating ||
+                                  auditLoading ||
+                                  logicLoading ||
+                                  writebackBusy ||
+                                  (logicStage === 'text' && !text.has_body)
+                                }
+                                title={
+                                  logicStage === 'text' && !text.has_body
+                                    ? '采纳正文后才能检查正文'
+                                    : undefined
+                                }
+                                className={`${moreItemClass} text-ink-2`}
+                              >
+                                {logicLoading ? '逻辑检查中…' : '逻辑自检'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={runWriteback}
+                                disabled={
+                                  busy ||
+                                  generating ||
+                                  auditLoading ||
+                                  logicLoading ||
+                                  writebackBusy ||
+                                  !text.has_body
+                                }
+                                title={text.has_body ? undefined : '采纳正文后才能生成回写建议'}
+                                className={`${moreItemClass} text-ink-2`}
+                              >
+                                {writebackLoading ? '生成中…' : '回写建议'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={saveBody}
+                                disabled={
+                                  busy ||
+                                  generating ||
+                                  auditLoading ||
+                                  logicLoading ||
+                                  writebackBusy ||
+                                  mode !== 'body' ||
+                                  bodyDraft === (text.body ?? '')
+                                }
+                                className={`${moreItemClass} text-ink-2`}
+                              >
+                                保存正文
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setBodyDraft(text.body ?? '')}
+                                disabled={
+                                  busy ||
+                                  generating ||
+                                  auditLoading ||
+                                  logicLoading ||
+                                  writebackBusy ||
+                                  mode !== 'body' ||
+                                  bodyDraft === (text.body ?? '')
+                                }
+                                className={`${moreItemClass} text-ink-2`}
+                              >
+                                取消修改
+                              </button>
+                              <button
+                                type="button"
+                                onClick={saveDraft}
+                                disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.draft || mode !== 'draft'}
+                                className={`${moreItemClass} text-ink-2`}
+                              >
+                                保存草稿
+                              </button>
+                              <button
+                                type="button"
+                                onClick={discard}
+                                disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.draft}
+                                className={`${moreItemClass} text-warn`}
+                              >
+                                丢弃草稿
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
                     <GenerationStream text={streamText} generating={generating} />
