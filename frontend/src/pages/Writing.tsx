@@ -1105,6 +1105,10 @@ export default function Writing() {
     writeAsideTab(next)
   }
 
+  // 工具栏的字数跟着**当前在编的那一份**走：正文模式数正文、草稿模式数草稿。
+  // 口径与原先编辑器里那个一致（去掉空白后计字符）—— 只是搬到了工具栏。
+  const editorChars = (mode === 'body' ? bodyDraft : aiDraft).replace(/\s/g, '').length
+
   // 「更多」面板里的条目：左对齐、可禁用，与 `Button` 的中置对齐不同，所以不用
   // 组件而直接写类名。**文字色不写在这里**，由每个条目自己给一个 —— 同一元素上
   // 两个 text-* 谁生效取决于 CSS 顺序（`cn` 不消解冲突）。
@@ -1156,37 +1160,37 @@ export default function Writing() {
             }`}
           >
             {!selected ? (
-              <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+              <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
                 从左侧选择一个场景开始写作。
               </p>
             ) : (
               <>
                 {sceneLock?.locked && (
-                  <p className="rounded border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-300">
+                  <p className="rounded-control bg-warn-soft p-3 text-[13.5px] text-warn">
                     这一场已锁定（{sceneLock.label || '上级'}）：AI 不会生成或采纳正文。
                     作者仍可手工编辑与保存。要重新生成，请先在章节页解锁。
                   </p>
                 )}
 
-                <section className="space-y-1 rounded border border-slate-800 p-3 text-sm">
-                  <p className="text-slate-300">
+                <section className="space-y-1 rounded-card border border-line bg-surface p-3 text-[13.5px]">
+                  <p className="text-ink-2">
                     目标：{selected.scene.goal || '（未写目标）'}
                   </p>
-                  <p className="text-slate-400">冲突：{selected.scene.conflict || '（未写）'}</p>
-                  <p className="text-slate-400">转折：{selected.scene.turn || '（未写）'}</p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-muted">冲突：{selected.scene.conflict || '（未写）'}</p>
+                  <p className="text-muted">转折：{selected.scene.turn || '（未写）'}</p>
+                  {/* 字数已移到工具栏（跟着当前在编的那一份走），这里只留目标。 */}
+                  <p className="text-[11.5px] text-muted">
                     目标字数：{selected.scene.target_words_min ?? '?'}–
-                    {selected.scene.target_words_max ?? '?'} · 正文{' '}
-                    {text ? `${text.word_count} 字` : '—'}
+                    {selected.scene.target_words_max ?? '?'}
                   </p>
                 </section>
 
                 {textLoading ? (
-                  <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+                  <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
                     正在载入正文与上下文…
                   </p>
                 ) : !text ? (
-                  <p className="rounded border border-slate-800 p-4 text-sm text-amber-300">
+                  <p className="rounded-card border-l-2 border-danger bg-surface p-4 text-[13.5px] text-danger">
                     正文状态未能加载，请重新选择场景。
                   </p>
                 ) : (
@@ -1200,7 +1204,7 @@ export default function Writing() {
                         {hasUnsaved ? '有未保存的改动' : '已保存'}
                       </span>
                       <span className="text-[11.5px] text-faint tabular-nums">
-                        {text.word_count} 字
+                        {editorChars} 字
                       </span>
 
                       <div className="ml-auto flex items-center gap-2">
@@ -1381,7 +1385,7 @@ export default function Writing() {
                           onSaved={() => void loadBranch(branch.id)}
                         />
                         <DiffPanel oldText={text.body ?? ''} newText={branch.content} />
-                        <p className="text-xs text-slate-500">
+                        <p className="text-[11.5px] text-muted">
                           与主版对比在上面。要换掉主版正文，用右栏「合入」。
                         </p>
                       </>
@@ -1389,12 +1393,14 @@ export default function Writing() {
 
                     {!branch && (
                       <>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1">
                       <button
                         type="button"
                         onClick={() => setMode('body')}
-                        className={`rounded px-3 py-1 text-sm ${
-                          mode === 'body' ? 'bg-slate-800 text-white' : 'text-slate-400'
+                        className={`rounded-control px-3 py-1 text-[13px] transition-colors duration-[120ms] ${
+                          mode === 'body'
+                            ? 'bg-accent-soft font-semibold text-accent-ink'
+                            : 'text-muted hover:bg-sunken'
                         }`}
                       >
                         已采纳正文
@@ -1403,8 +1409,10 @@ export default function Writing() {
                         type="button"
                         onClick={() => setMode('draft')}
                         disabled={!text.draft}
-                        className={`rounded px-3 py-1 text-sm disabled:opacity-40 ${
-                          mode === 'draft' ? 'bg-slate-800 text-white' : 'text-slate-400'
+                        className={`rounded-control px-3 py-1 text-[13px] transition-colors duration-[120ms] disabled:opacity-40 ${
+                          mode === 'draft'
+                            ? 'bg-accent-soft font-semibold text-accent-ink'
+                            : 'text-muted hover:bg-sunken'
                         }`}
                       >
                         AI 草稿
@@ -1589,8 +1597,8 @@ export default function Writing() {
 
             <div className={asideTab === 'log' ? 'space-y-4' : 'hidden'}>
               {selectedSceneId && sceneChanges.length > 0 && (
-                <section className="space-y-2 rounded border border-slate-800 p-3">
-                  <h3 className="text-sm font-medium text-slate-300">这一场的改动</h3>
+                <section className="space-y-2 rounded-card border border-line bg-surface p-3">
+                  <h3 className="text-[14px] font-semibold text-ink">这一场的改动</h3>
                   <ChangeList projectId={projectId} changes={sceneChanges} />
                 </section>
               )}
@@ -1614,12 +1622,12 @@ export default function Writing() {
                 onRetryFailed={() => controlBatch(api.retryBatchFailed)}
               />
               {runInfo && (
-                <section className="space-y-1 rounded border border-slate-800 p-3 text-xs text-slate-400">
-                  <h3 className="text-sm font-medium text-slate-300">本次运行</h3>
+                <section className="space-y-1 rounded-card border border-line bg-surface p-3 text-[11.5px] text-muted">
+                  <h3 className="text-[14px] font-semibold text-ink">本次运行</h3>
                   <p>
                     {runInfo.agent} · {runInfo.model}
                   </p>
-                  <p className="text-slate-500">run {runInfo.run_id.slice(0, 8)}</p>
+                  <p className="text-faint">run {runInfo.run_id.slice(0, 8)}</p>
                   <p>估算 {runInfo.estimated_tokens} tokens</p>
                   {runInfo.status && <p>状态：{runInfo.status}</p>}
                   {runInfo.prompt_tokens !== undefined && (
@@ -1635,13 +1643,13 @@ export default function Writing() {
                   )}
                   {runInfo.chars !== undefined && <p>已生成 {runInfo.chars} 字</p>}
                   {runInfo.error && (
-                    <p className="text-amber-300">
+                    <p className="text-warn">
                       {runInfo.error.kind}：{runInfo.error.message}
                     </p>
                   )}
                   {Object.keys(runInfo.trimmed).length > 0 && (
                     <details>
-                      <summary className="cursor-pointer text-slate-500">上下文裁剪</summary>
+                      <summary className="cursor-pointer text-muted">上下文裁剪</summary>
                       <ul className="mt-1 space-y-1">
                         {Object.entries(runInfo.trimmed).map(([key, note]) => (
                           <li key={key}>
@@ -1654,25 +1662,25 @@ export default function Writing() {
                 </section>
               )}
               {revision ? (
-                <section className="space-y-2 rounded border border-slate-800 p-3 text-sm">
+                <section className="space-y-2 rounded-card border border-line bg-surface p-3 text-[13.5px]">
                   <div className="flex items-center justify-between gap-2">
-                    <h3 className="font-medium text-slate-300">修订全文</h3>
+                    <h3 className="font-semibold text-ink">修订全文</h3>
                     <button
                       type="button"
                       onClick={() => setRevision(null)}
-                      className="text-xs text-slate-400 hover:text-white"
+                      className="text-[11.5px] text-muted transition-colors duration-[120ms] hover:text-ink-2"
                     >
                       关闭
                     </button>
                   </div>
-                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-300">
+                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-[11.5px] text-ink-2">
                     {revision.content}
                   </pre>
                   <button
                     type="button"
                     disabled={busy || auditLoading || logicLoading || writebackBusy}
                     onClick={() => restoreRevision(revision.id)}
-                    className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:text-white disabled:opacity-50"
+                    className="rounded-control border border-line-strong px-2 py-1 text-[11.5px] text-ink-2 transition-colors duration-[120ms] hover:bg-sunken disabled:opacity-50"
                   >
                     恢复此版本
                   </button>
@@ -1688,6 +1696,23 @@ export default function Writing() {
             </div>
             </aside>
           )}
+        </div>
+      )}
+
+      {/* 底部状态条：只在专注态出现（工作态的字数在工具栏里）。用 sticky 而不是
+          fixed —— fixed 要写死侧栏宽度，而侧栏是可以折叠的。 */}
+      {shape.statusBar && selected && (
+        <div className="sticky bottom-0 z-20 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-card border border-line bg-surface px-3 py-1.5 text-[11.5px] text-muted shadow-overlay">
+          <span className="tabular-nums">{editorChars} 字</span>
+          <span className="tabular-nums">
+            目标 {selected.scene.target_words_min ?? '?'}–
+            {selected.scene.target_words_max ?? '?'}
+          </span>
+          {/* spec 写的是「分支数」，但分支列表在 BranchPanel 内部、页面上没有这个
+              计数（要它得给面板加一个回调）。这里改显示「正在看哪一条」—— 对作者
+              更有用，且只用现有状态。 */}
+          <span>{branch ? `分支「${branch.name}」` : '主版'}</span>
+          <span>{sceneLock?.locked ? '已锁定' : '未锁定'}</span>
         </div>
       )}
 
