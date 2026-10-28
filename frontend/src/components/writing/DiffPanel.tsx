@@ -11,23 +11,23 @@ export default function DiffPanel({ oldText, newText }: Props) {
   const removed = rows.filter((row) => row.kind === 'remove').length
 
   return (
-    <section className="space-y-2 rounded border border-slate-800 p-3">
-      <h3 className="text-sm font-medium text-slate-300">
+    <section className="space-y-2 rounded-card border border-line p-3">
+      <h3 className="text-[13.5px] font-medium text-ink-2">
         旧稿与新稿对比（+{added} / -{removed}）
       </h3>
-      <div className="max-h-80 overflow-auto rounded bg-slate-950 font-mono text-xs leading-6">
+      <div className="max-h-80 overflow-auto rounded-control bg-sunken font-mono text-[11.5px] leading-6">
         {rows.map((row, index) => (
           <div
             key={index}
             className={
               row.kind === 'add'
-                ? 'bg-emerald-950/40 text-emerald-200'
+                ? 'bg-accent-soft text-accent-ink'
                 : row.kind === 'remove'
-                  ? 'bg-rose-950/40 text-rose-200'
-                  : 'text-slate-400'
+                  ? 'bg-danger/10 text-danger'
+                  : 'text-muted'
             }
           >
-            <span className="inline-block w-10 select-none pr-2 text-right text-slate-600">
+            <span className="inline-block w-10 select-none pr-2 text-right text-faint">
               {row.kind === 'add' ? '+' : row.kind === 'remove' ? '-' : ' '}
             </span>
             <span className="whitespace-pre-wrap break-words">{row.text || ' '}</span>

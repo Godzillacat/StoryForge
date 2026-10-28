@@ -16,6 +16,11 @@ export const CHART = {
   seriesAlt: PALETTE.warn,
   /** 虚线：节奏图的「钩子」。既有的次级编码，不靠颜色区分。 */
   dashed: PALETTE.lineStrong,
+  /** 逻辑链的三条序列色（因果 / 转折 / 揭示）。这三条**并置在同一张图里**，
+   *  必须两两可分辨；取值都在 PALETTE 里，对比度由 `contrast.test.ts` 守着。 */
+  cause: PALETTE.accent,
+  turn: PALETTE.warn,
+  reveal: PALETTE.ink2,
   /** 绘图区底。网格与卷带都以它为基准取更深的色。 */
   plot: PALETTE.surface,
   /** 网格（spec §6.1 把 sunken 指定给图表网格）。次级刻度靠 opacity 再压淡。 */

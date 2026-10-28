@@ -22,6 +22,11 @@ it('并置在同一绘图区的两条序列色不相同', () => {
   expect(CHART.series).not.toBe(CHART.seriesAlt)
 })
 
+it('逻辑链的三条序列色两两可分辨', () => {
+  const chain = [CHART.cause, CHART.turn, CHART.reveal]
+  expect(new Set(chain).size).toBe(3)
+})
+
 it('网格与卷带都比绘图区底深，否则在浅色底上看不见', () => {
   expect(luminance(CHART.grid)).toBeLessThan(luminance(CHART.plot))
   expect(luminance(CHART.band)).toBeLessThan(luminance(CHART.plot))

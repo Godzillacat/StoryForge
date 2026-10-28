@@ -8,13 +8,15 @@ import {
   tickBaselineY,
   NODE_TEXT_MAX,
 } from '../../lib/logicChainGraph'
+import { CHART } from '../../ui/chartTokens'
 
-// 深色底 #020617 上实测（WCAG 相对亮度）：sky-500 7.28:1、amber-500 9.39:1、emerald-500 7.95:1
-const COLORS: Record<string, string> = { cause: '#0ea5e9', turn: '#f59e0b', reveal: '#10b981' }
+// 浅色纸底上的三条序列色（墨绿 / 沙色 / 深墨）：取自 `ui/chartTokens`，
+// 对比度由 `contrast.test.ts` 守着 —— 这里不再单独记录实测值。
+const COLORS: Record<string, string> = { cause: CHART.cause, turn: CHART.turn, reveal: CHART.reveal }
 
 /** 未知类型回落到中性灰，而不是抛错：后端将来多一类时图仍然画得出来。 */
 function colorOf(kind: string): string {
-  return COLORS[kind] ?? '#94a3b8'
+  return COLORS[kind] ?? CHART.axisLabel
 }
 
 export default function LogicChainGraph({
@@ -33,7 +35,7 @@ export default function LogicChainGraph({
   const nodeByIndex = new Map<number, GraphNode>(graph.nodes.map((node) => [node.index, node]))
 
   return (
-    <div className="overflow-x-auto rounded border border-slate-800 bg-slate-950">
+    <div className="overflow-x-auto rounded-card border border-line bg-paper">
       <svg
         role="img"
         aria-label="逻辑链"
@@ -73,7 +75,7 @@ export default function LogicChainGraph({
                 width={node.width}
                 height={node.height}
                 rx={6}
-                fill="#0f172a"
+                fill={CHART.plot}
                 stroke={color}
                 strokeOpacity={0.6}
               />
@@ -81,7 +83,7 @@ export default function LogicChainGraph({
               <text x={node.x + 12} y={node.y + 18} fill={color} fontSize={11}>
                 {node.kindLabel}
               </text>
-              <text x={node.x + 12} y={node.y + 38} fill="#cbd5e1" fontSize={11}>
+              <text x={node.x + 12} y={node.y + 38} fill={CHART.axisLabel} fontSize={11}>
                 {sentence}
               </text>
             </g>
@@ -96,7 +98,7 @@ export default function LogicChainGraph({
             y={tickBaselineY(graph.height)}
             textAnchor="middle"
             fontSize={10}
-            fill={column.nodes.length > 0 ? '#64748b' : '#334155'}
+            fill={column.nodes.length > 0 ? CHART.axisTick : CHART.placeholderStroke}
           >
             {`¶${column.paragraph}`}
           </text>

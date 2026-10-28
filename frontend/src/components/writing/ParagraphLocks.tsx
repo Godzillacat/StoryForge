@@ -61,21 +61,21 @@ export default function ParagraphLocks({
   const missing = paragraphs.length === 0 ? draft : draft.filter((t) => !paragraphs.includes(t))
 
   return (
-    <section className="space-y-2 rounded border border-slate-800 p-3 text-sm">
+    <section className="space-y-2 rounded-card border border-line bg-surface p-3 text-[13.5px]">
       <div className="flex items-center gap-2">
-        <h3 className="font-medium text-slate-300">锁定段落</h3>
-        <span className="text-xs text-slate-500">
+        <h3 className="font-medium text-ink-2">锁定段落</h3>
+        <span className="text-[11.5px] text-muted">
           {draft.length > 0 ? `已锁 ${draft.length} 段` : '未锁段落'}
         </span>
       </div>
-      <p className="text-xs text-slate-500">
+      <p className="text-[11.5px] text-muted">
         锁定的段落在采纳 AI 草稿时必须原样保留；缺少任一段会被拒绝采纳。
       </p>
 
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-[11.5px] text-danger">{error}</p>}
 
       {paragraphs.length === 0 ? (
-        <p className="text-xs text-slate-500">还没有已采纳正文，没有可锁的段落。</p>
+        <p className="text-[11.5px] text-muted">还没有已采纳正文，没有可锁的段落。</p>
       ) : (
         <ul className="max-h-64 space-y-1 overflow-auto">
           {paragraphs.map((text, index) => (
@@ -87,7 +87,7 @@ export default function ParagraphLocks({
                 disabled={busy || disabled}
                 onChange={() => toggle(text)}
               />
-              <span className="flex-1 text-xs text-slate-400">
+              <span className="flex-1 text-[11.5px] text-muted">
                 {text.length > 60 ? `${text.slice(0, 60)}…` : text}
               </span>
             </li>
@@ -96,7 +96,7 @@ export default function ParagraphLocks({
       )}
 
       {missing.length > 0 && (
-        <div className="rounded bg-amber-950/30 p-2 text-xs text-amber-300">
+        <div className="rounded-control bg-warn-soft p-2 text-[11.5px] text-warn">
           <p>以下已锁段落不在当前正文里（正文被改过）：</p>
           <ul className="mt-1 space-y-0.5">
             {missing.map((text) => (
@@ -104,7 +104,7 @@ export default function ParagraphLocks({
             ))}
           </ul>
           <button
-            className="mt-1 text-amber-200 underline"
+            className="mt-1 text-warn underline"
             disabled={busy || disabled}
             onClick={() => void save(draft.filter((text) => !missing.includes(text)))}
           >

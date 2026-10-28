@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { api, type LogicChainResponse } from '../../api/client'
 import LogicChainGraph from './LogicChainGraph'
 
+// 三条类别色必须两两可分辨（原文用的是 sky / amber / emerald），且与图形视图
+// 的 `chartTokens` 三条序列色对应：cause = accent、turn = warn、reveal = ink-2。
 const COLORS: Record<string, string> = {
-  cause: 'text-sky-300',
-  turn: 'text-amber-300',
-  reveal: 'text-emerald-300',
+  cause: 'text-accent-ink',
+  turn: 'text-warn',
+  reveal: 'text-ink-2',
 }
 
 /** 逻辑链：把正文里**已有的**因果 / 转折 / 揭示摆出来。
@@ -93,11 +95,11 @@ export default function LogicChain({
   }, [sceneId, body])
 
   return (
-    <section className="space-y-2 rounded border border-slate-800 p-3 text-sm">
+    <section className="space-y-2 rounded-card border border-line bg-surface p-3 text-[13.5px]">
       <div className="flex items-center gap-2">
-        <h3 className="font-medium text-slate-300">逻辑链</h3>
+        <h3 className="font-medium text-ink-2">逻辑链</h3>
         {data && data.summary.total > 0 && (
-          <span className="text-xs text-slate-500">
+          <span className="text-[11.5px] text-muted">
             因果 {data.summary.cause} · 转折 {data.summary.turn} · 揭示{' '}
             {data.summary.reveal}
           </span>
@@ -123,8 +125,8 @@ export default function LogicChain({
                 // 全屏图只在图形模式有意义，切走时一并收起。
                 setExpanded(false)
               }}
-              className={`rounded px-2 py-0.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-slate-500 disabled:cursor-not-allowed disabled:opacity-40 ${
-                mode === value ? 'bg-slate-800 text-slate-200' : 'text-slate-400'
+              className={`rounded-control px-2 py-0.5 text-[11.5px] outline-none focus-visible:ring-1 focus-visible:ring-accent-soft disabled:cursor-not-allowed disabled:opacity-40 ${
+                mode === value ? 'bg-accent-soft text-accent-ink' : 'text-muted'
               }`}
             >
               {label}
@@ -138,27 +140,27 @@ export default function LogicChain({
               aria-expanded={expanded}
               disabled={!data || data.chain.length === 0}
               onClick={() => setExpanded(true)}
-              className="rounded px-2 py-0.5 text-xs text-slate-400 outline-none focus-visible:ring-1 focus-visible:ring-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-control px-2 py-0.5 text-[11.5px] text-muted outline-none focus-visible:ring-1 focus-visible:ring-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
             >
               展开
             </button>
           )}
         </div>
       </div>
-      <p className="text-xs text-slate-500">
+      <p className="text-[11.5px] text-muted">
         从正文里按连接词抽出，不做判断。问题清单在下面。
       </p>
 
-      {loading && <p className="text-xs text-slate-500">正在读取正文…</p>}
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {loading && <p className="text-[11.5px] text-muted">正在读取正文…</p>}
+      {error && <p className="text-[11.5px] text-danger">{error}</p>}
 
       {data && data.chain.length === 0 && (
-        <p className="text-xs text-slate-500">{data.reason || '没有可展示的句子。'}</p>
+        <p className="text-[11.5px] text-muted">{data.reason || '没有可展示的句子。'}</p>
       )}
 
       {data && data.chain.length > 0 && mode === 'graph' && (
         <div className="space-y-1">
-          <p className="text-xs text-slate-500">
+          <p className="text-[11.5px] text-muted">
             按出现顺序相连，不代表句子真的指向哪一句。
           </p>
           <LogicChainGraph chain={data.chain} paragraphs={data.paragraphs} />
@@ -168,13 +170,13 @@ export default function LogicChain({
       {data && data.chain.length > 0 && mode === 'text' && (
         <ul className="space-y-1">
           {data.chain.map((item, index) => (
-            <li key={`${item.paragraph}-${index}`} className="flex gap-2 text-xs">
-              <span className="w-8 shrink-0 text-slate-600">¶{item.paragraph}</span>
-              <span className={`w-8 shrink-0 ${COLORS[item.kind] ?? 'text-slate-400'}`}>
+            <li key={`${item.paragraph}-${index}`} className="flex gap-2 text-[11.5px]">
+              <span className="w-8 shrink-0 text-faint">¶{item.paragraph}</span>
+              <span className={`w-8 shrink-0 ${COLORS[item.kind] ?? 'text-muted'}`}>
                 {item.kind_label}
               </span>
-              <span className="flex-1 text-slate-300">{item.sentence}</span>
-              <span className="shrink-0 text-slate-600">{item.marker}</span>
+              <span className="flex-1 text-ink-2">{item.sentence}</span>
+              <span className="shrink-0 text-faint">{item.marker}</span>
             </li>
           ))}
         </ul>
@@ -187,16 +189,16 @@ export default function LogicChain({
           role="dialog"
           aria-modal="true"
           aria-label="逻辑链图形视图"
-          className="fixed inset-0 z-50 overflow-auto overscroll-contain bg-slate-950/90 p-4 md:p-8"
+          className="fixed inset-0 z-50 overflow-auto overscroll-contain bg-ink/30 p-4 md:p-8"
         >
-          <div className="mx-auto max-w-6xl rounded border border-slate-800 bg-slate-950 p-4">
+          <div className="mx-auto max-w-6xl rounded-card border border-line bg-surface p-4">
             <div className="mb-3 flex items-center gap-2">
-              <h3 className="font-medium text-slate-200">逻辑链 · 图形视图</h3>
+              <h3 className="font-medium text-ink">逻辑链 · 图形视图</h3>
               <button
                 type="button"
                 autoFocus
                 onClick={() => setExpanded(false)}
-                className="ml-auto rounded px-2 py-0.5 text-xs text-slate-400 outline-none hover:text-slate-200 focus-visible:ring-1 focus-visible:ring-slate-500"
+                className="ml-auto rounded-control px-2 py-0.5 text-[11.5px] text-muted outline-none hover:text-ink focus-visible:ring-1 focus-visible:ring-accent-soft"
               >
                 关闭
               </button>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { BatchJob } from '../../api/client'
+import { Button } from '../../ui/Button'
 
 interface Props {
   job: BatchJob | null
@@ -45,9 +46,9 @@ export default function BatchPanel({
   const active = job?.status === 'running'
 
   return (
-    <section className="space-y-3 text-sm">
-      <h3 className="font-medium text-slate-300">批量生成</h3>
-      <p className="text-xs text-slate-500">
+    <section className="space-y-3 text-[13.5px]">
+      <h3 className="font-medium text-ink-2">批量生成</h3>
+      <p className="text-[11.5px] text-muted">
         只生成 AI 草稿，不覆盖已采纳正文；已有正文或草稿的场景会跳过。
       </p>
 
@@ -56,7 +57,7 @@ export default function BatchPanel({
           value={scope}
           disabled={loading || busy || active}
           onChange={(event) => setScope(event.target.value as 'chapter' | 'volume')}
-          className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
+          className="rounded-control border border-line-strong bg-surface px-2 py-1 text-[11.5px] text-ink"
         >
           <option value="chapter" disabled={!chapterId}>
             当前章：{chapterLabel || '（未选）'}
@@ -65,32 +66,31 @@ export default function BatchPanel({
             当前卷：{volumeLabel || '（未选）'}
           </option>
         </select>
-        <button
-          type="button"
+        <Button
+          size="sm"
           disabled={loading || busy || active || !canStart || !scopeId}
           onClick={() => onStart(scope, scopeId)}
-          className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:text-white disabled:opacity-50"
         >
           {loading ? '创建中…' : '开始批量生成'}
-        </button>
+        </Button>
       </div>
 
       {job && (
-        <div className="space-y-2 rounded border border-slate-800 p-2 text-xs">
+        <div className="space-y-2 rounded-control border border-line p-2 text-[11.5px]">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-slate-300">
+            <span className="text-ink-2">
               {job.scope_type === 'chapter' ? '当前章' : '当前卷'} ·{' '}
               {STATUS_LABELS[job.status] ?? job.status}
             </span>
-            <span className="text-slate-500">
+            <span className="text-muted">
               {job.cursor} / {job.total}
             </span>
           </div>
 
           {job.failures.length > 0 && (
             <div className="space-y-1">
-              <p className="text-amber-300">失败 {job.failures.length} 场：</p>
-              <ul className="list-inside list-disc text-amber-200">
+              <p className="text-warn">失败 {job.failures.length} 场：</p>
+              <ul className="list-inside list-disc text-warn">
                 {job.failures.map((failure, index) => (
                   <li key={`${failure.scene_id}-${index}`}>{failure.message}</li>
                 ))}
@@ -100,44 +100,41 @@ export default function BatchPanel({
 
           <div className="flex flex-wrap gap-1">
             {active && (
-              <button
-                type="button"
+              <Button
+                size="sm"
                 disabled={busy}
                 onClick={onPause}
-                className="rounded border border-slate-700 px-2 py-0.5 text-slate-300 hover:text-white disabled:opacity-50"
               >
                 暂停
-              </button>
+              </Button>
             )}
             {(job.status === 'paused' || job.status === 'failed') && (
-              <button
-                type="button"
+              <Button
+                size="sm"
                 disabled={busy}
                 onClick={onResume}
-                className="rounded border border-slate-700 px-2 py-0.5 text-slate-300 hover:text-white disabled:opacity-50"
               >
                 继续
-              </button>
+              </Button>
             )}
             {job.failures.length > 0 && (
-              <button
-                type="button"
+              <Button
+                size="sm"
+                variant="warn"
                 disabled={busy}
                 onClick={onRetryFailed}
-                className="rounded border border-amber-800 px-2 py-0.5 text-amber-300 hover:text-amber-200 disabled:opacity-50"
               >
                 重试失败
-              </button>
+              </Button>
             )}
             {active && (
-              <button
-                type="button"
+              <Button
+                size="sm"
                 disabled={busy}
                 onClick={onCancel}
-                className="rounded border border-slate-700 px-2 py-0.5 text-slate-400 hover:text-white disabled:opacity-50"
               >
                 取消
-              </button>
+              </Button>
             )}
           </div>
         </div>

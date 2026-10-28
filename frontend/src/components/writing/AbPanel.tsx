@@ -6,6 +6,7 @@ import {
   type AbSession,
 } from '../../api/client'
 import { diffParagraphs } from '../../lib/abDiff'
+import { Button } from '../../ui/Button'
 
 type Side = 'A' | 'B'
 
@@ -319,10 +320,10 @@ export default function AbPanel({
       : null
 
   return (
-    <section className="space-y-2 rounded border border-slate-800 p-3 text-sm">
+    <section className="space-y-2 rounded-card border border-line bg-surface p-3 text-[13.5px]">
       <div className="flex items-center gap-2">
-        <h3 className="font-medium text-slate-300">A/B 并排</h3>
-        <span className="text-xs text-slate-500">
+        <h3 className="font-medium text-ink-2">A/B 并排</h3>
+        <span className="text-[11.5px] text-muted">
           {runningSide
             ? `正在生成 ${runningSide} 版…`
             : session?.group
@@ -330,30 +331,29 @@ export default function AbPanel({
               : '同一份上下文，两版选一'}
         </span>
       </div>
-      <p className="text-xs text-slate-500">
+      <p className="text-[11.5px] text-muted">
         两版用同一场景卡、同一智能体生成；采纳一版会替换正文（旧正文进修订历史），另一版一起丢弃。
       </p>
 
       {locked && (
-        <p className="text-xs text-amber-400">这一场已锁定：不能并排生成，也不能采纳。</p>
+        <p className="text-[11.5px] text-warn">这一场已锁定：不能并排生成，也不能采纳。</p>
       )}
-      {error && <p className="text-xs text-red-400">{error}</p>}
-      {notice && <p className="text-xs text-slate-400">{notice}</p>}
+      {error && <p className="text-[11.5px] text-danger">{error}</p>}
+      {notice && <p className="text-[11.5px] text-muted">{notice}</p>}
 
-      {loading && <p className="text-xs text-slate-500">正在读取这一场的 A/B…</p>}
+      {loading && <p className="text-[11.5px] text-muted">正在读取这一场的 A/B…</p>}
 
       {!loading && !session?.group && (
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="rounded bg-indigo-600 px-3 py-1 text-xs text-white hover:bg-indigo-500 disabled:opacity-50"
+          <Button
+            variant="primary"
             onClick={() => void generate()}
             disabled={locked || busy || runningSide !== null || disabled}
             title={locked ? '这一场已锁定' : undefined}
           >
             A/B 并排生成
-          </button>
-          {locked && <span className="text-xs text-amber-400">这一场已锁定</span>}
+          </Button>
+          {locked && <span className="text-[11.5px] text-warn">这一场已锁定</span>}
         </div>
       )}
 
@@ -368,37 +368,37 @@ export default function AbPanel({
               return (
                 <div
                   key={branch.id}
-                  className="flex min-w-0 flex-col gap-1 rounded border border-slate-800 bg-slate-950/50 p-2"
+                  className="flex min-w-0 flex-col gap-1 rounded-control border border-line bg-sunken p-2"
                 >
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                    <span className="font-medium text-slate-200" title={branch.label}>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px]">
+                    <span className="font-medium text-ink" title={branch.label}>
                       {side} 版
                     </span>
                     {runningSide === side ? (
-                      <span className="text-slate-500">生成中…</span>
+                      <span className="text-muted">生成中…</span>
                     ) : (
                       <>
-                        <span className="text-slate-500">{branch.chars} 字</span>
+                        <span className="text-muted">{branch.chars} 字</span>
                         {branch.has_draft ? (
-                          <span className="text-emerald-400">有草稿</span>
+                          <span className="text-accent-ink">有草稿</span>
                         ) : (
-                          <span className="text-slate-500">还没有草稿</span>
+                          <span className="text-muted">还没有草稿</span>
                         )}
                       </>
                     )}
-                    {diff && <span className="text-slate-500">差异 {diff.changed} 段</span>}
+                    {diff && <span className="text-muted">差异 {diff.changed} 段</span>}
                   </div>
-                  <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-slate-300">
+                  <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words text-[11.5px] leading-6 text-ink-2">
                     {view.text ||
                       (branch.has_draft
                         ? '草稿已生成。'
                         : '生成后这里显示这一版的正文。')}
                   </pre>
-                  {view.error && <p className="text-xs text-red-400">{view.error}</p>}
+                  {view.error && <p className="text-[11.5px] text-danger">{view.error}</p>}
                   <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      className="rounded bg-emerald-700 px-2 py-1 text-xs text-white hover:bg-emerald-600 disabled:opacity-50"
+                    <Button
+                      size="sm"
+                      variant="primary"
                       onClick={() => void adopt(side)}
                       disabled={buttonsDisabled || locked || !branch.has_draft}
                       title={
@@ -410,38 +410,37 @@ export default function AbPanel({
                       }
                     >
                       用这一版
-                    </button>
+                    </Button>
                     {(!branch.has_draft || view.error !== '') && (
-                      <button
-                        type="button"
-                        className="rounded border border-indigo-800 px-2 py-1 text-xs text-indigo-300 hover:text-white disabled:opacity-50"
+                      <Button
+                        size="sm"
+                        variant="accent"
                         onClick={() => void retry(side)}
                         disabled={buttonsDisabled || locked}
                       >
                         重试这一版
-                      </button>
+                      </Button>
                     )}
-                    <button
-                      type="button"
-                      className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:text-white disabled:opacity-50"
+                    <Button
+                      size="sm"
                       onClick={() => void discardOne(side)}
                       disabled={buttonsDisabled}
                     >
                       丢弃这一版
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )
             })}
           </div>
-          <button
-            type="button"
-            className="rounded border border-amber-800 px-2 py-1 text-xs text-amber-300 hover:text-amber-200 disabled:opacity-50"
+          <Button
+            size="sm"
+            variant="warn"
             onClick={() => void discardAll()}
             disabled={buttonsDisabled}
           >
             两版都不要
-          </button>
+          </Button>
         </div>
       )}
     </section>
