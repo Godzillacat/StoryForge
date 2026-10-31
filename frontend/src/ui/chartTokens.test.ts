@@ -31,3 +31,11 @@ it('网格与卷带都比绘图区底深，否则在浅色底上看不见', () =
   expect(luminance(CHART.grid)).toBeLessThan(luminance(CHART.plot))
   expect(luminance(CHART.band)).toBeLessThan(luminance(CHART.plot))
 })
+
+it('逻辑链的三条序列色在纸底上达到 AA', () => {
+  const paper = luminance(PALETTE.paper)
+  for (const hex of [CHART.cause, CHART.turn, CHART.reveal]) {
+    const ratio = (Math.max(luminance(hex), paper) + 0.05) / (Math.min(luminance(hex), paper) + 0.05)
+    expect(ratio, `${hex} 对纸底的对比度不足`).toBeGreaterThanOrEqual(4.5)
+  }
+})

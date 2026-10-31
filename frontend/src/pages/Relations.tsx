@@ -200,7 +200,7 @@ export default function Relations() {
             <Td className="text-faint">→</Td>
             <Td className="whitespace-nowrap">{to.name}</Td>
             <Td>
-              <div className="w-36">
+              <div className="w-32">
                 <Input
                   defaultValue={relation.kind}
                   aria-label="关系类型"
@@ -211,7 +211,7 @@ export default function Relations() {
               </div>
             </Td>
             <Td>
-              <div className="w-24">
+              <div className="w-20">
                 <Select
                   aria-label="关系强度"
                   value={relation.strength ?? ''}
@@ -225,7 +225,7 @@ export default function Relations() {
                 />
               </div>
             </Td>
-            <Td>
+            <Td className="min-w-[140px]">
               <Input
                 defaultValue={relation.note}
                 aria-label="关系备注"
@@ -278,30 +278,107 @@ export default function Relations() {
 
       {notice && <p className="text-[13px] text-muted">{notice}</p>}
 
-      <div className="grid items-start gap-5 xl:grid-cols-[280px_minmax(0,1fr)_360px]">
-        <Card title="筛选">
-          <div className="space-y-3">
-            <label className="flex items-center gap-2 text-[13px] text-ink-2">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-accent"
-                checked={onlyCharacters}
-                onChange={(e) => setOnlyCharacters(e.target.checked)}
-              />
-              只看人物之间
-            </label>
-            <Field label="按关系类型筛">
-              <Input
-                placeholder="如「师父」"
-                value={kindFilter}
-                onChange={(e) => setKindFilter(e.target.value)}
-              />
-            </Field>
-            <p className="text-[11.5px] text-muted">
-              类型筛选只决定行显不显示，不参与分对 —— 否则某一方向会被误判成「未记录」。
-            </p>
-          </div>
-        </Card>
+      <div className="grid items-start gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="space-y-4 xl:sticky xl:top-4">
+          <Card title="筛选">
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-[13px] text-ink-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-accent"
+                  checked={onlyCharacters}
+                  onChange={(e) => setOnlyCharacters(e.target.checked)}
+                />
+                只看人物之间
+              </label>
+              <Field label="按关系类型筛">
+                <Input
+                  placeholder="如「师父」"
+                  value={kindFilter}
+                  onChange={(e) => setKindFilter(e.target.value)}
+                />
+              </Field>
+              <p className="text-[11.5px] text-muted">
+                类型筛选只决定行显不显示，不参与分对 —— 否则某一方向会被误判成「未记录」。
+              </p>
+            </div>
+          </Card>
+
+          <Card title="建立关系">
+            <div className="space-y-3">
+              <Field label="起点条目">
+                <Select
+                  aria-label="起点条目"
+                  value={draft.from_id}
+                  onChange={(e) => setDraft({ ...draft, from_id: e.target.value })}
+                  options={[
+                    { value: '', label: '起点条目' },
+                    ...selectable.map((entry) => ({ value: entry.id, label: entry.name })),
+                  ]}
+                />
+              </Field>
+              <Field label="终点条目">
+                <Select
+                  aria-label="终点条目"
+                  value={draft.to_id}
+                  onChange={(e) => setDraft({ ...draft, to_id: e.target.value })}
+                  options={[
+                    { value: '', label: '终点条目' },
+                    ...selectable
+                      .filter((entry) => entry.id !== draft.from_id)
+                      .map((entry) => ({ value: entry.id, label: entry.name })),
+                  ]}
+                />
+              </Field>
+              <div className="grid grid-cols-[minmax(0,1fr)_88px] gap-2">
+                <Field label="关系类型">
+                  <Input
+                    placeholder="如「师父」"
+                    value={draft.kind}
+                    onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
+                  />
+                </Field>
+                <Field label="强度">
+                  <Select
+                    aria-label="强度"
+                    value={draft.strength}
+                    onChange={(e) => setDraft({ ...draft, strength: e.target.value })}
+                    options={[
+                      { value: '', label: '未评' },
+                      ...STRENGTHS.map((value) => ({ value: String(value), label: String(value) })),
+                    ]}
+                  />
+                </Field>
+              </div>
+              <Field label="备注">
+                <Input
+                  placeholder="备注"
+                  value={draft.note}
+                  onChange={(e) => setDraft({ ...draft, note: e.target.value })}
+                />
+              </Field>
+              <label className="flex items-center gap-2 text-[13px] text-ink-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-accent"
+                  checked={draft.reverse}
+                  onChange={(e) => setDraft({ ...draft, reverse: e.target.checked })}
+                />
+                同时建立反向关系
+              </label>
+              <Button variant="primary" onClick={add}>
+                建立
+              </Button>
+              <p className="text-[11.5px] text-muted">
+                反向那条初始与正向相同；按语义改成对应称谓（如「师父」的反向可能是「徒弟」），两侧可是不同强弱。
+              </p>
+              <div className="flex flex-wrap gap-1.5 border-t border-line pt-3">
+                <Badge>{selectable.length} 个可选条目</Badge>
+                {onlyCharacters && <Badge tone="accent">仅人物</Badge>}
+              </div>
+            </div>
+          </Card>
+        </div>
 
         <div className="space-y-3">
           {visiblePairs.map(({ pair, forward, backward }) => (
@@ -340,83 +417,6 @@ export default function Relations() {
             />
           )}
         </div>
-
-        <Card title="建立关系">
-          <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="起点条目">
-                <Select
-                  aria-label="起点条目"
-                  value={draft.from_id}
-                  onChange={(e) => setDraft({ ...draft, from_id: e.target.value })}
-                  options={[
-                    { value: '', label: '起点条目' },
-                    ...selectable.map((entry) => ({ value: entry.id, label: entry.name })),
-                  ]}
-                />
-              </Field>
-              <Field label="终点条目">
-                <Select
-                  aria-label="终点条目"
-                  value={draft.to_id}
-                  onChange={(e) => setDraft({ ...draft, to_id: e.target.value })}
-                  options={[
-                    { value: '', label: '终点条目' },
-                    ...selectable
-                      .filter((entry) => entry.id !== draft.from_id)
-                      .map((entry) => ({ value: entry.id, label: entry.name })),
-                  ]}
-                />
-              </Field>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_96px]">
-              <Field label="关系类型">
-                <Input
-                  placeholder="如「师父」"
-                  value={draft.kind}
-                  onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
-                />
-              </Field>
-              <Field label="强度">
-                <Select
-                  aria-label="强度"
-                  value={draft.strength}
-                  onChange={(e) => setDraft({ ...draft, strength: e.target.value })}
-                  options={[
-                    { value: '', label: '未评' },
-                    ...STRENGTHS.map((value) => ({ value: String(value), label: String(value) })),
-                  ]}
-                />
-              </Field>
-            </div>
-            <Field label="备注">
-              <Input
-                placeholder="备注"
-                value={draft.note}
-                onChange={(e) => setDraft({ ...draft, note: e.target.value })}
-              />
-            </Field>
-            <label className="flex items-center gap-2 text-[13px] text-ink-2">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-accent"
-                checked={draft.reverse}
-                onChange={(e) => setDraft({ ...draft, reverse: e.target.checked })}
-              />
-              同时建立反向关系
-            </label>
-            <Button variant="primary" onClick={add}>
-              建立
-            </Button>
-            <p className="text-[11.5px] text-muted">
-              反向那条初始与正向相同；按语义改成对应称谓（如「师父」的反向可能是「徒弟」），两侧可是不同强弱。
-            </p>
-            <div className="flex flex-wrap gap-1.5 border-t border-line pt-3">
-              <Badge>{selectable.length} 个可选条目</Badge>
-              {onlyCharacters && <Badge tone="accent">仅人物</Badge>}
-            </div>
-          </div>
-        </Card>
       </div>
     </div>
   )

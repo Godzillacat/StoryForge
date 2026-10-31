@@ -5,6 +5,7 @@ import { useSpeech } from '../components/reading/useSpeech'
 import { parseMarkdown } from '../lib/markdown'
 import { useCurrentProject } from '../state/ProjectContext'
 import { EmptyState } from '../ui/EmptyState'
+import { Skeleton } from '../ui/Skeleton'
 import {
   blockAtScroll,
   blockIndexOfChunk,
@@ -462,7 +463,12 @@ export default function Reader() {
         </header>
 
         {notice && <p className={`px-4 py-2 text-sm ${theme.error}`}>{notice}</p>}
-        {loading && <p className="px-4 py-2 text-sm opacity-60">正在读取…</p>}
+        {loading && (
+          <div className="px-6 py-4">
+            <span className="sr-only">正在读取…</span>
+            <Skeleton lines={6} />
+          </div>
+        )}
 
         {query.trim() && (
           <div className="max-h-40 overflow-auto border-b border-current/10 px-4 py-2 text-sm">

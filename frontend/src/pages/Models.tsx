@@ -223,7 +223,7 @@ export default function Models() {
                 value={form.api_key}
                 onChange={(e) => setForm({ ...form, api_key: e.target.value })}
               />
-              <Button variant="primary" onClick={addProvider}>
+              <Button variant="primary" className="justify-self-start" onClick={addProvider}>
                 添加
               </Button>
             </div>
@@ -409,7 +409,7 @@ export default function Models() {
                 value={priceForm.output_price}
                 onChange={(e) => setPriceForm({ ...priceForm, output_price: e.target.value })}
               />
-              <Button variant="primary" onClick={savePrice}>
+              <Button variant="primary" className="justify-self-start" onClick={savePrice}>
                 保存单价
               </Button>
             </div>
