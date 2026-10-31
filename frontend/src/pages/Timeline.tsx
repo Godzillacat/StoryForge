@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, type SettingEntry, type TimelineEvent } from '../api/client'
 import { useCurrentProject } from '../state/ProjectContext'
+import { Badge } from '../ui/Badge'
+import { Button, IconButton } from '../ui/Button'
+import { Card } from '../ui/Card'
+import { EmptyState } from '../ui/EmptyState'
+import { Field, Input, Select, Textarea } from '../ui/Field'
+import { Icon } from '../ui/icons'
 
 interface Draft {
   title: string
@@ -147,142 +153,160 @@ export default function Timeline() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-xl font-semibold">时间线</h2>
-        <button className="rounded border border-slate-700 px-3 py-2 text-sm" onClick={startCreate}>
+        <h2 className="font-serif text-[22px] font-semibold text-ink">时间线</h2>
+        <Button variant="primary" onClick={startCreate}>
           新建事件
-        </button>
+        </Button>
+        <span className="text-[12px] text-muted">按故事内时序排列，顺序由上下移动决定。</span>
       </div>
 
-      {notice && <p className="text-sm text-slate-400">{notice}</p>}
+      {notice && <p className="text-[13px] text-muted">{notice}</p>}
 
-      <section className="space-y-3 rounded border border-slate-800 p-4 text-sm">
-        <h3 className="text-sm font-medium text-slate-300">
-          {editingId ? '编辑事件' : '新建事件'}
-        </h3>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            className="w-52 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            placeholder="标题"
-            value={draft.title}
-            onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-          />
-          <input
-            className="w-44 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            placeholder="故事内时间，如「第三年·春」"
-            value={draft.story_time}
-            onChange={(e) => setDraft({ ...draft, story_time: e.target.value })}
-          />
-          <select
-            className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            value={draft.location_id}
-            onChange={(e) => setDraft({ ...draft, location_id: e.target.value })}
-          >
-            <option value="">（无地点）</option>
-            {entries.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <textarea
-          className="h-20 w-full rounded border border-slate-700 bg-slate-900 p-3 text-sm"
-          placeholder="事件描述"
-          value={draft.description}
-          onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-        />
-        <div className="space-y-2">
-          <div className="text-slate-400">参与者（只列人物）</div>
-          <div className="flex flex-wrap gap-2">
-            {characters.map((character) => {
-              const on = draft.participants.includes(character.id)
-              return (
-                <button
-                  key={character.id}
-                  onClick={() => toggleParticipant(character.id)}
-                  className={`rounded border px-3 py-1 text-xs ${
-                    on ? 'border-indigo-500 bg-slate-800' : 'border-slate-700'
-                  }`}
-                >
-                  {character.name}
-                </button>
-              )
-            })}
-            {characters.length === 0 && (
-              <span className="text-xs text-slate-500">还没有人物，先去世界观里建一个。</span>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button className="rounded bg-indigo-600 px-4 py-2 text-sm" onClick={save}>
-            {editingId ? '保存' : '新建'}
-          </button>
-          {editingId && (
-            <button
-              className="rounded border border-slate-700 px-4 py-2 text-sm"
-              onClick={startCreate}
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="relative space-y-3 pl-5">
+          <span className="absolute bottom-2 left-[5px] top-2 w-px bg-line" aria-hidden="true" />
+          {events.map((event, index) => (
+            <article
+              key={event.id}
+              className="relative rounded-card border border-line bg-surface p-3.5"
             >
-              取消编辑
-            </button>
+              <span
+                className="absolute -left-[18px] top-5 h-2 w-2 rounded-full border border-line-strong bg-surface"
+                aria-hidden="true"
+              />
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="text-[11px] tabular-nums text-faint">#{index + 1}</span>
+                {event.story_time && <Badge tone="accent">{event.story_time}</Badge>}
+                <span className="text-[14px] font-semibold text-ink">{event.title}</span>
+                {event.location_id && (
+                  <span className="text-[12px] text-muted">@ {nameOf(event.location_id)}</span>
+                )}
+                <div className="ml-auto flex items-center gap-1">
+                  <IconButton
+                    label="上移"
+                    disabled={index === 0}
+                    onClick={() => move(event, 'up')}
+                    className="disabled:opacity-30"
+                  >
+                    <Icon name="chevron" className="-rotate-90" />
+                  </IconButton>
+                  <IconButton
+                    label="下移"
+                    disabled={index === events.length - 1}
+                    onClick={() => move(event, 'down')}
+                    className="disabled:opacity-30"
+                  >
+                    <Icon name="chevron" className="rotate-90" />
+                  </IconButton>
+                  <Button size="sm" variant="ghost" onClick={() => startEdit(event)}>
+                    编辑
+                  </Button>
+                  <Button size="sm" variant="warn" onClick={() => remove(event)}>
+                    删除
+                  </Button>
+                </div>
+              </div>
+              {event.participants.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11.5px] text-muted">参与者</span>
+                  {event.participants.map((id) => (
+                    <Badge key={id}>{nameOf(id)}</Badge>
+                  ))}
+                </div>
+              )}
+              {event.description && (
+                <p className="mt-2 whitespace-pre-wrap text-[13px] leading-[1.7] text-ink-2">
+                  {event.description}
+                </p>
+              )}
+            </article>
+          ))}
+          {events.length === 0 && (
+            <EmptyState
+              title="还没有事件"
+              hint="时间线是故事内时序，不是写作顺序；顺序由这里的上下移动决定。"
+            />
           )}
-        </div>
-        <p className="text-xs text-slate-500">
-          时间线是故事内时序，不是写作顺序；顺序由列表里的上移 / 下移决定。
-        </p>
-      </section>
+        </section>
 
-      <div className="space-y-2">
-        {events.map((event, index) => (
-          <article key={event.id} className="rounded border border-slate-800 p-4 text-sm">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-xs text-slate-500">#{index + 1}</span>
-              {event.story_time && (
-                <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
-                  {event.story_time}
-                </span>
-              )}
-              <span className="font-medium">{event.title}</span>
-              {event.location_id && (
-                <span className="text-xs text-slate-500">@ {nameOf(event.location_id)}</span>
-              )}
-              <button
-                className="text-xs text-indigo-400 disabled:opacity-30"
-                disabled={index === 0}
-                onClick={() => move(event, 'up')}
-              >
-                上移
-              </button>
-              <button
-                className="text-xs text-indigo-400 disabled:opacity-30"
-                disabled={index === events.length - 1}
-                onClick={() => move(event, 'down')}
-              >
-                下移
-              </button>
-              <button className="text-xs text-indigo-400" onClick={() => startEdit(event)}>
-                编辑
-              </button>
-              <button className="text-xs text-amber-400" onClick={() => remove(event)}>
-                删除
-              </button>
+        <Card title={editingId ? '编辑事件' : '新建事件'}>
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="标题">
+                <Input
+                  placeholder="标题"
+                  value={draft.title}
+                  onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                />
+              </Field>
+              <Field label="故事内时间">
+                <Input
+                  placeholder="如「第三年·春」"
+                  value={draft.story_time}
+                  onChange={(e) => setDraft({ ...draft, story_time: e.target.value })}
+                />
+              </Field>
             </div>
-            {event.participants.length > 0 && (
-              <p className="mt-1 text-xs text-slate-500">
-                参与者：{event.participants.map(nameOf).join('、')}
-              </p>
-            )}
-            {event.description && (
-              <p className="mt-1 whitespace-pre-wrap text-slate-300">{event.description}</p>
-            )}
-          </article>
-        ))}
-        {events.length === 0 && (
-          <p className="text-sm text-slate-500">
-            还没有事件。时间线是故事内时序，不是写作顺序；顺序由这里的上下移动决定。
-          </p>
-        )}
+            <Field label="地点">
+              <Select
+                aria-label="地点"
+                value={draft.location_id}
+                onChange={(e) => setDraft({ ...draft, location_id: e.target.value })}
+                options={[
+                  { value: '', label: '（无地点）' },
+                  ...entries.map((entry) => ({ value: entry.id, label: entry.name })),
+                ]}
+              />
+            </Field>
+            <Field label="事件描述">
+              <Textarea
+                placeholder="事件描述"
+                value={draft.description}
+                onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+              />
+            </Field>
+            <div className="space-y-2">
+              <div className="text-[11.5px] text-muted">参与者（只列人物）</div>
+              <div className="flex flex-wrap gap-1.5">
+                {characters.map((character) => {
+                  const on = draft.participants.includes(character.id)
+                  return (
+                    <button
+                      key={character.id}
+                      type="button"
+                      onClick={() => toggleParticipant(character.id)}
+                      className={`h-7 rounded-tag border px-2.5 text-[12px] transition-colors duration-[120ms] ${
+                        on
+                          ? 'border-accent bg-accent-soft text-accent-ink'
+                          : 'border-line bg-surface text-ink-2 hover:bg-sunken'
+                      }`}
+                    >
+                      {character.name}
+                    </button>
+                  )
+                })}
+                {characters.length === 0 && (
+                  <span className="text-[11.5px] text-muted">还没有人物，先去世界观里建一个。</span>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="primary" onClick={save}>
+                {editingId ? '保存' : '新建'}
+              </Button>
+              {editingId && (
+                <Button variant="secondary" onClick={startCreate}>
+                  取消编辑
+                </Button>
+              )}
+            </div>
+            <p className="text-[11.5px] text-muted">
+              时间线是故事内时序，不是写作顺序；顺序由列表里的上移 / 下移决定。
+            </p>
+          </div>
+        </Card>
       </div>
     </div>
   )

@@ -7,6 +7,12 @@ import {
   type PipelineRun,
 } from '../api/client'
 import { useCurrentProject } from '../state/ProjectContext'
+import { Badge } from '../ui/Badge'
+import { Button, IconButton } from '../ui/Button'
+import { Card } from '../ui/Card'
+import { EmptyState } from '../ui/EmptyState'
+import { Select } from '../ui/Field'
+import { Icon } from '../ui/icons'
 
 const STATUS_LABELS: Record<string, string> = {
   pending: '待执行',
@@ -29,14 +35,20 @@ const RUN_LABELS: Record<string, string> = {
 }
 
 const RUN_COLORS: Record<string, string> = {
-  ok: 'text-emerald-400',
-  running: 'text-indigo-400',
-  awaiting: 'text-amber-400',
-  blocked: 'text-amber-400',
-  failed: 'text-red-400',
-  skipped: 'text-slate-500',
-  cancelled: 'text-slate-500',
-  pending: 'text-slate-500',
+  ok: 'text-accent-ink',
+  running: 'text-accent-ink',
+  awaiting: 'text-warn',
+  blocked: 'text-warn',
+  failed: 'text-danger',
+  skipped: 'text-muted',
+  cancelled: 'text-muted',
+  pending: 'text-muted',
+}
+
+function statusTone(status: string): 'plain' | 'accent' | 'warn' {
+  if (status === 'ok' || status === 'running') return 'accent'
+  if (status === 'awaiting' || status === 'blocked' || status === 'failed') return 'warn'
+  return 'plain'
 }
 
 export default function Pipeline() {
@@ -211,196 +223,233 @@ export default function Pipeline() {
     }
   }
 
+  const runNodeBySeq = new Map((run?.nodes ?? []).map((node) => [node.seq, node]))
+
   return (
-    <div className="space-y-6">
-      <h2 className="text-xl font-semibold">管线编排</h2>
-
-      {notice && <p className="rounded bg-slate-900 p-3 text-sm text-slate-300">{notice}</p>}
-
-      <div className="flex flex-wrap items-center gap-3 text-sm">
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="font-serif text-[22px] font-semibold text-ink">管线编排</h2>
         {pipeline && (
-          <>
-            <label className="text-slate-400">检查点策略</label>
-            <select
-              className="rounded border border-slate-700 bg-slate-900 px-3 py-2"
-              value={pipeline.policy}
-              onChange={(e) => changePolicy(e.target.value)}
-            >
-              {pipeline.policies.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <button
-              className="rounded bg-indigo-600 px-4 py-2 disabled:opacity-50"
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[12.5px] text-muted">检查点策略</span>
+            <div className="w-44">
+              <Select
+                aria-label="检查点策略"
+                value={pipeline.policy}
+                onChange={(e) => changePolicy(e.target.value)}
+                options={pipeline.policies.map((item) => ({
+                  value: item.value,
+                  label: item.label,
+                }))}
+              />
+            </div>
+            <Button
+              variant="primary"
               onClick={start}
               disabled={run !== null && ['running', 'awaiting', 'paused'].includes(run.status)}
             >
               开始运行
-            </button>
-            <button className="rounded border border-slate-700 px-4 py-2" onClick={reset}>
-              恢复默认管线
-            </button>
-          </>
+            </Button>
+            <Button onClick={reset}>恢复默认管线</Button>
+          </div>
         )}
       </div>
 
-      {pipeline && (
-        <section className="space-y-2 rounded border border-slate-800 p-4">
-          <h3 className="text-sm font-medium text-slate-300">节点</h3>
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs text-slate-500">
-              <tr>
-                <th className="py-1">#</th>
-                <th className="py-1">名称</th>
-                <th className="py-1">任务</th>
-                <th className="py-1">智能体</th>
-                <th className="py-1">检查点</th>
-                <th className="py-1">启用</th>
-                <th className="py-1" />
-              </tr>
-            </thead>
-            <tbody>
-              {pipeline.nodes.map((node, index) => (
-                <tr key={`${node.id}-${index}`} className="border-t border-slate-800">
-                  <td className="py-1 text-slate-500">{index + 1}</td>
-                  <td className="py-1">{node.name}</td>
-                  <td className="py-1 font-mono text-xs text-slate-500">{node.task_type}</td>
-                  <td className="py-1">
-                    <select
-                      className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
-                      value={node.agent_id ?? ''}
-                      onChange={(e) => bindAgent(index, e.target.value)}
-                    >
-                      <option value="">按任务类型自动</option>
-                      {agents
-                        .filter((a) => a.task_type === node.task_type)
-                        .map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.name}
-                          </option>
-                        ))}
-                    </select>
-                  </td>
-                  <td className="py-1">
-                    <input
-                      type="checkbox"
-                      checked={node.checkpoint}
-                      onChange={() => toggle(index, 'checkpoint')}
-                    />
-                  </td>
-                  <td className="py-1">
-                    <input
-                      type="checkbox"
-                      checked={node.enabled}
-                      onChange={() => toggle(index, 'enabled')}
-                    />
-                  </td>
-                  <td className="space-x-2 py-1 text-right text-xs">
-                    <button className="text-indigo-400" onClick={() => move(index, -1)}>
-                      上移
-                    </button>
-                    <button className="text-indigo-400" onClick={() => move(index, 1)}>
-                      下移
-                    </button>
-                    <button className="text-amber-400" onClick={() => remove(index)}>
-                      删除
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="flex items-center gap-2 pt-2 text-sm">
-            <select
-              className="rounded border border-slate-700 bg-slate-900 px-3 py-2"
-              value={newType}
-              onChange={(e) => setNewType(e.target.value)}
-            >
-              <option value="">（选任务类型）</option>
-              {pipeline.node_types.map((item) => (
-                <option key={item.task_type} value={item.task_type}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <button
-              className="rounded border border-slate-700 px-4 py-2 disabled:opacity-50"
-              onClick={append}
-              disabled={!newType}
-            >
-              追加节点
-            </button>
-          </div>
-        </section>
-      )}
+      {notice && <p className="text-[13px] text-muted">{notice}</p>}
 
-      {run && (
-        <section className="space-y-3 rounded border border-slate-800 p-4 text-sm">
-          <div className="flex flex-wrap items-center gap-3">
-            <h3 className="font-medium text-slate-300">最近一次运行</h3>
-            <span className={RUN_COLORS[run.status] ?? 'text-slate-400'}>
-              {RUN_LABELS[run.status] ?? run.status}
-            </span>
-            <span className="text-xs text-slate-500">
-              {new Date(run.created_at).toLocaleString()}
-            </span>
-            <div className="ml-auto space-x-2">
-              {run.status === 'running' && (
-                <button className="rounded border border-slate-700 px-3 py-1" onClick={() => control('pause')}>
-                  暂停
-                </button>
-              )}
-              {(run.status === 'paused' || run.status === 'awaiting') && (
-                <button className="rounded bg-indigo-600 px-3 py-1" onClick={() => control('resume')}>
-                  继续
-                </button>
-              )}
-              {!['completed', 'cancelled'].includes(run.status) && (
-                <button className="rounded border border-amber-700 px-3 py-1 text-amber-300" onClick={() => control('cancel')}>
-                  取消
-                </button>
-              )}
-            </div>
-          </div>
-
-          {run.message && (
-            <p className="rounded bg-amber-950/40 p-2 text-xs text-amber-300">{run.message}</p>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="space-y-3">
+          {pipeline && (
+            <ol className="relative space-y-3">
+              <span className="absolute bottom-4 left-[11px] top-4 w-px bg-line" aria-hidden="true" />
+              {pipeline.nodes.map((node, index) => {
+                const runNode = runNodeBySeq.get(node.seq)
+                return (
+                  <li key={`${node.id}-${index}`} className="relative pl-7">
+                    <span className="absolute left-0 top-3 flex h-6 w-6 items-center justify-center rounded-full border border-line-strong bg-surface text-[11px] tabular-nums text-muted">
+                      {index + 1}
+                    </span>
+                    <article className="rounded-card border border-line bg-surface p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[14px] font-semibold text-ink">{node.name}</span>
+                        <Badge>{node.task_type}</Badge>
+                        {runNode && (
+                          <Badge tone={statusTone(runNode.status)}>
+                            {STATUS_LABELS[runNode.status] ?? runNode.status}
+                          </Badge>
+                        )}
+                        <div className="ml-auto flex items-center gap-1">
+                          <IconButton
+                            label="上移"
+                            disabled={index === 0}
+                            onClick={() => move(index, -1)}
+                            className="disabled:opacity-30"
+                          >
+                            <Icon name="chevron" className="-rotate-90" />
+                          </IconButton>
+                          <IconButton
+                            label="下移"
+                            disabled={index === pipeline.nodes.length - 1}
+                            onClick={() => move(index, 1)}
+                            className="disabled:opacity-30"
+                          >
+                            <Icon name="chevron" className="rotate-90" />
+                          </IconButton>
+                          <Button size="sm" variant="warn" onClick={() => remove(index)}>
+                            删除
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="mt-2.5 flex flex-wrap items-center gap-3">
+                        <div className="w-52">
+                          <Select
+                            aria-label={`${node.name} 的智能体`}
+                            value={node.agent_id ?? ''}
+                            onChange={(e) => bindAgent(index, e.target.value)}
+                            options={[
+                              { value: '', label: '按任务类型自动' },
+                              ...agents
+                                .filter((a) => a.task_type === node.task_type)
+                                .map((a) => ({ value: a.id, label: a.name })),
+                            ]}
+                          />
+                        </div>
+                        <label className="flex items-center gap-1.5 text-[12.5px] text-ink-2">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-accent"
+                            checked={node.checkpoint}
+                            onChange={() => toggle(index, 'checkpoint')}
+                          />
+                          检查点
+                        </label>
+                        <label className="flex items-center gap-1.5 text-[12.5px] text-ink-2">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-accent"
+                            checked={node.enabled}
+                            onChange={() => toggle(index, 'enabled')}
+                          />
+                          启用
+                        </label>
+                      </div>
+                    </article>
+                  </li>
+                )
+              })}
+            </ol>
           )}
 
-          <ul className="space-y-1">
-            {run.nodes.map((node) => (
-              <li key={node.id} className="flex flex-wrap items-center gap-3 border-t border-slate-800 py-1">
-                <span className="w-6 text-slate-500">{node.seq + 1}</span>
-                <span className="w-32">{node.name}</span>
-                <span className={`w-20 text-xs ${RUN_COLORS[node.status] ?? ''}`}>
-                  {STATUS_LABELS[node.status] ?? node.status}
-                </span>
-                <span className="flex-1 text-xs text-slate-500">{node.message}</span>
-                {typeof node.summary?.review_path === 'string' && (
-                  <a className="text-xs text-indigo-400" href={node.summary.review_path as string}>
-                    去审阅
-                  </a>
-                )}
-                {node.generation_run_id && (
-                  <a
-                    className="text-xs text-slate-500"
-                    href={`/studio`}
-                    title={node.generation_run_id}
-                  >
-                    运行记录
-                  </a>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+          {pipeline && (
+            <div className="flex flex-wrap items-center gap-2 pl-7">
+              <div className="w-52">
+                <Select
+                  aria-label="要追加的任务类型"
+                  value={newType}
+                  onChange={(e) => setNewType(e.target.value)}
+                  options={[
+                    { value: '', label: '（选任务类型）' },
+                    ...pipeline.node_types.map((item) => ({
+                      value: item.task_type,
+                      label: item.label,
+                    })),
+                  ]}
+                />
+              </div>
+              <Button onClick={append} disabled={!newType}>
+                追加节点
+              </Button>
+            </div>
+          )}
 
-      <p className="text-xs text-slate-500">
-        管线只产出结构材料：每个节点跑完后，去对应页面审阅并采纳。正文写作在写作台与批量生成里。
-      </p>
+          <p className="pl-7 text-[11.5px] text-muted">
+            管线只产出结构材料：每个节点跑完后，去对应页面审阅并采纳。正文写作在写作台与批量生成里。
+          </p>
+        </div>
+
+        <Card
+          title="最近一次运行"
+          actions={
+            run ? (
+              <Badge tone={statusTone(run.status)}>{RUN_LABELS[run.status] ?? run.status}</Badge>
+            ) : undefined
+          }
+          className="xl:sticky xl:top-4"
+        >
+          {!run ? (
+            <EmptyState title="还没有运行" hint="配置好节点后点「开始运行」。" />
+          ) : (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11.5px] text-muted">
+                  {new Date(run.created_at).toLocaleString()}
+                </span>
+                <div className="ml-auto flex items-center gap-1.5">
+                  {run.status === 'running' && (
+                    <Button size="sm" onClick={() => control('pause')}>
+                      暂停
+                    </Button>
+                  )}
+                  {(run.status === 'paused' || run.status === 'awaiting') && (
+                    <Button size="sm" variant="primary" onClick={() => control('resume')}>
+                      继续
+                    </Button>
+                  )}
+                  {!['completed', 'cancelled'].includes(run.status) && (
+                    <Button size="sm" variant="warn" onClick={() => control('cancel')}>
+                      取消
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {run.message && (
+                <p className="rounded-control bg-warn-soft p-2 text-[12px] text-warn">
+                  {run.message}
+                </p>
+              )}
+
+              <ul className="space-y-2">
+                {run.nodes.map((node) => (
+                  <li key={node.id} className="border-t border-line pt-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] tabular-nums text-faint">{node.seq + 1}</span>
+                      <span className="text-[13px] font-medium text-ink-2">{node.name}</span>
+                      <span
+                        className={`ml-auto text-[11.5px] ${RUN_COLORS[node.status] ?? 'text-muted'}`}
+                      >
+                        {STATUS_LABELS[node.status] ?? node.status}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      {node.message && (
+                        <span className="text-[11.5px] text-muted">{node.message}</span>
+                      )}
+                      {typeof node.summary?.review_path === 'string' && (
+                        <a
+                          className="text-[11.5px] text-accent-ink underline-offset-2 hover:underline"
+                          href={node.summary.review_path as string}
+                        >
+                          去审阅
+                        </a>
+                      )}
+                      {node.generation_run_id && (
+                        <a
+                          className="text-[11.5px] text-muted underline-offset-2 hover:text-ink-2 hover:underline"
+                          href={`/studio`}
+                          title={node.generation_run_id}
+                        >
+                          运行记录
+                        </a>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   )
 }

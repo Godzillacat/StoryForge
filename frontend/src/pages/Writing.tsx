@@ -49,6 +49,7 @@ import {
 } from '../lib/writingLayout'
 import { Button, IconButton } from '../ui/Button'
 import { Icon } from '../ui/icons'
+import { Skeleton } from '../ui/Skeleton'
 import { Tabs } from '../ui/Tabs'
 
 interface RunInfo {
@@ -1088,7 +1089,10 @@ export default function Writing() {
         : 'grid-cols-[236px_minmax(0,1fr)_336px]'
   // 同一棵树要出现在两处（工作态的常驻列 / 专注态的抽屉），抽出来免得写两份。
   const treePane = treeLoading ? (
-    <p className="text-[13px] text-muted">章节树加载中…</p>
+    <div>
+      <span className="sr-only">章节树加载中…</span>
+      <Skeleton lines={5} />
+    </div>
   ) : (
     <WritingTree volumes={volumes} selectedSceneId={selectedSceneId} onSelect={selectScene} />
   )
@@ -1191,9 +1195,10 @@ export default function Writing() {
                 </section>
 
                 {textLoading ? (
-                  <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
-                    正在载入正文与上下文…
-                  </p>
+                  <div className="rounded-card border border-line bg-surface p-4">
+                    <span className="sr-only">正在载入正文与上下文…</span>
+                    <Skeleton lines={8} />
+                  </div>
                 ) : !text ? (
                   <p className="rounded-card border-l-2 border-danger bg-surface p-4 text-[13.5px] text-danger">
                     正文状态未能加载，请重新选择场景。

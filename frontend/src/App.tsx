@@ -22,21 +22,6 @@ import { useProjectMeta } from './state/useProjectMeta'
 import { cn } from './ui/cn'
 import { Icon } from './ui/icons'
 
-/**
- * 过渡脚手架：还没换到新语言的页面，继续用旧的深色底，避免"新外壳 + 白底旧页"读不清。
- * 每迁移完一页就从这里删掉一条；批次 3 结束后整个常量连同使用处一起删除。
- */
-const LEGACY_DARK = new Set([
-  '/idea',
-  '/architecture',
-  '/relations',
-  '/timeline',
-  '/terms',
-  '/pipeline',
-  '/studio',
-  '/models',
-])
-
 export default function App() {
   const pathname = useLocation().pathname
   // 尾斜杠不算另一条路由：`/world/` 与 `/world` 必须是同一页、同一套底色。
@@ -132,7 +117,6 @@ export default function App() {
           // spec §8.2 的预算算，而那句验算漏了这里的 p-6，48px 会把正文挤到
           // 验收下限以下）。其余页面统一内边距，页面级重排在各页批次里做。
           routePath === '/read' || routePath === '/write' ? '' : 'p-6',
-          LEGACY_DARK.has(routePath) && 'bg-slate-950 text-slate-100',
         )}
       >
         <Routes>

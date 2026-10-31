@@ -39,6 +39,7 @@ import CharacterDrift from '../components/chapters/CharacterDrift'
 import { VIEW_GROUPS, groupOfView, subViewsOf, viewOfGroup, type ViewTab } from '../lib/chapterTabs'
 import { Button } from '../ui/Button'
 import { Panel } from '../ui/Card'
+import { Skeleton } from '../ui/Skeleton'
 import { Tabs } from '../ui/Tabs'
 
 export default function Chapters() {
@@ -727,9 +728,10 @@ export default function Chapters() {
               先选一个项目。
             </p>
           ) : viewsLoading ? (
-            <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
-              正在读取章节结构…
-            </p>
+            <div className="rounded-card border border-line bg-surface p-4">
+              <span className="sr-only">正在读取章节结构…</span>
+              <Skeleton lines={6} />
+            </div>
           ) : (
             <>
               {view === 'rhythm' && (
