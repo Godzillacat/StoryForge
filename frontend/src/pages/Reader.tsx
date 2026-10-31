@@ -4,6 +4,7 @@ import MarkdownBody from '../components/reading/MarkdownBody'
 import { useSpeech } from '../components/reading/useSpeech'
 import { parseMarkdown } from '../lib/markdown'
 import { useCurrentProject } from '../state/ProjectContext'
+import { EmptyState } from '../ui/EmptyState'
 import {
   blockAtScroll,
   blockIndexOfChunk,
@@ -14,24 +15,49 @@ import {
 
 type Theme = 'paper' | 'night' | 'sepia'
 
-const THEMES: { key: Theme; label: string; shell: string; body: string }[] = [
+const THEMES: {
+  key: Theme
+  label: string
+  shell: string
+  body: string
+  toolbar: string
+  progress: string
+  active: string
+  hover: string
+  error: string
+}[] = [
   {
     key: 'paper',
     label: '纸张',
-    shell: 'bg-[#f6f1e6] text-[#2b2620]',
-    body: 'bg-[#fbf8f1] text-[#2b2620]',
+    shell: 'bg-paper text-ink',
+    body: 'bg-surface text-ink',
+    toolbar: 'bg-paper',
+    progress: 'bg-accent',
+    active: 'bg-black/10',
+    hover: 'hover:bg-black/5',
+    error: 'text-danger',
   },
   {
     key: 'night',
     label: '夜间',
     shell: 'bg-[#15130f] text-[#cfc7b8]',
     body: 'bg-[#1c1a15] text-[#cfc7b8]',
+    toolbar: 'bg-[#15130f]',
+    progress: 'bg-[#8fa89b]',
+    active: 'bg-white/10',
+    hover: 'hover:bg-white/5',
+    error: 'text-[#e6a397]',
   },
   {
     key: 'sepia',
     label: '护眼',
     shell: 'bg-[#e9e3cf] text-[#3a3222]',
     body: 'bg-[#f0ead8] text-[#3a3222]',
+    toolbar: 'bg-[#e9e3cf]',
+    progress: 'bg-[#7a6a45]',
+    active: 'bg-black/10',
+    hover: 'hover:bg-black/5',
+    error: 'text-danger',
   },
 ]
 
@@ -106,6 +132,9 @@ export default function Reader() {
   // 切项目 / 切章时旧响应不能覆盖新的。
   const tokenRef = useRef(0)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  // 底部进度条直接改宽度（ref），不进 state —— 滚动每帧都更新 state 会把整篇
+  // Markdown 一起重渲染，百万字时能感觉到。
+  const progressRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!projectId) return
@@ -192,6 +221,7 @@ export default function Reader() {
     speech.stop()
     setActiveMatch(null)
     if (scrollRef.current) scrollRef.current.scrollTop = 0
+    if (progressRef.current) progressRef.current.style.width = '0%'
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chapterId])
   // 进度按帧节流：滚动事件一秒能来几十次，而只有最后那一次的位置有意义。
@@ -304,9 +334,9 @@ export default function Reader() {
 
   return (
     <div className={`flex h-full min-h-0 gap-4 ${theme.shell}`}>
-      <aside className="w-64 shrink-0 space-y-3 overflow-auto p-4">
+      <aside className="w-[260px] shrink-0 space-y-3 overflow-auto p-4">
         {book && (
-          <p className="text-xs opacity-60">
+          <p className="text-[12px] opacity-60">
             {book.project_name} · 共 {book.total_words} 字 · 写完{' '}
             {book.written_chapters}/{book.total_chapters} 章
           </p>
@@ -315,7 +345,7 @@ export default function Reader() {
         <nav className="space-y-2 text-sm">
           {(book?.volumes ?? []).map((volume) => (
             <div key={volume.id} className="space-y-1">
-              <p className="text-xs opacity-50">
+              <p className="text-[12px] opacity-50">
                 第{volume.seq + 1}卷 {volume.name}
               </p>
               {volume.chapters.map((chapter) => (
@@ -324,17 +354,17 @@ export default function Reader() {
                   // 未写的章也列出来，但点不动 —— 作者要看得见这本书还差哪几章。
                   disabled={!chapter.has_body}
                   title={chapter.has_body ? '' : '这一章还没有已采纳正文'}
-                  className={`block w-full rounded px-2 py-1 text-left ${
-                    chapter.id === chapterId ? 'bg-black/10 font-medium' : ''
+                  className={`block w-full rounded-control px-2 py-1 text-left transition-colors duration-[120ms] ${
+                    chapter.id === chapterId ? `${theme.active} font-medium` : ''
                   } ${
                     chapter.has_body
-                      ? 'hover:bg-black/5'
+                      ? theme.hover
                       : 'cursor-not-allowed opacity-40'
                   }`}
                   onClick={() => setChapterId(chapter.id)}
                 >
                   第{chapter.seq + 1}章 {chapter.title}
-                  <span className="ml-1 text-xs opacity-50">
+                  <span className="ml-1 text-[12px] opacity-50">
                     {chapter.has_body ? chapter.word_count : '未写'}
                   </span>
                 </button>
@@ -344,25 +374,25 @@ export default function Reader() {
         </nav>
 
         {book && book.total_chapters === 0 && (
-          <p className="text-xs opacity-60">
+          <p className="text-[12px] opacity-60">
             这本书还没有章节。去章节设计排好卷章后，这里就能读了。
           </p>
         )}
         {book && book.total_chapters > 0 && book.written_chapters === 0 && (
-          <p className="text-xs opacity-60">
+          <p className="text-[12px] opacity-60">
             还没有任何已采纳正文。去写作台采纳草稿后，这里就能读了。
           </p>
         )}
       </aside>
 
       <section className="flex min-h-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center gap-2 border-b border-current/10 px-4 py-3 text-sm">
+        <header className={`flex flex-wrap items-center gap-2 border-b border-current/10 px-4 py-3 text-sm ${theme.toolbar}`}>
           <div className="flex gap-1">
             {THEMES.map((row) => (
               <button
                 key={row.key}
-                className={`rounded border border-current/30 px-2 py-1 ${
-                  prefs.theme === row.key ? 'bg-black/10 font-medium' : ''
+                className={`rounded-control border border-current/30 px-2.5 py-1 transition-colors duration-[120ms] ${
+                  prefs.theme === row.key ? `${theme.active} font-medium` : ''
                 }`}
                 onClick={() => setPrefs((p) => ({ ...p, theme: row.key }))}
               >
@@ -376,7 +406,7 @@ export default function Reader() {
             onChange={(event) => setPrefs((p) => ({ ...p, size: event.target.value }))}
           >
             {SIZES.map((row) => (
-              <option key={row.key} value={row.key} className="text-slate-900">
+              <option key={row.key} value={row.key} className="text-ink">
                 字号 {row.label}
               </option>
             ))}
@@ -387,7 +417,7 @@ export default function Reader() {
             onChange={(event) => setPrefs((p) => ({ ...p, leading: event.target.value }))}
           >
             {LEADINGS.map((row) => (
-              <option key={row.key} value={row.key} className="text-slate-900">
+              <option key={row.key} value={row.key} className="text-ink">
                 行距 {row.label}
               </option>
             ))}
@@ -422,7 +452,7 @@ export default function Reader() {
                 )}
               </>
             ) : (
-              <span className="text-xs opacity-60">
+              <span className="text-[12px] opacity-60">
                 {speech.state.supported
                   ? '系统没有可用的朗读语音'
                   : '这个环境不支持朗读'}
@@ -431,7 +461,7 @@ export default function Reader() {
           </div>
         </header>
 
-        {notice && <p className="px-4 py-2 text-sm text-red-600">{notice}</p>}
+        {notice && <p className={`px-4 py-2 text-sm ${theme.error}`}>{notice}</p>}
         {loading && <p className="px-4 py-2 text-sm opacity-60">正在读取…</p>}
 
         {query.trim() && (
@@ -460,10 +490,18 @@ export default function Reader() {
           <div
             ref={scrollRef}
             className="min-h-0 flex-1 overflow-auto px-6 py-6"
-            onScroll={saveProgress}
+            onScroll={(event) => {
+              saveProgress()
+              const el = event.currentTarget
+              const max = el.scrollHeight - el.clientHeight
+              if (progressRef.current) {
+                const pct = max > 0 ? Math.min(100, (el.scrollTop / max) * 100) : 0
+                progressRef.current.style.width = `${pct}%`
+              }
+            }}
           >
             <article
-              className={`mx-auto max-w-[42rem] rounded p-8 shadow-sm ${theme.body}`}
+              className={`mx-auto w-full max-w-[680px] rounded-card border border-current/10 p-8 font-serif ${theme.body}`}
               style={{ fontSize: size.px, lineHeight: leading.value }}
             >
               <h1 className="mb-[1.2em] text-[1.5em] font-semibold">
@@ -479,8 +517,19 @@ export default function Reader() {
           </div>
         )}
 
+        {/* 阅读进度：3px 细条，随滚动更新宽度（ref 直改，不触发重渲染）。 */}
+        <div className="h-[3px] w-full shrink-0 bg-current/10" aria-hidden="true">
+          <div
+            ref={progressRef}
+            className={`h-full w-0 transition-[width] duration-150 ${theme.progress}`}
+          />
+        </div>
+
         {!current && !loading && !notice && (
-          <p className="px-6 py-10 text-sm opacity-60">从左侧选一章开始读。</p>
+          <EmptyState
+            title="从左侧选一章开始读"
+            hint="没有正文的章会灰显；先去写作台采纳草稿。"
+          />
         )}
       </section>
     </div>
