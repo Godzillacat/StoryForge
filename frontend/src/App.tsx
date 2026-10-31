@@ -28,7 +28,6 @@ import { Icon } from './ui/icons'
  */
 const LEGACY_DARK = new Set([
   '/idea',
-  '/architecture',
   '/pipeline',
   '/studio',
   '/models',

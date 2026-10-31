@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import {
   api,
   type Act,
@@ -9,6 +10,12 @@ import {
 import RunTrace from '../components/RunTrace'
 import { ImpactPanel, LockToggle } from '../components/Locking'
 import { useCurrentProject } from '../state/ProjectContext'
+import { comparisonSummary } from '../lib/architectureSummary'
+import { Badge } from '../ui/Badge'
+import { Button } from '../ui/Button'
+import { Card } from '../ui/Card'
+import { EmptyState } from '../ui/EmptyState'
+import { Field, Input, Textarea } from '../ui/Field'
 
 interface DraftAct {
   seq: number
@@ -26,6 +33,15 @@ function actsFromBible(bible: { acts?: { name: string; purpose?: string; target_
     purpose: act.purpose ?? '',
     target_word_ratio: act.target_word_ratio == null ? '' : String(act.target_word_ratio),
   }))
+}
+
+function OptionRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-0.5">
+      <div className="text-[11px] tracking-[.08em] text-muted">{label}</div>
+      <div className="text-[13px] leading-[1.6] text-ink-2">{children}</div>
+    </div>
+  )
 }
 
 export default function Architecture() {
@@ -188,199 +204,202 @@ export default function Architecture() {
   }
 
   const showEditor = manual || (recommendation?.structured ?? false) || hasSaved
+  const summary = recommendation?.structured ? comparisonSummary(recommendation.options) : ''
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-xl font-semibold">架构推荐</h2>
+    <div className="space-y-5">
+      <h2 className="font-serif text-[22px] font-semibold text-ink">架构推荐</h2>
 
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          className="rounded bg-indigo-600 px-4 py-2 text-sm disabled:opacity-50"
-          onClick={recommend}
-          disabled={busy || !projectId}
-        >
+        <Button variant="primary" onClick={recommend} disabled={busy || !projectId}>
           {busy ? '生成中…' : '推荐结构'}
-        </button>
-        <button
-          className="rounded border border-slate-700 px-4 py-2 text-sm disabled:opacity-50"
-          onClick={startManual}
-          disabled={!projectId}
-        >
+        </Button>
+        <Button onClick={startManual} disabled={!projectId}>
           手工建立故事圣经
-        </button>
-        {message && <span className="text-sm text-slate-400">{message}</span>}
+        </Button>
+        {message && <span className="text-[13px] text-muted">{message}</span>}
       </div>
 
       {!showEditor && !savedActs.length && (
-        <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
-          还没有结构。点「推荐结构」让架构师给 2–3 套方案，或者点「手工建立故事圣经」自己写 ——
-          手动档下 AI 不参与。
-        </p>
+        <EmptyState
+          title="还没有结构"
+          hint="点「推荐结构」让架构师给 2–3 套方案，或者点「手工建立故事圣经」自己写 —— 手动档下 AI 不参与。"
+        />
       )}
 
       {recommendation && !recommendation.structured && (
-        <div className="rounded bg-amber-950/40 p-3 text-sm text-amber-300">
+        <div className="rounded-control border-l-2 border-warn bg-warn-soft p-3 text-[13px] text-warn">
           未结构化：{recommendation.parse_error}
-          <pre className="mt-2 whitespace-pre-wrap text-xs">{recommendation.raw_text}</pre>
+          <pre className="mt-2 whitespace-pre-wrap text-[11.5px]">{recommendation.raw_text}</pre>
         </div>
       )}
 
       {recommendation?.structured && (
-        <section className="grid gap-4 md:grid-cols-3">
-          {recommendation.options.map((option) => (
-            <button
-              key={option.tool}
-              onClick={() => setChosen(option)}
-              className={`rounded border p-4 text-left text-sm ${
-                chosen?.tool === option.tool ? 'border-indigo-500 bg-slate-900' : 'border-slate-800'
-              }`}
-            >
-              <div className="mb-2 font-medium text-slate-100">{option.tool}</div>
-              <div className="mb-2 text-xs text-slate-400">适配度 {option.fit_score}</div>
-              <p className="mb-2 text-slate-300">{option.reason}</p>
-              {option.length_plan && (
-                <p className="mb-2 text-xs text-slate-500">篇幅：{option.length_plan}</p>
-              )}
-              {option.rhythm_shape && (
-                <p className="mb-2 text-xs text-slate-500">节奏：{option.rhythm_shape}</p>
-              )}
-              <ul className="list-disc space-y-1 pl-4 text-xs text-amber-300">
-                {option.risks.map((risk) => (
-                  <li key={risk}>{risk}</li>
-                ))}
-              </ul>
-            </button>
-          ))}
+        <section className="space-y-3">
+          {summary && <p className="text-[12.5px] text-muted">{summary}</p>}
+          <div className="grid items-stretch gap-4 md:grid-cols-3">
+            {recommendation.options.map((option) => (
+              <button
+                key={option.tool}
+                type="button"
+                onClick={() => setChosen(option)}
+                className={`flex h-full flex-col gap-3 rounded-card border p-4 text-left transition-colors duration-[120ms] ${
+                  chosen?.tool === option.tool
+                    ? 'border-accent bg-accent-soft'
+                    : 'border-line bg-surface hover:bg-sunken'
+                }`}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[14px] font-semibold text-ink">{option.tool}</span>
+                  <Badge tone="accent">适配度 {option.fit_score}</Badge>
+                  {chosen?.tool === option.tool && <Badge tone="warn">已选</Badge>}
+                </div>
+                <OptionRow label="理由">{option.reason}</OptionRow>
+                <OptionRow label="篇幅分配">{option.length_plan || '—'}</OptionRow>
+                <OptionRow label="节奏形态">{option.rhythm_shape || '—'}</OptionRow>
+                <OptionRow label="风险">
+                  <ul className="list-disc space-y-1 pl-4 text-[12.5px] text-warn">
+                    {option.risks.map((risk) => (
+                      <li key={risk}>{risk}</li>
+                    ))}
+                  </ul>
+                </OptionRow>
+              </button>
+            ))}
+          </div>
         </section>
       )}
 
       {showEditor && (
-        <section className="space-y-3 rounded border border-slate-800 p-4 text-sm">
-          <h3 className="text-sm font-medium text-slate-300">
-            故事圣经 v0
-            {manual
-              ? '（手工）'
-              : recommendation?.structured
-                ? '（可编辑，采纳的是你改过的版本）'
-                : '（已写入项目，可继续修改）'}
-          </h3>
-
-          <label className="block">
-            <span className="text-slate-500">logline</span>
-            <textarea
-              className="mt-1 h-20 w-full rounded border border-slate-700 bg-slate-900 p-3 text-sm"
-              value={draft.logline}
-              onChange={(e) => setDraft({ ...draft, logline: e.target.value })}
-            />
-          </label>
-          <label className="block">
-            <span className="text-slate-500">主题句</span>
-            <textarea
-              className="mt-1 h-20 w-full rounded border border-slate-700 bg-slate-900 p-3 text-sm"
-              value={draft.theme}
-              onChange={(e) => setDraft({ ...draft, theme: e.target.value })}
-            />
-          </label>
-          <label className="block">
-            <span className="text-slate-500">前提</span>
-            <textarea
-              className="mt-1 h-20 w-full rounded border border-slate-700 bg-slate-900 p-3 text-sm"
-              value={draft.premise}
-              onChange={(e) => setDraft({ ...draft, premise: e.target.value })}
-            />
-          </label>
-          <label className="block">
-            <span className="text-slate-500">结局方向</span>
-            <textarea
-              className="mt-1 h-20 w-full rounded border border-slate-700 bg-slate-900 p-3 text-sm"
-              value={draft.ending_direction}
-              onChange={(e) => setDraft({ ...draft, ending_direction: e.target.value })}
-            />
-          </label>
-
-          <div>
-            <div className="mb-2 flex items-center gap-3">
-              <span className="text-slate-500">幕骨架</span>
-              <button className="text-xs text-indigo-400" onClick={addAct}>
-                加一幕
-              </button>
+        <Card
+          title={
+            <span>
+              故事圣经 v0
+              {manual
+                ? '（手工）'
+                : recommendation?.structured
+                  ? '（可编辑，采纳的是你改过的版本）'
+                  : '（已写入项目，可继续修改）'}
+            </span>
+          }
+        >
+          <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field label="logline">
+                <Textarea
+                  value={draft.logline}
+                  onChange={(e) => setDraft({ ...draft, logline: e.target.value })}
+                />
+              </Field>
+              <Field label="主题句">
+                <Textarea
+                  value={draft.theme}
+                  onChange={(e) => setDraft({ ...draft, theme: e.target.value })}
+                />
+              </Field>
+              <Field label="前提">
+                <Textarea
+                  value={draft.premise}
+                  onChange={(e) => setDraft({ ...draft, premise: e.target.value })}
+                />
+              </Field>
+              <Field label="结局方向">
+                <Textarea
+                  value={draft.ending_direction}
+                  onChange={(e) => setDraft({ ...draft, ending_direction: e.target.value })}
+                />
+              </Field>
             </div>
-            <ul className="space-y-2">
-              {draftActs.map((act, index) => (
-                <li key={index} className="flex flex-wrap items-center gap-2">
-                  <input
-                    className="w-52 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-                    placeholder="幕名"
-                    value={act.name}
-                    onChange={(e) => updateAct(index, { name: e.target.value })}
-                  />
-                  <input
-                    className="min-w-[240px] flex-1 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-                    placeholder="这一幕要做什么"
-                    value={act.purpose}
-                    onChange={(e) => updateAct(index, { purpose: e.target.value })}
-                  />
-                  <input
-                    className="w-24 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-                    placeholder="占比"
-                    value={act.target_word_ratio}
-                    onChange={(e) => updateAct(index, { target_word_ratio: e.target.value })}
-                  />
-                  <button className="text-xs text-amber-400" onClick={() => removeAct(index)}>
-                    删除
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              className="rounded bg-emerald-700 px-4 py-2 text-sm disabled:opacity-50"
-              onClick={adopt}
-              disabled={(!manual && !chosen && !hasSaved) || archLocked}
-              title={archLocked ? '故事圣经已锁定，AI 不会改动它' : undefined}
-            >
-              采纳并写入项目
-            </button>
+            <div className="space-y-2 border-t border-line pt-3">
+              <div className="flex items-center gap-3">
+                <span className="text-[12.5px] font-medium text-ink-2">幕骨架</span>
+                <Button size="sm" variant="accent" onClick={addAct}>
+                  加一幕
+                </Button>
+              </div>
+              <ul className="space-y-2">
+                {draftActs.map((act, index) => (
+                  <li key={index} className="flex flex-wrap items-center gap-2">
+                    <div className="w-52">
+                      <Input
+                        aria-label={`第 ${index + 1} 幕名称`}
+                        placeholder="幕名"
+                        value={act.name}
+                        onChange={(e) => updateAct(index, { name: e.target.value })}
+                      />
+                    </div>
+                    <div className="min-w-[200px] flex-1">
+                      <Input
+                        aria-label={`第 ${index + 1} 幕要做什么`}
+                        placeholder="这一幕要做什么"
+                        value={act.purpose}
+                        onChange={(e) => updateAct(index, { purpose: e.target.value })}
+                      />
+                    </div>
+                    <div className="w-24">
+                      <Input
+                        aria-label={`第 ${index + 1} 幕占比`}
+                        placeholder="占比"
+                        value={act.target_word_ratio}
+                        onChange={(e) => updateAct(index, { target_word_ratio: e.target.value })}
+                      />
+                    </div>
+                    <Button size="sm" variant="warn" onClick={() => removeAct(index)}>
+                      删除
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
+              <Button
+                variant="primary"
+                onClick={adopt}
+                disabled={(!manual && !chosen && !hasSaved) || archLocked}
+                title={archLocked ? '故事圣经已锁定，AI 不会改动它' : undefined}
+              >
+                采纳并写入项目
+              </Button>
+              {archId && (
+                <LockToggle
+                  targetType="architecture"
+                  targetId={archId}
+                  locked={archLocked}
+                  onChanged={async () => {
+                    try {
+                      const data = await api.getArchitecture(projectId)
+                      setArchLocked(data.architecture?.locked === true)
+                    } catch (error) {
+                      setMessage((error as Error).message)
+                    }
+                  }}
+                />
+              )}
+            </div>
+            {archLocked && (
+              <p className="rounded-control bg-warn-soft p-2.5 text-[12px] text-warn">
+                故事圣经已锁定：可以继续编辑草稿，但写入项目会被拒绝，直到解锁。
+              </p>
+            )}
             {archId && (
-              <LockToggle
+              <ImpactPanel
+                projectId={projectId}
                 targetType="architecture"
                 targetId={archId}
-                locked={archLocked}
-                onChanged={async () => {
-                  try {
-                    const data = await api.getArchitecture(projectId)
-                    setArchLocked(data.architecture?.locked === true)
-                  } catch (error) {
-                    setMessage((error as Error).message)
-                  }
-                }}
               />
             )}
+            {recommendation?.structured && !chosen && !manual && !hasSaved && (
+              <p className="text-[12px] text-muted">先在上面选一套方案，再采纳。</p>
+            )}
           </div>
-          {archLocked && (
-            <p className="text-xs text-amber-400">
-              故事圣经已锁定：可以继续编辑草稿，但写入项目会被拒绝，直到解锁。
-            </p>
-          )}
-          {archId && (
-            <ImpactPanel
-              projectId={projectId}
-              targetType="architecture"
-              targetId={archId}
-            />
-          )}
-          {recommendation?.structured && !chosen && !manual && !hasSaved && (
-            <p className="text-xs text-slate-500">先在上面选一套方案，再采纳。</p>
-          )}
-        </section>
+        </Card>
       )}
 
       {savedActs.length > 0 && (
-        <section className="rounded border border-slate-800 p-4 text-sm">
-          <h3 className="mb-2 text-sm font-medium text-slate-300">已写入的结构</h3>
-          <ul className="list-disc space-y-1 pl-5">
+        <Card title="已写入的结构">
+          <ul className="list-disc space-y-1 pl-5 text-[13.5px] text-ink-2">
             {savedActs.map((act) => (
               <li key={act.id}>
                 第{act.seq}幕 {act.name}
@@ -389,12 +408,12 @@ export default function Architecture() {
               </li>
             ))}
           </ul>
-        </section>
+        </Card>
       )}
 
       {recommendation && (
         <section className="space-y-2">
-          <h3 className="text-sm font-medium text-slate-300">这次运行</h3>
+          <h3 className="text-[14px] font-semibold text-ink">这次运行</h3>
           <RunTrace run={recommendation.run} />
         </section>
       )}
