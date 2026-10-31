@@ -30,7 +30,6 @@ const LEGACY_DARK = new Set([
   '/idea',
   '/architecture',
   '/relations',
-  '/timeline',
   '/pipeline',
   '/studio',
   '/models',
