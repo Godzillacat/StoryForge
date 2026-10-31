@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
-import { api, type EntryRelation, type Project, type SettingEntry } from '../api/client'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { api, type EntryRelation, type SettingEntry } from '../api/client'
+import { useCurrentProject } from '../state/ProjectContext'
 
 const STRENGTHS = [1, 2, 3, 4, 5]
 
@@ -12,8 +13,8 @@ interface Pair {
 }
 
 export default function Relations() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectId, setProjectId] = useState('')
+  // 当前项目由外壳持有；切换入口在侧栏。
+  const { projectId } = useCurrentProject()
   const [entries, setEntries] = useState<SettingEntry[]>([])
   const [relations, setRelations] = useState<EntryRelation[]>([])
   const [onlyCharacters, setOnlyCharacters] = useState(true)
@@ -27,20 +28,34 @@ export default function Relations() {
     note: '',
     reverse: true,
   })
-
-  useEffect(() => {
-    api.listProjects().then((list) => {
-      setProjects(list)
-      if (list[0]) setProjectId(list[0].id)
-    })
-  }, [])
+  // 迟到响应不许覆盖新项目的清单：切项目现在是常驻入口。
+  const dataToken = useRef(0)
 
   useEffect(() => {
     if (!projectId) return
+    const token = ++dataToken.current
     setNotice('')
     setDraft({ from_id: '', to_id: '', kind: '', strength: '', note: '', reverse: true })
-    api.listEntries(projectId).then(setEntries).catch((e) => setNotice((e as Error).message))
-    api.listRelations(projectId).then(setRelations).catch((e) => setNotice((e as Error).message))
+    api
+      .listEntries(projectId)
+      .then((rows) => {
+        if (dataToken.current !== token) return
+        setEntries(rows)
+      })
+      .catch((e) => {
+        if (dataToken.current !== token) return
+        setNotice((e as Error).message)
+      })
+    api
+      .listRelations(projectId)
+      .then((rows) => {
+        if (dataToken.current !== token) return
+        setRelations(rows)
+      })
+      .catch((e) => {
+        if (dataToken.current !== token) return
+        setNotice((e as Error).message)
+      })
   }, [projectId])
 
   const byId = useMemo(() => new Map(entries.map((e) => [e.id, e])), [entries])
@@ -233,17 +248,6 @@ export default function Relations() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-xl font-semibold">关系网</h2>
-        <select
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-          value={projectId}
-          onChange={(e) => setProjectId(e.target.value)}
-        >
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
         <label className="flex items-center gap-2 text-sm text-slate-400">
           <input
             type="checkbox"

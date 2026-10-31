@@ -1,4 +1,5 @@
 import type { EntryTypesResponse } from '../api/client'
+import { Field, Input, Select, Textarea } from '../ui/Field'
 
 /** 条目的草稿表单。受控、不调接口 —— 由 World 页与候选行各自决定怎么提交。 */
 export interface EntryDraft {
@@ -60,106 +61,87 @@ export default function EntryEditor({
   const set = (patch: Partial<EntryDraft>) => onChange({ ...draft, ...patch })
 
   return (
-    <div className="space-y-3 text-sm">
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="text-slate-400">类型</label>
-        <select
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-          value={draft.type}
-          onChange={(e) => set({ type: e.target.value })}
-        >
-          {(types?.types ?? []).map((t) => (
-            <option key={t.key} value={t.key}>
-              {t.label}
-            </option>
-          ))}
-        </select>
+    <div className="space-y-3 text-[13.5px]">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="w-40">
+          <Field label="类型">
+            <Select
+              options={(types?.types ?? []).map((t) => ({ value: t.key, label: t.label }))}
+              value={draft.type}
+              onChange={(e) => set({ type: e.target.value })}
+            />
+          </Field>
+        </div>
 
-        <label className="text-slate-400">标准写法</label>
-        <input
-          className="w-72 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-          value={draft.name}
-          onChange={(e) => set({ name: e.target.value })}
-        />
+        <div className="min-w-56 flex-1">
+          <Field label="标准写法">
+            <Input value={draft.name} onChange={(e) => set({ name: e.target.value })} />
+          </Field>
+        </div>
 
         {draft.type === 'rule' && (
-          <>
-            <label className="text-slate-400">硬度</label>
-            <select
-              className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-              value={draft.hardness}
-              onChange={(e) => set({ hardness: e.target.value })}
-            >
-              <option value="">（未定）</option>
-              {(types?.hardness ?? []).map((h) => (
-                <option key={h.key} value={h.key}>
-                  {h.label}
-                </option>
-              ))}
-            </select>
-          </>
+          <div className="w-40">
+            <Field label="硬度">
+              <Select
+                options={[
+                  { value: '', label: '（未定）' },
+                  ...(types?.hardness ?? []).map((h) => ({ value: h.key, label: h.label })),
+                ]}
+                value={draft.hardness}
+                onChange={(e) => set({ hardness: e.target.value })}
+              />
+            </Field>
+          </div>
         )}
       </div>
 
-      {/* 类型专属字段由接口下发的清单驱动，前端不硬编 —— 后端加第九项时自动跟上。 */}
+      {/* 类型专属字段由接口下发的清单驱动，前端不硬编 —— 后端加第九项时自动跟上。
+          单列排：八项里七项是多行长文本（见 `CHARACTER_FIELDS`），两列栅格只会
+          留下一个孤立的半宽字段，其余与单列无异。 */}
       {draft.type === 'character' &&
         (types?.character_fields ?? []).map((field) => (
-          <label className="block" key={field.key}>
-            <span className="text-slate-500">{field.label}</span>
+          <Field key={field.key} label={field.label}>
             {field.multiline ? (
-              <textarea
-                className="mt-1 h-20 w-full rounded border border-slate-700 bg-slate-900 p-3 text-sm"
+              <Textarea
+                className="min-h-[80px]"
                 value={draft.fields[field.key] ?? ''}
                 onChange={(e) => set({ fields: { ...draft.fields, [field.key]: e.target.value } })}
               />
             ) : (
-              <input
-                className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
+              <Input
                 value={draft.fields[field.key] ?? ''}
                 onChange={(e) => set({ fields: { ...draft.fields, [field.key]: e.target.value } })}
               />
             )}
-          </label>
+          </Field>
         ))}
 
-      <label className="block">
-        <span className="text-slate-500">别名与称呼（顿号分隔）</span>
-        <input
-          className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-          value={draft.aliases}
-          onChange={(e) => set({ aliases: e.target.value })}
-        />
-      </label>
+      <Field label="别名与称呼（顿号分隔）">
+        <Input value={draft.aliases} onChange={(e) => set({ aliases: e.target.value })} />
+      </Field>
 
-      <label className="block">
-        <span className="text-slate-500">标签（顿号分隔）</span>
-        <input
-          className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-          value={draft.tags}
-          onChange={(e) => set({ tags: e.target.value })}
-        />
-      </label>
+      <Field label="标签（顿号分隔）">
+        <Input value={draft.tags} onChange={(e) => set({ tags: e.target.value })} />
+      </Field>
 
-      <label className="block">
-        <span className="text-slate-500">一句话概述</span>
-        <textarea
-          className="mt-1 h-16 w-full rounded border border-slate-700 bg-slate-900 p-3 text-sm"
+      <Field label="一句话概述">
+        <Textarea
+          className="min-h-[64px]"
           value={draft.summary}
           onChange={(e) => set({ summary: e.target.value })}
         />
-      </label>
+      </Field>
 
-      <label className="block">
-        <span className="text-slate-500">详细说明</span>
-        <textarea
-          className="mt-1 h-40 w-full rounded border border-slate-700 bg-slate-900 p-3 text-sm"
+      <Field label="详细说明">
+        <Textarea
+          className="min-h-[160px]"
           value={draft.description}
           onChange={(e) => set({ description: e.target.value })}
         />
-      </label>
+      </Field>
 
       {draft.type === 'rule' && (
-        <p className="text-xs text-slate-500">
+        <p className="text-[11.5px] text-muted">
           硬规则是体系根基、不可违反；软规则需大体一致；氛围只为质感。这条标注决定日后检查环节的严格程度。
         </p>
       )}

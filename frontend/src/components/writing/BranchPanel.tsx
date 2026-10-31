@@ -7,6 +7,8 @@ import {
   type BranchSummary,
 } from '../../api/client'
 import { buildBranchRows, defaultChildName } from '../../lib/branchTree'
+import { Button } from '../../ui/Button'
+import { Input } from '../../ui/Field'
 
 export default function BranchPanel({
   sceneId,
@@ -131,44 +133,45 @@ export default function BranchPanel({
   }
 
   return (
-    <section className="space-y-2 rounded border border-slate-800 p-3 text-sm">
+    <section className="space-y-2 rounded-card border border-line bg-surface p-3 text-[13.5px]">
       <div className="flex items-center gap-2">
-        <h3 className="font-medium text-slate-300">分支</h3>
-        <span className="text-xs text-slate-500">
+        <h3 className="font-medium text-ink-2">分支</h3>
+        <span className="text-[11.5px] text-muted">
           {rows.length > 0 ? `${rows.length} 条` : '没有分支'}
         </span>
       </div>
-      <p className="text-xs text-slate-500">
+      <p className="text-[11.5px] text-muted">
         分支是同一场戏的另一种写法；场景卡（目标 / 冲突 / 转折）是共享的。
         可以从任意一版「派生」出新分支，最多三层。
       </p>
 
-      {notice && <p className="text-xs text-slate-400">{notice}</p>}
+      {notice && <p className="text-[11.5px] text-muted">{notice}</p>}
 
       <div className="flex items-center gap-2">
-        <input
-          className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
-          placeholder="分支名称，例如「A 案」"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={disabled || busy}
-        />
-        <button
-          className="rounded border border-slate-700 px-2 py-1 text-xs disabled:opacity-50"
+        <div className="min-w-0 flex-1">
+          <Input
+            placeholder="分支名称，例如「A 案」"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={disabled || busy}
+          />
+        </div>
+        <Button
+          size="sm"
           onClick={create}
           disabled={disabled || busy || !name.trim()}
         >
           开分支
-        </button>
+        </Button>
       </div>
 
       <ul className="space-y-1">
         <li>
           <button
-            className={`w-full rounded px-2 py-1 text-left text-xs ${
+            className={`w-full rounded-control px-2 py-1 text-left text-[11.5px] ${
               selectedBranchId === null
-                ? 'bg-slate-800 text-white'
-                : 'text-slate-400 hover:bg-slate-900'
+                ? 'bg-accent-soft text-accent-ink'
+                : 'text-muted hover:bg-sunken'
             }`}
             onClick={() => onSelect(null)}
           >
@@ -182,28 +185,28 @@ export default function BranchPanel({
               style={{ paddingLeft: row.indent }}
             >
               <button
-                className={`min-w-0 flex-1 truncate rounded px-2 py-1 text-left text-xs ${
+                className={`min-w-0 flex-1 truncate rounded-control px-2 py-1 text-left text-[11.5px] ${
                   selectedBranchId === row.id
-                    ? 'bg-slate-800 text-white'
-                    : 'text-slate-400 hover:bg-slate-900'
+                    ? 'bg-accent-soft text-accent-ink'
+                    : 'text-muted hover:bg-sunken'
                 }`}
                 onClick={() => onSelect(row.id)}
               >
                 <span className="block truncate">
                   {row.name}
-                  <span className="ml-2 text-slate-600">{row.chars} 字</span>
+                  <span className="ml-2 text-faint">{row.chars} 字</span>
                   {row.has_draft && (
-                    <span className="ml-1 text-emerald-400">有草稿</span>
+                    <span className="ml-1 text-accent-ink">有草稿</span>
                   )}
                 </span>
                 {row.parentName && (
-                  <span className="block truncate text-[10px] text-slate-600">
+                  <span className="block truncate text-[11px] text-faint">
                     派生自 {row.parentName}
                   </span>
                 )}
               </button>
               <button
-                className="text-xs text-sky-400 disabled:opacity-50"
+                className="text-[11.5px] text-accent-ink disabled:opacity-50"
                 onClick={() => derive(row)}
                 disabled={disabled || busy || row.depth >= 3}
                 title={
@@ -213,7 +216,7 @@ export default function BranchPanel({
                 派生
               </button>
               <button
-                className="text-xs text-amber-400 disabled:opacity-50"
+                className="text-[11.5px] text-warn disabled:opacity-50"
                 onClick={() => merge(row)}
                 disabled={disabled || busy}
                 title="合入主版（分支保留）"
@@ -221,7 +224,7 @@ export default function BranchPanel({
                 合入
               </button>
               <button
-                className="text-xs text-slate-500 disabled:opacity-50"
+                className="text-[11.5px] text-muted disabled:opacity-50"
                 onClick={() => discard(row)}
                 disabled={disabled || busy}
               >
@@ -340,37 +343,33 @@ export function BranchBodyEditor({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
+        <span className="rounded-tag bg-accent-soft px-2 py-0.5 text-[11.5px] text-accent-ink">
           正在看：分支「{branch.name}」
         </span>
         {generating ? (
-          <button
-            className="rounded bg-amber-600 px-3 py-1 text-xs text-white"
-            onClick={stop}
-          >
+          <Button variant="warn" onClick={stop}>
             停止
-          </button>
+          </Button>
         ) : (
-          <button
-            className="rounded bg-indigo-600 px-3 py-1 text-xs text-white disabled:opacity-50"
+          <Button
+            variant="primary"
             onClick={generate}
             disabled={disabled}
           >
             生成到这条分支
-          </button>
+          </Button>
         )}
-        <button
-          className="rounded border border-slate-700 px-3 py-1 text-xs disabled:opacity-50"
+        <Button
           onClick={save}
           disabled={disabled}
         >
           保存分支正文
-        </button>
-        {error && <span className="text-xs text-red-400">{error}</span>}
+        </Button>
+        {error && <span className="text-[11.5px] text-danger">{error}</span>}
       </div>
 
       <textarea
-        className="h-96 w-full rounded border border-slate-700 bg-slate-950 p-3 font-mono text-sm leading-7"
+        className="h-96 w-full rounded-card border border-line-strong bg-surface p-3 font-mono text-[13.5px] leading-7 text-ink outline-none transition-colors duration-[120ms] placeholder:text-faint focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] disabled:opacity-60"
         value={branch.content}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
@@ -378,38 +377,39 @@ export function BranchBodyEditor({
       />
 
       {branch.draft && (
-        <div className="space-y-2 rounded border border-emerald-900 bg-emerald-950/20 p-2">
-          <div className="flex items-center gap-2 text-xs text-emerald-300">
+        <div className="space-y-2 rounded-control border border-accent bg-accent-soft p-2">
+          <div className="flex items-center gap-2 text-[11.5px] text-accent-ink">
             <span>分支草稿</span>
-            <button
-              className="rounded border border-emerald-800 px-2 py-0.5 disabled:opacity-50"
+            <Button
+              size="sm"
               onClick={saveDraft}
               disabled={disabled}
             >
               保存草稿
-            </button>
-            <button
-              className="rounded bg-emerald-700 px-2 py-0.5 text-white disabled:opacity-50"
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
               onClick={adopt}
               disabled={disabled}
             >
               采纳为分支正文
-            </button>
+            </Button>
           </div>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs text-slate-300">
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-[11.5px] text-ink-2">
             {branch.draft.content}
           </pre>
         </div>
       )}
 
       {(stream || generating) && (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-slate-800 bg-slate-950 p-2 text-xs text-slate-400">
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-control border border-line bg-sunken p-2 text-[11.5px] text-muted">
           {stream || '正在生成…'}
         </pre>
       )}
 
       {revisions.length > 0 && (
-        <div className="space-y-1 text-xs text-slate-500">
+        <div className="space-y-1 text-[11.5px] text-muted">
           <p>这条分支的修订（{revisions.length}）</p>
           <ul className="space-y-0.5">
             {revisions.slice(0, 10).map((item) => (

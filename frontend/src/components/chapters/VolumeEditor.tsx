@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { ChapterStatusOption, VolumeNode } from '../../api/client'
+import { Button } from '../../ui/Button'
+import { Card } from '../../ui/Card'
+import { Field, Input, Select, Textarea } from '../../ui/Field'
 
 export default function VolumeEditor({
   volume,
@@ -37,40 +40,36 @@ export default function VolumeEditor({
   const set = (patch: Partial<typeof draft>) => setDraft({ ...draft, ...patch })
 
   return (
-    <section className="space-y-3 rounded border border-slate-800 p-4 text-sm">
-      <h3 className="text-sm font-medium text-slate-300">卷</h3>
-      <label className="block">
-        <span className="text-slate-500">卷名</span>
-        <input className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-3 py-2"
-               value={draft.name} onChange={(e) => set({ name: e.target.value })} />
-      </label>
-      <label className="block">
-        <span className="text-slate-500">本卷要做什么</span>
-        <textarea className="mt-1 h-20 w-full rounded border border-slate-700 bg-slate-900 p-3"
+    <Card className="space-y-3 text-[13.5px]">
+      <h3 className="text-[13.5px] font-medium text-ink-2">卷</h3>
+      <Field label="卷名">
+        <Input value={draft.name} onChange={(e) => set({ name: e.target.value })} />
+      </Field>
+      <Field label="本卷要做什么">
+        <Textarea className="min-h-[80px]"
                   value={draft.purpose} onChange={(e) => set({ purpose: e.target.value })} />
-      </label>
-      <label className="block">
-        <span className="text-slate-500">摘要</span>
-        <textarea className="mt-1 h-20 w-full rounded border border-slate-700 bg-slate-900 p-3"
+      </Field>
+      <Field label="摘要">
+        <Textarea className="min-h-[80px]"
                   value={draft.summary} onChange={(e) => set({ summary: e.target.value })} />
-      </label>
+      </Field>
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-slate-500">对应第几幕</label>
-        <input className="w-24 rounded border border-slate-700 bg-slate-900 px-3 py-2"
-               value={draft.actSeq} onChange={(e) => set({ actSeq: e.target.value })} placeholder="快照，可空" />
-        <label className="text-slate-500">目标字数</label>
-        <input className="w-32 rounded border border-slate-700 bg-slate-900 px-3 py-2"
-               value={draft.targetWords} onChange={(e) => set({ targetWords: e.target.value })} />
-        <label className="text-slate-500">状态</label>
-        <select className="rounded border border-slate-700 bg-slate-900 px-3 py-2"
-                value={draft.status} onChange={(e) => set({ status: e.target.value })}>
-          {statuses.map((status) => (
-            <option key={status.key} value={status.key}>{status.label}</option>
-          ))}
-        </select>
+        <label className="text-muted">对应第几幕</label>
+        <div className="w-24">
+          <Input value={draft.actSeq} onChange={(e) => set({ actSeq: e.target.value })} placeholder="快照，可空" />
+        </div>
+        <label className="text-muted">目标字数</label>
+        <div className="w-32">
+          <Input value={draft.targetWords} onChange={(e) => set({ targetWords: e.target.value })} />
+        </div>
+        <label className="text-muted">状态</label>
+        <div className="w-32">
+          <Select options={statuses.map((status) => ({ value: status.key, label: status.label }))}
+                  value={draft.status} onChange={(e) => set({ status: e.target.value })} />
+        </div>
       </div>
       <div className="flex items-center gap-2">
-        <button className="rounded bg-indigo-600 px-4 py-2 disabled:opacity-50" disabled={busy}
+        <Button variant="primary" disabled={busy}
                 onClick={() => onSave({
                   name: draft.name.trim(),
                   purpose: draft.purpose,
@@ -80,12 +79,11 @@ export default function VolumeEditor({
                   status: draft.status,
                 })}>
           保存
-        </button>
-        <button className="rounded border border-amber-700 px-4 py-2 text-amber-400" disabled={busy}
-                onClick={onDelete}>
+        </Button>
+        <Button variant="danger" disabled={busy} onClick={onDelete}>
           删除
-        </button>
+        </Button>
       </div>
-    </section>
+    </Card>
   )
 }

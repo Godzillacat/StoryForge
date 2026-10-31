@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { ChapterNode, ChapterStatusOption } from '../../api/client'
+import { Button } from '../../ui/Button'
+import { Card } from '../../ui/Card'
+import { Field, Input, Select, Textarea } from '../../ui/Field'
 
 export default function ChapterEditor({
   chapter,
@@ -49,65 +52,57 @@ export default function ChapterEditor({
   const levels = ['', '1', '2', '3', '4', '5']
 
   return (
-    <section className="space-y-3 rounded border border-slate-800 p-4 text-sm">
-      <h3 className="text-sm font-medium text-slate-300">章</h3>
-      <label className="block">
-        <span className="text-slate-500">标题</span>
-        <input className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-3 py-2"
-               value={draft.title} onChange={(e) => set({ title: e.target.value })} />
-      </label>
+    <Card className="space-y-3 text-[13.5px]">
+      <h3 className="text-[13.5px] font-medium text-ink-2">章</h3>
+      <Field label="标题">
+        <Input value={draft.title} onChange={(e) => set({ title: e.target.value })} />
+      </Field>
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-slate-500">视角</label>
-        <input className="w-40 rounded border border-slate-700 bg-slate-900 px-3 py-2"
-               value={draft.pov} onChange={(e) => set({ pov: e.target.value })} />
-        <label className="text-slate-500">目标字数</label>
-        <input className="w-32 rounded border border-slate-700 bg-slate-900 px-3 py-2"
-               value={draft.targetWords} onChange={(e) => set({ targetWords: e.target.value })} />
+        <label className="text-muted">视角</label>
+        <div className="w-40">
+          <Input value={draft.pov} onChange={(e) => set({ pov: e.target.value })} />
+        </div>
+        <label className="text-muted">目标字数</label>
+        <div className="w-32">
+          <Input value={draft.targetWords} onChange={(e) => set({ targetWords: e.target.value })} />
+        </div>
       </div>
-      <label className="block">
-        <span className="text-slate-500">情绪基调</span>
-        <input className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-3 py-2"
-               value={draft.emotionalTone} onChange={(e) => set({ emotionalTone: e.target.value })} />
-      </label>
-      <label className="block">
-        <span className="text-slate-500">推进的线（顿号分隔）</span>
-        <input className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-3 py-2"
-               value={draft.lines} onChange={(e) => set({ lines: e.target.value })} />
-      </label>
-      <label className="block">
-        <span className="text-slate-500">章末钩子</span>
-        <input className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-3 py-2"
-               value={draft.hook} onChange={(e) => set({ hook: e.target.value })} />
-      </label>
-      <label className="block">
-        <span className="text-slate-500">本章摘要</span>
-        <textarea className="mt-1 h-24 w-full rounded border border-slate-700 bg-slate-900 p-3"
+      <Field label="情绪基调">
+        <Input value={draft.emotionalTone} onChange={(e) => set({ emotionalTone: e.target.value })} />
+      </Field>
+      <Field label="推进的线（顿号分隔）">
+        <Input value={draft.lines} onChange={(e) => set({ lines: e.target.value })} />
+      </Field>
+      <Field label="章末钩子">
+        <Input value={draft.hook} onChange={(e) => set({ hook: e.target.value })} />
+      </Field>
+      <Field label="本章摘要">
+        <Textarea className="min-h-[96px]"
                   value={draft.summary} onChange={(e) => set({ summary: e.target.value })} />
-      </label>
+      </Field>
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-slate-500">冲突强度</label>
-        <select className="rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                value={draft.conflictLevel} onChange={(e) => set({ conflictLevel: e.target.value })}>
-          {levels.map((value) => <option key={value} value={value}>{value || '未评'}</option>)}
-        </select>
-        <label className="text-slate-500">对话占比（%）</label>
-        <input className="w-24 rounded border border-slate-700 bg-slate-900 px-2 py-1"
-               value={draft.dialogueRatio} onChange={(e) => set({ dialogueRatio: e.target.value })} />
-        <label className="text-slate-500">钩子强度</label>
-        <select className="rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                value={draft.hookStrength} onChange={(e) => set({ hookStrength: e.target.value })}>
-          {levels.map((value) => <option key={value} value={value}>{value || '未评'}</option>)}
-        </select>
-        <label className="text-slate-500">状态</label>
-        <select className="rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                value={draft.status} onChange={(e) => set({ status: e.target.value })}>
-          {statuses.map((status) => (
-            <option key={status.key} value={status.key}>{status.label}</option>
-          ))}
-        </select>
+        <label className="text-muted">冲突强度</label>
+        <div className="w-24">
+          <Select options={levels.map((value) => ({ value, label: value || '未评' }))}
+                  value={draft.conflictLevel} onChange={(e) => set({ conflictLevel: e.target.value })} />
+        </div>
+        <label className="text-muted">对话占比（%）</label>
+        <div className="w-24">
+          <Input value={draft.dialogueRatio} onChange={(e) => set({ dialogueRatio: e.target.value })} />
+        </div>
+        <label className="text-muted">钩子强度</label>
+        <div className="w-24">
+          <Select options={levels.map((value) => ({ value, label: value || '未评' }))}
+                  value={draft.hookStrength} onChange={(e) => set({ hookStrength: e.target.value })} />
+        </div>
+        <label className="text-muted">状态</label>
+        <div className="w-32">
+          <Select options={statuses.map((status) => ({ value: status.key, label: status.label }))}
+                  value={draft.status} onChange={(e) => set({ status: e.target.value })} />
+        </div>
       </div>
       <div className="flex items-center gap-2">
-        <button className="rounded bg-indigo-600 px-4 py-2 disabled:opacity-50" disabled={busy}
+        <Button variant="primary" disabled={busy}
                 onClick={() => onSave({
                   title: draft.title.trim(),
                   pov: draft.pov,
@@ -122,12 +117,11 @@ export default function ChapterEditor({
                   status: draft.status,
                 })}>
           保存
-        </button>
-        <button className="rounded border border-amber-700 px-4 py-2 text-amber-400" disabled={busy}
-                onClick={onDelete}>
+        </Button>
+        <Button variant="danger" disabled={busy} onClick={onDelete}>
           删除
-        </button>
+        </Button>
       </div>
-    </section>
+    </Card>
   )
 }

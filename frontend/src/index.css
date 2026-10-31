@@ -2,6 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --accent-soft: #e6efe9;
+}
+
 body {
-  @apply bg-slate-950 text-slate-100 antialiased;
+  @apply bg-paper font-ui text-ink antialiased;
+}
+
+/* 键盘焦点在浅色底上要看得见：3px 墨绿柔光，不改变布局尺寸。 */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* 尊重系统的「减少动态效果」：只保留状态变化，不留过渡与循环动画。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0ms !important;
+  }
 }

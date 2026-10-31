@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
-import { api, type Project, type SettingEntry, type TimelineEvent } from '../api/client'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { api, type SettingEntry, type TimelineEvent } from '../api/client'
+import { useCurrentProject } from '../state/ProjectContext'
 
 interface Draft {
   title: string
@@ -18,30 +19,44 @@ const EMPTY: Draft = {
 }
 
 export default function Timeline() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectId, setProjectId] = useState('')
+  // 当前项目由外壳持有；切换入口在侧栏。
+  const { projectId } = useCurrentProject()
   const [entries, setEntries] = useState<SettingEntry[]>([])
   const [events, setEvents] = useState<TimelineEvent[]>([])
   const [draft, setDraft] = useState<Draft>(EMPTY)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
-
-  useEffect(() => {
-    api.listProjects().then((list) => {
-      setProjects(list)
-      if (list[0]) setProjectId(list[0].id)
-    })
-  }, [])
+  // 迟到响应不许覆盖新项目的事件：切项目现在是常驻入口。
+  const dataToken = useRef(0)
 
   useEffect(() => {
     if (!projectId) return
+    const token = ++dataToken.current
     setNotice('')
     setDraft(EMPTY)
     setEditingId(null)
     setEntries([])
     setEvents([])
-    api.listEntries(projectId).then(setEntries).catch((e) => setNotice((e as Error).message))
-    api.listTimeline(projectId).then(setEvents).catch((e) => setNotice((e as Error).message))
+    api
+      .listEntries(projectId)
+      .then((rows) => {
+        if (dataToken.current !== token) return
+        setEntries(rows)
+      })
+      .catch((e) => {
+        if (dataToken.current !== token) return
+        setNotice((e as Error).message)
+      })
+    api
+      .listTimeline(projectId)
+      .then((rows) => {
+        if (dataToken.current !== token) return
+        setEvents(rows)
+      })
+      .catch((e) => {
+        if (dataToken.current !== token) return
+        setNotice((e as Error).message)
+      })
   }, [projectId])
 
   const byId = useMemo(() => new Map(entries.map((e) => [e.id, e])), [entries])
@@ -135,17 +150,6 @@ export default function Timeline() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-xl font-semibold">时间线</h2>
-        <select
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-          value={projectId}
-          onChange={(e) => setProjectId(e.target.value)}
-        >
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
         <button className="rounded border border-slate-700 px-3 py-2 text-sm" onClick={startCreate}>
           新建事件
         </button>

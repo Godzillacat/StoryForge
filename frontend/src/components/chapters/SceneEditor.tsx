@@ -5,6 +5,9 @@ import type {
   SceneNode,
   SettingEntry,
 } from '../../api/client'
+import { Button } from '../../ui/Button'
+import { Card } from '../../ui/Card'
+import { Field, Input, Select, Textarea } from '../../ui/Field'
 
 export default function SceneEditor({
   scene,
@@ -96,49 +99,46 @@ export default function SceneEditor({
   }
 
   return (
-    <section className="space-y-3 rounded border border-slate-800 p-4 text-sm">
-      <h3 className="text-sm font-medium text-slate-300">场景</h3>
-      <label className="block">
-        <span className="text-slate-500">场景目标</span>
-        <textarea className="mt-1 h-20 w-full rounded border border-slate-700 bg-slate-900 p-3"
+    <Card className="space-y-3 text-[13.5px]">
+      <h3 className="text-[13.5px] font-medium text-ink-2">场景</h3>
+      <Field label="场景目标">
+        <Textarea className="min-h-[80px]"
                   value={draft.goal} onChange={(e) => set({ goal: e.target.value })} />
-      </label>
-      <label className="block">
-        <span className="text-slate-500">冲突</span>
-        <textarea className="mt-1 h-20 w-full rounded border border-slate-700 bg-slate-900 p-3"
+      </Field>
+      <Field label="冲突">
+        <Textarea className="min-h-[80px]"
                   value={draft.conflict} onChange={(e) => set({ conflict: e.target.value })} />
-      </label>
-      <label className="block">
-        <span className="text-slate-500">转折</span>
-        <textarea className="mt-1 h-20 w-full rounded border border-slate-700 bg-slate-900 p-3"
+      </Field>
+      <Field label="转折">
+        <Textarea className="min-h-[80px]"
                   value={draft.turn} onChange={(e) => set({ turn: e.target.value })} />
-      </label>
+      </Field>
 
       <div className="space-y-2">
-        <div className="text-slate-400">出场人物（只列人物）</div>
+        <div className="text-muted">出场人物（只列人物）</div>
         <div className="flex flex-wrap gap-2">
           {characters.map((character) => {
             const on = draft.characterIds.includes(character.id)
             return (
               <button key={character.id} onClick={() => toggleCharacter(character.id)}
-                      className={`rounded border px-3 py-1 text-xs ${
-                        on ? 'border-indigo-500 bg-slate-800' : 'border-slate-700'
+                      className={`rounded-control border px-3 py-1 text-[11.5px] ${
+                        on ? 'border-accent bg-accent-soft' : 'border-line-strong'
                       }`}>
                 {character.name}
               </button>
             )
           })}
           {characters.length === 0 && (
-            <span className="text-xs text-slate-500">还没有人物，先去世界观里建一个。</span>
+            <span className="text-[11.5px] text-muted">还没有人物，先去世界观里建一个。</span>
           )}
         </div>
         {draft.characterIds.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1 text-xs text-slate-500">
+          <div className="flex flex-wrap items-center gap-1 text-[11.5px] text-muted">
             <span>已选：</span>
             {draft.characterIds.map((id) => (
-              <span key={id} className="rounded bg-slate-800 px-2 py-1">
+              <span key={id} className="rounded-tag bg-accent-soft px-2 py-1">
                 {nameOf(id)}
-                <button className="ml-2 text-amber-400"
+                <button className="ml-2 text-warn"
                         onClick={() => set({
                           characterIds: draft.characterIds.filter((item) => item !== id),
                         })}>
@@ -151,36 +151,35 @@ export default function SceneEditor({
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-slate-500">地点</label>
-        <select className="rounded border border-slate-700 bg-slate-900 px-3 py-2"
-                value={draft.locationId} onChange={(e) => set({ locationId: e.target.value })}>
-          <option value="">（无地点）</option>
-          {entries.map((entry) => (
-            <option key={entry.id} value={entry.id}>{entry.name}</option>
-          ))}
-        </select>
-        <label className="text-slate-500">故事内时间</label>
-        <input className="w-44 rounded border border-slate-700 bg-slate-900 px-3 py-2"
-               value={draft.storyTime} onChange={(e) => set({ storyTime: e.target.value })} />
-        <label className="text-slate-500">视角</label>
-        <input className="w-40 rounded border border-slate-700 bg-slate-900 px-3 py-2"
-               value={draft.pov} onChange={(e) => set({ pov: e.target.value })} />
+        <label className="text-muted">地点</label>
+        <div className="w-40">
+          <Select options={[{ value: '', label: '（无地点）' }, ...entries.map((entry) => ({ value: entry.id, label: entry.name }))]}
+                  value={draft.locationId} onChange={(e) => set({ locationId: e.target.value })} />
+        </div>
+        <label className="text-muted">故事内时间</label>
+        <div className="w-44">
+          <Input value={draft.storyTime} onChange={(e) => set({ storyTime: e.target.value })} />
+        </div>
+        <label className="text-muted">视角</label>
+        <div className="w-40">
+          <Input value={draft.pov} onChange={(e) => set({ pov: e.target.value })} />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-slate-500">字数下限</label>
-        <input className="w-24 rounded border border-slate-700 bg-slate-900 px-3 py-2"
-               value={draft.minWords} onChange={(e) => set({ minWords: e.target.value })} />
-        <label className="text-slate-500">字数上限</label>
-        <input className="w-24 rounded border border-slate-700 bg-slate-900 px-3 py-2"
-               value={draft.maxWords} onChange={(e) => set({ maxWords: e.target.value })} />
-        <label className="text-slate-500">状态</label>
-        <select className="rounded border border-slate-700 bg-slate-900 px-2 py-1"
-                value={draft.status} onChange={(e) => set({ status: e.target.value })}>
-          {statuses.map((status) => (
-            <option key={status.key} value={status.key}>{status.label}</option>
-          ))}
-        </select>
+        <label className="text-muted">字数下限</label>
+        <div className="w-24">
+          <Input value={draft.minWords} onChange={(e) => set({ minWords: e.target.value })} />
+        </div>
+        <label className="text-muted">字数上限</label>
+        <div className="w-24">
+          <Input value={draft.maxWords} onChange={(e) => set({ maxWords: e.target.value })} />
+        </div>
+        <label className="text-muted">状态</label>
+        <div className="w-32">
+          <Select options={statuses.map((status) => ({ value: status.key, label: status.label }))}
+                  value={draft.status} onChange={(e) => set({ status: e.target.value })} />
+        </div>
       </div>
 
       <datalist id="foreshadow-names">
@@ -193,32 +192,33 @@ export default function SceneEditor({
         const setInput = kind === 'plant' ? setPlantInput : setPayInput
         return (
           <div key={kind} className="space-y-1">
-            <div className="text-slate-400">{kind === 'plant' ? '埋设的伏笔' : '回收的伏笔'}</div>
+            <div className="text-muted">{kind === 'plant' ? '埋设的伏笔' : '回收的伏笔'}</div>
             <div className="flex flex-wrap gap-2">
               {names.map((name) => (
-                <span key={name} className="rounded bg-slate-800 px-2 py-1 text-xs">
+                <span key={name} className="rounded-tag bg-accent-soft px-2 py-1 text-[11.5px]">
                   {name}
-                  <button className="ml-2 text-amber-400" onClick={() => removeName(kind, name)}>
+                  <button className="ml-2 text-warn" onClick={() => removeName(kind, name)}>
                     ×
                   </button>
                 </span>
               ))}
             </div>
             <div className="flex items-center gap-2">
-              <input className="w-64 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
-                     list="foreshadow-names" placeholder="已有伏笔名或新名字"
-                     value={input} onChange={(e) => setInput(e.target.value)}
-                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addName(kind) } }} />
-              <button className="text-xs text-indigo-400" onClick={() => addName(kind)}>
+              <div className="w-64">
+                <Input list="foreshadow-names" placeholder="已有伏笔名或新名字"
+                       value={input} onChange={(e) => setInput(e.target.value)}
+                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addName(kind) } }} />
+              </div>
+              <Button variant="accent" size="sm" onClick={() => addName(kind)}>
                 添加
-              </button>
+              </Button>
             </div>
           </div>
         )
       })}
 
       <div className="flex items-center gap-2">
-        <button className="rounded bg-indigo-600 px-4 py-2 disabled:opacity-50" disabled={busy}
+        <Button variant="primary" disabled={busy}
                 onClick={() => {
                   const fields: Record<string, unknown> = {
                     goal: draft.goal,
@@ -248,15 +248,14 @@ export default function SceneEditor({
                   onSave(fields)
                 }}>
           保存
-        </button>
-        <button className="rounded border border-amber-700 px-4 py-2 text-amber-400" disabled={busy}
-                onClick={onDelete}>
+        </Button>
+        <Button variant="danger" disabled={busy} onClick={onDelete}>
           删除
-        </button>
+        </Button>
       </div>
-      <p className="text-xs text-slate-500">
+      <p className="text-[11.5px] text-muted">
         人物、地点、伏笔都按名称保存；名称找不到或与另一个场景冲突时，后端会列出原因。
       </p>
-    </section>
+    </Card>
   )
 }

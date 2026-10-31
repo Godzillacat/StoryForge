@@ -10,7 +10,6 @@ import {
   type ForeshadowSummary,
   type PlanScene,
   type PlanVolume,
-  type Project,
   type ReviewMark,
   type ScenePlanResponse,
   type SettingEntry,
@@ -18,6 +17,7 @@ import {
   type VolumeNode,
 } from '../api/client'
 import RunTrace from '../components/RunTrace'
+import { useCurrentProject } from '../state/ProjectContext'
 import {
   ImpactPanel,
   LockToggle,
@@ -36,29 +36,14 @@ import Swimlanes from '../components/chapters/Swimlanes'
 import CausalMap from '../components/chapters/CausalMap'
 import SettingLoadCurve from '../components/chapters/SettingLoadCurve'
 import CharacterDrift from '../components/chapters/CharacterDrift'
-
-type ViewTab =
-  | 'structure'
-  | 'rhythm'
-  | 'foreshadows'
-  | 'lanes'
-  | 'causal'
-  | 'settingLoad'
-  | 'characterDrift'
-
-const TABS: { key: ViewTab; label: string }[] = [
-  { key: 'structure', label: '结构设计' },
-  { key: 'rhythm', label: '节奏曲线' },
-  { key: 'foreshadows', label: '伏笔账本' },
-  { key: 'lanes', label: '剧情线' },
-  { key: 'causal', label: '因果链' },
-  { key: 'settingLoad', label: '设定投放' },
-  { key: 'characterDrift', label: '性格漂移' },
-]
+import { VIEW_GROUPS, groupOfView, subViewsOf, viewOfGroup, type ViewTab } from '../lib/chapterTabs'
+import { Button } from '../ui/Button'
+import { Panel } from '../ui/Card'
+import { Tabs } from '../ui/Tabs'
 
 export default function Chapters() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectId, setProjectId] = useState('')
+  // 当前项目由外壳持有；页面只读，切换入口在侧栏。
+  const { projectId } = useCurrentProject()
   const [statuses, setStatuses] = useState<ChapterStatusOption[]>([])
   const [volumes, setVolumes] = useState<VolumeNode[]>([])
   const [entries, setEntries] = useState<SettingEntry[]>([])
@@ -111,13 +96,6 @@ export default function Chapters() {
   const projectIdRef = useRef('')
 
   useEffect(() => {
-    api.listProjects().then((list) => {
-      setProjects(list)
-      if (list[0]) {
-        projectIdRef.current = list[0].id
-        setProjectId(list[0].id)
-      }
-    }).catch((error) => setNotice((error as Error).message))
     api.listChapterTypes().then((data) => setStatuses(data.statuses))
       .catch((error) => setNotice((error as Error).message))
     api.listForeshadowTypes().then((data) => setForeshadowStatuses(data.statuses))
@@ -513,36 +491,29 @@ export default function Chapters() {
   const settingLoadLoading = Boolean(projectId) && settingLoadProjectId !== projectId
   const characterDriftLoading = Boolean(projectId) && characterDriftProjectId !== projectId
 
+  // 页签分两层，但**只有一个状态**：一级组的选中态由 `view` 投影得出，
+  // 所以重组没有引入新状态，八个 `view === 'xxx'` 渲染分支一行未动。
+  const activeGroup = groupOfView(view)
+  const subViews = subViewsOf(activeGroup)
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-xl font-semibold">章节设计</h2>
-        <select
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-          value={projectId}
-          onChange={(e) => {
-            projectIdRef.current = e.target.value
-            setDataProjectId('')
-            setProjectId(e.target.value)
-          }}
-        >
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
-        {view === 'structure' && (
-          <button
-            className="rounded bg-indigo-600 px-4 py-2 text-sm disabled:opacity-50"
-            disabled={!projectId || planning}
-            onClick={runChapterPlan}
-          >
-            {planning ? '生成中…' : 'AI 排卷章'}
-          </button>
-        )}
-        {notice && <span className="text-sm text-slate-400">{notice}</span>}
+        <h2 className="font-serif text-[19px] font-semibold text-ink">章节设计</h2>
+        <div className="ml-auto flex items-center gap-2">
+          {view === 'structure' && (
+            <Button
+              variant="primary"
+              disabled={!projectId || planning}
+              onClick={runChapterPlan}
+            >
+              {planning ? '生成中…' : 'AI 排卷章'}
+            </Button>
+          )}
+        </div>
       </div>
+
+      {notice && <p className="text-[13px] text-muted">{notice}</p>}
 
       {projectId && reviewMarks.length > 0 && (
         <ReviewMarkList
@@ -552,20 +523,25 @@ export default function Chapters() {
         />
       )}
 
-      <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-2">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            className={`rounded px-3 py-1.5 text-sm ${
-              view === tab.key
-                ? 'bg-slate-800 text-white'
-                : 'text-slate-400 hover:bg-slate-900'
-            }`}
-            onClick={() => setView(tab.key)}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="space-y-2 border-b border-line pb-2">
+        <Tabs
+          items={VIEW_GROUPS.map((group) => ({ key: group.key, label: group.label }))}
+          active={activeGroup}
+          onChange={(key) => {
+            const next = viewOfGroup(key)
+            if (next) setView(next)
+          }}
+        />
+        {subViews.length > 0 && (
+          <Tabs
+            items={subViews.map((item) => ({ key: item.key, label: item.label }))}
+            active={view}
+            onChange={(key) => {
+              const next = subViews.find((item) => item.key === key)
+              if (next) setView(next.key)
+            }}
+          />
+        )}
       </div>
 
       {view === 'structure' && (
@@ -601,37 +577,41 @@ export default function Chapters() {
             </>
           )}
 
-          <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
-            <ChapterTree
-              volumes={volumes}
-              selected={selected}
-              onSelect={setSelected}
-              onAddVolume={addVolume}
-              onAddChapter={addChapter}
-              onAddScene={addScene}
-              onMove={move}
-            />
+          <div className="grid grid-cols-[308px_1fr] items-start gap-4">
+            <Panel className="max-h-[70vh]">
+              <div className="p-3">
+                <ChapterTree
+                  volumes={volumes}
+                  selected={selected}
+                  onSelect={setSelected}
+                  onAddVolume={addVolume}
+                  onAddChapter={addChapter}
+                  onAddScene={addScene}
+                  onMove={move}
+                />
+              </div>
+            </Panel>
 
             <div className="space-y-4">
               {activeChapter && (
                 <div className="flex justify-end">
-                  <button
-                    className="rounded border border-emerald-700 px-3 py-1.5 text-sm text-emerald-300 disabled:opacity-50"
+                  <Button
+                    variant="primary"
                     disabled={planning}
                     onClick={() => runScenePlan(activeChapter)}
                   >
                     AI 写场景卡
-                  </button>
+                  </Button>
                 </div>
               )}
               {!selected && (
-                <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+                <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
                   从左边选一卷、一章或一个场景开始编辑；也可以先手工建卷。
                 </p>
               )}
               {selected && (volume || chapter || scene) && (
-                <div className="space-y-2 rounded border border-slate-800 p-3">
-                  <div className="flex flex-wrap items-center gap-3 text-sm">
+                <div className="space-y-2 rounded-card border border-line bg-surface p-3">
+                  <div className="flex flex-wrap items-center gap-3 text-[13px]">
                     {(() => {
                       const mark = reviewMarks.find(
                         (row) =>
@@ -648,7 +628,7 @@ export default function Chapters() {
                         />
                       ) : null
                     })()}
-                    <span className="text-slate-400">锁定</span>
+                    {/* 按钮自己写着「锁定 / 已锁定」，不再另加一个「锁定」标签。 */}
                     <LockToggle
                       targetType={selected.kind}
                       targetId={selected.id}
@@ -743,11 +723,11 @@ export default function Chapters() {
       {view !== 'structure' && (
         <section className="space-y-4">
           {!projectId ? (
-            <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+            <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
               先选一个项目。
             </p>
           ) : viewsLoading ? (
-            <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+            <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
               正在读取章节结构…
             </p>
           ) : (

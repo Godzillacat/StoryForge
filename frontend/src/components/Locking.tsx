@@ -8,6 +8,7 @@ import {
   type RevisionSuggestion,
 } from '../api/client'
 import { countSelected, isSelectable } from '../lib/revisionView'
+import { Button } from '../ui/Button'
 
 /** 「现在」一栏的显示上限：面板是窄栏，长段落会把整列撑散。 */
 const BEFORE_LIMIT = 60
@@ -58,7 +59,7 @@ export function LockToggle({
 
   if (inheritedLabel) {
     return (
-      <span className="text-xs text-amber-400" title={`由「${inheritedLabel}」锁定`}>
+      <span className="text-[11.5px] text-warn" title={`由「${inheritedLabel}」锁定`}>
         已锁定（继承）
       </span>
     )
@@ -67,10 +68,11 @@ export function LockToggle({
   return (
     <span className="inline-flex items-center gap-2">
       <button
-        className={`rounded border px-2 py-0.5 text-xs ${
+        type="button"
+        className={`rounded-control border px-2 py-0.5 text-[11.5px] transition-colors duration-[120ms] ${
           locked
-            ? 'border-amber-600 bg-amber-950/40 text-amber-300'
-            : 'border-slate-700 text-slate-400'
+            ? 'border-warn bg-warn-soft text-warn'
+            : 'border-line-strong text-muted hover:bg-sunken hover:text-ink-2'
         } ${busy ? 'opacity-50' : ''}`}
         onClick={toggle}
         disabled={busy}
@@ -78,7 +80,7 @@ export function LockToggle({
       >
         {locked ? '🔒 已锁定' : '锁定'}
       </button>
-      {error && <span className="text-xs text-red-400">{error}</span>}
+      {error && <span className="text-[11.5px] text-danger">{error}</span>}
     </span>
   )
 }
@@ -282,57 +284,49 @@ export function ImpactPanel({
 
   return (
     <div className="space-y-2">
-      <button
-        className="rounded border border-slate-700 px-3 py-1 text-xs text-slate-300 disabled:opacity-50"
-        onClick={load}
-        disabled={busy}
-      >
+      <Button onClick={load} disabled={busy}>
         {open ? '收起影响面' : '看看会影响什么'}
-      </button>
-      {notice && <p className="text-xs text-slate-400">{notice}</p>}
+      </Button>
+      {notice && <p className="text-[11.5px] text-muted">{notice}</p>}
 
       {open && report && (
-        <div className="space-y-3 rounded border border-slate-800 bg-slate-900/60 p-3 text-xs">
+        <div className="space-y-3 rounded-control border border-line bg-sunken p-3 text-[11.5px]">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-slate-400">
+            <span className="text-muted">
               共 {report.totals.all} 处下游，其中 {report.totals.locked} 处已锁定
             </span>
-            <button
-              className="rounded bg-indigo-600 px-3 py-1 disabled:opacity-50"
-              onClick={markDownstream}
-              disabled={busy}
-            >
+            <Button variant="primary" size="sm" onClick={markDownstream} disabled={busy}>
               只改上层，下游标为待复核
-            </button>
-            <button
-              className="rounded border border-slate-700 px-3 py-1 text-slate-300 disabled:opacity-50"
+            </Button>
+            <Button
+              size="sm"
               onClick={generateRevisions}
               disabled={generating || busy || suggestibleCount === 0}
               title={suggestionHint || '针对这次改动生成可逐条采纳的修订建议'}
             >
               {generating ? '生成中…' : '生成修订建议'}
-            </button>
-            {suggestionHint && <span className="text-slate-500">{suggestionHint}</span>}
+            </Button>
+            {suggestionHint && <span className="text-muted">{suggestionHint}</span>}
           </div>
 
-          {revisionError && <p className="text-red-400">{revisionError}</p>}
+          {revisionError && <p className="text-danger">{revisionError}</p>}
 
           {revisions && revisions.llm_status !== 'ok' && revisions.warning && (
-            <p className="text-amber-300">{revisions.warning}</p>
+            <p className="text-warn">{revisions.warning}</p>
           )}
 
           {revisions && revisions.llm_status === 'ok' && revisions.suggestions.length === 0 && (
-            <p className="text-slate-400">{revisions.warning || '这次没有需要改的地方'}</p>
+            <p className="text-muted">{revisions.warning || '这次没有需要改的地方'}</p>
           )}
 
           {revisions && revisions.llm_status === 'ok' && revisions.suggestions.length > 0 && (
-            <div className="space-y-2 rounded border border-slate-800 bg-slate-950/40 p-2">
+            <div className="space-y-2 rounded-control border border-line bg-surface p-2">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-slate-300">
+                <span className="text-ink-2">
                   {revisions.suggestions.length} 条建议 · 采纳选中 {selectedCount} 条
                 </span>
               </div>
-              {revisions.warning && <p className="text-amber-300">{revisions.warning}</p>}
+              {revisions.warning && <p className="text-warn">{revisions.warning}</p>}
               <ul className="space-y-1">
                 {revisions.suggestions.map((item) => {
                   const state = rowState(item)
@@ -340,33 +334,33 @@ export function ImpactPanel({
                   return (
                     <li
                       key={item.index}
-                      className={`rounded border border-slate-800 p-2 ${
+                      className={`rounded-control border border-line p-2 ${
                         selectable ? '' : 'opacity-50'
                       }`}
                     >
                       <label className="flex items-start gap-2">
                         <input
                           type="checkbox"
-                          className="mt-0.5"
+                          className="mt-0.5 accent-accent"
                           checked={selected.has(item.index)}
                           disabled={!selectable}
                           onChange={() => toggle(item.index)}
                         />
                         <span className="space-y-0.5">
-                          <span className="flex flex-wrap items-center gap-1 text-slate-200">
+                          <span className="flex flex-wrap items-center gap-1 text-ink">
                             {item.target_label} · {item.field_label}
-                            {state.locked && <span className="text-amber-400">锁定</span>}
-                            {state.stale && <span className="text-amber-400">现值已变化</span>}
+                            {state.locked && <span className="text-warn">锁定</span>}
+                            {state.stale && <span className="text-warn">现值已变化</span>}
                             {state.blocked && (
-                              <span className="text-slate-400">{state.blocked}</span>
+                              <span className="text-muted">{state.blocked}</span>
                             )}
                           </span>
-                          <span className="block text-slate-500">
+                          <span className="block text-muted">
                             现在：{clip(item.before, BEFORE_LIMIT) || '（空）'}
                           </span>
-                          <span className="block text-slate-300">建议：{item.after}</span>
+                          <span className="block text-ink-2">建议：{item.after}</span>
                           {item.reason && (
-                            <span className="block text-slate-500">理由：{item.reason}</span>
+                            <span className="block text-muted">理由：{item.reason}</span>
                           )}
                         </span>
                       </label>
@@ -375,23 +369,20 @@ export function ImpactPanel({
                 })}
               </ul>
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  className="rounded bg-indigo-600 px-3 py-1 disabled:opacity-50"
+                <Button
+                  variant="primary"
+                  size="sm"
                   onClick={applySelected}
                   disabled={applying || selectedCount === 0}
                 >
                   {applying ? '应用中…' : `采纳选中 ${selectedCount} 条`}
-                </button>
-                <button
-                  className="rounded border border-slate-700 px-3 py-1 text-slate-400"
-                  onClick={resetRevisions}
-                  disabled={applying}
-                >
+                </Button>
+                <Button size="sm" onClick={resetRevisions} disabled={applying}>
                   全部不要
-                </button>
+                </Button>
               </div>
               {applyResult && (
-                <p className="text-slate-300">
+                <p className="text-ink-2">
                   已采纳 {applyResult.applied.length} 条
                   {applyResult.skipped.length > 0 && (
                     <>
@@ -400,7 +391,7 @@ export function ImpactPanel({
                         <span
                           key={`${row.index}-${row.reason}`}
                           className={`ml-1 ${
-                            AMBER_REASONS.has(row.reason) ? 'text-amber-400' : 'text-slate-400'
+                            AMBER_REASONS.has(row.reason) ? 'text-warn' : 'text-muted'
                           }`}
                         >
                           第 {row.index + 1} 条「{row.reason}」
@@ -415,35 +406,35 @@ export function ImpactPanel({
 
           {report.groups.map((group) => (
             <div key={group.key} className="space-y-1">
-              <div className="text-slate-300">
+              <div className="text-ink-2">
                 {group.label}：{group.total}
                 {group.locked > 0 && (
-                  <span className="text-amber-400">（{group.locked} 处锁定）</span>
+                  <span className="text-warn">（{group.locked} 处锁定）</span>
                 )}
               </div>
-              {group.note && <p className="text-slate-500">{group.note}</p>}
+              {group.note && <p className="text-muted">{group.note}</p>}
               {group.items.length > 0 && (
                 <ul className="space-y-0.5 pl-3">
                   {group.items.slice(0, 20).map((item) => (
                     <li key={`${item.type}-${item.id}`} className="flex items-center gap-2">
-                      <a className="text-indigo-400" href={item.path}>
+                      <a className="text-accent-ink underline-offset-2 hover:underline" href={item.path}>
                         {item.label}
                       </a>
                       {item.detail && (
-                        <span className="truncate text-slate-500">{item.detail}</span>
+                        <span className="truncate text-muted">{item.detail}</span>
                       )}
                       {item.locked && (
-                        <span className="text-amber-400" title={item.locked_by}>
+                        <span className="text-warn" title={item.locked_by}>
                           锁定
                         </span>
                       )}
                       {markedIds.has(item.id) && (
-                        <span className="text-amber-400">已标待复核</span>
+                        <span className="text-warn">已标待复核</span>
                       )}
                     </li>
                   ))}
                   {group.items.length > 20 && (
-                    <li className="text-slate-500">… 另有 {group.items.length - 20} 项</li>
+                    <li className="text-muted">… 另有 {group.items.length - 20} 项</li>
                   )}
                 </ul>
               )}
@@ -467,7 +458,8 @@ export function ReviewMarkBadge({
   if (!marked) return null
   return (
     <button
-      className="rounded bg-amber-950/50 px-1.5 py-0.5 text-[10px] text-amber-300"
+      type="button"
+      className="rounded-tag bg-warn-soft px-1.5 py-0.5 text-[10px] text-warn transition-colors duration-[120ms] hover:bg-warn/10"
       onClick={onClick}
       title={`${reason}（点击清除标记）`}
     >
@@ -498,11 +490,12 @@ export function ReviewMarkList({
   }
 
   return (
-    <div className="space-y-1 rounded border border-amber-900/50 bg-amber-950/20 p-3 text-xs">
+    <div className="space-y-1 rounded-card border border-warn bg-warn-soft p-3 text-[11.5px]">
       <div className="flex items-center gap-2">
-        <span className="text-amber-300">{marks.length} 条待复核</span>
-        <button
-          className="rounded border border-amber-800 px-2 py-0.5 text-amber-300"
+        <span className="text-warn">{marks.length} 条待复核</span>
+        <Button
+          variant="warn"
+          size="sm"
           onClick={async () => {
             try {
               await api.clearReviewMarks(
@@ -519,18 +512,22 @@ export function ReviewMarkList({
           }}
         >
           全部清除
-        </button>
+        </Button>
       </div>
-      {error && <p className="text-red-400">{error}</p>}
+      {error && <p className="text-danger">{error}</p>}
       <ul className="space-y-0.5">
         {marks.map((mark) => (
           <li key={mark.id} className="flex items-center gap-2">
-            <span className="text-slate-500">{mark.type_label}</span>
-            <a className="text-indigo-400" href={mark.path}>
+            <span className="text-muted">{mark.type_label}</span>
+            <a className="text-accent-ink underline-offset-2 hover:underline" href={mark.path}>
               {mark.label}
             </a>
-            {mark.reason && <span className="text-slate-500">{mark.reason}</span>}
-            <button className="text-slate-500" onClick={() => clear(mark.id)}>
+            {mark.reason && <span className="text-muted">{mark.reason}</span>}
+            <button
+              type="button"
+              className="text-muted transition-colors duration-[120ms] hover:text-ink-2"
+              onClick={() => clear(mark.id)}
+            >
               清除
             </button>
           </li>

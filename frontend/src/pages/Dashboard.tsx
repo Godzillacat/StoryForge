@@ -4,22 +4,30 @@ import {
   type ChangeRow,
   type CostSummary,
   type ExportReport,
-  type Project,
   type Settings,
   type SnapshotView,
 } from '../api/client'
 import { ChangeList, SnapshotPanel } from '../components/Snapshots'
+import { useCurrentProject } from '../state/ProjectContext'
+import { Button } from '../ui/Button'
+import { Card } from '../ui/Card'
+import { EmptyState } from '../ui/EmptyState'
 
 export default function Dashboard() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [selected, setSelected] = useState<Project | null>(null)
-  // 封面是否已设置。**与 `selected` 分开存**：它一变就替换 `selected` 的话，
+  // 项目列表与「当前项目」由外壳持有；这里只读，不再自己拉、不再自己选。
+  const {
+    projects,
+    project: selected,
+    projectId,
+    refresh: reloadProjects,
+    error: listError,
+  } = useCurrentProject()
+  // 封面是否已设置。**与项目对象分开存**：它一变就替换项目的话，
   // 下面的 report effect 会重跑、整张导出卡片塌成占位。
   const [coverSet, setCoverSet] = useState(false)
   const [cost, setCost] = useState<CostSummary | null>(null)
   const [report, setReport] = useState<ExportReport | null>(null)
   const [settings, setSettings] = useState<Settings | null>(null)
-  const [name, setName] = useState('')
   const [notice, setNotice] = useState('')
   const [snapshots, setSnapshots] = useState<SnapshotView[]>([])
   const [changes, setChanges] = useState<ChangeRow[]>([])
@@ -30,28 +38,27 @@ export default function Dashboard() {
   const coverInput = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
-    api
-      .listProjects()
-      .then(setProjects)
-      .catch((error) => setNotice((error as Error).message))
     api.getSettings().then(setSettings).catch(() => setSettings(null))
   }, [])
 
+  // 封面标记跟着项目走；单独一个 effect，免得刷新项目列表时把报告一起重拉。
+  useEffect(() => {
+    setCoverSet(Boolean(selected?.has_cover))
+  }, [projectId, selected?.has_cover])
+
   useEffect(() => {
     const token = ++reportToken.current
-    if (!selected) {
+    if (!projectId) {
       setCost(null)
       setReport(null)
-      setCoverSet(false)
       return
     }
-    setCoverSet(Boolean(selected.has_cover))
     setReport(null)
     setSnapshots([])
     setChanges([])
-    loadSnapshots(selected.id, token)
+    loadSnapshots(projectId, token)
     api
-      .projectCost(selected.id)
+      .projectCost(projectId)
       .then((value) => {
         if (reportToken.current === token) setCost(value)
       })
@@ -59,14 +66,14 @@ export default function Dashboard() {
         if (reportToken.current === token) setCost(null)
       })
     api
-      .getExportReport(selected.id)
+      .getExportReport(projectId)
       .then((value) => {
         if (reportToken.current === token) setReport(value)
       })
       .catch((error) => {
         if (reportToken.current === token) setNotice((error as Error).message)
       })
-  }, [selected])
+  }, [projectId])
 
   function loadSnapshots(projectId: string, token: number) {
     api
@@ -88,35 +95,8 @@ export default function Dashboard() {
   }
 
   function reloadSnapshots() {
-    if (!selected) return
-    loadSnapshots(selected.id, reportToken.current)
-  }
-
-  async function create() {
-    if (!name.trim()) return
-    try {
-      const project = await api.createProject({ name: name.trim() })
-      setProjects((prev) => [project, ...prev])
-      setSelected(project)
-      setName('')
-      setNotice('')
-    } catch (error) {
-      setNotice((error as Error).message)
-    }
-  }
-
-  /** 封面变了要把项目列表也刷新一次 —— `has_cover` 是列表接口给的。 */
-  async function refreshProjects() {
-    try {
-      const list = await api.listProjects()
-      setProjects(list)
-      // **不替换 `selected`**：它一换对象，下面的 report effect 就重跑，
-      // 整张导出卡片（连封面控件一起）会塌成占位再等一遍报告。
-      // 只需要把 has_cover 这一项同步过来。
-      setCoverSet(list.find((row) => row.id === selected?.id)?.has_cover ?? false)
-    } catch (error) {
-      setNotice((error as Error).message)
-    }
+    if (!projectId) return
+    loadSnapshots(projectId, reportToken.current)
   }
 
   async function uploadCover(file: File | undefined) {
@@ -125,7 +105,8 @@ export default function Dashboard() {
     setNotice('')
     try {
       await api.uploadCover(selected.id, file)
-      await refreshProjects()
+      setCoverSet(true)
+      await reloadProjects()
     } catch (error) {
       setNotice((error as Error).message)
     } finally {
@@ -141,7 +122,8 @@ export default function Dashboard() {
     setNotice('')
     try {
       await api.removeCover(selected.id)
-      await refreshProjects()
+      setCoverSet(false)
+      await reloadProjects()
     } catch (error) {
       setNotice((error as Error).message)
     } finally {
@@ -149,117 +131,143 @@ export default function Dashboard() {
     }
   }
 
+  const kpis = [
+    { label: '总字数', value: report ? report.total_words : '—' },
+    {
+      label: '已写场景',
+      value: report ? `${report.scenes - report.scenes_without_body.length} / ${report.scenes}` : '—',
+    },
+    { label: '未回收伏笔', value: report ? report.unrecovered_foreshadows.length : '—' },
+    {
+      label: '待处理问题',
+      value: report ? report.open_audit_issues + report.open_logic_issues : '—',
+    },
+  ]
+
   return (
-    <div className="space-y-6">
-      <h2 className="text-xl font-semibold">故事仪表盘</h2>
-
-      {notice && <p className="rounded bg-amber-950/40 p-3 text-sm text-amber-300">{notice}</p>}
-
-      <div className="flex gap-2">
-        <input
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-          placeholder="新项目名称"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <button className="rounded bg-indigo-600 px-4 py-2 text-sm" onClick={create}>
-          新建项目
-        </button>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="font-serif text-[19px] font-semibold text-ink">故事仪表盘</h2>
+        {selected && <span className="text-[13px] text-muted">{selected.name}</span>}
+        <div className="ml-auto flex items-center gap-2">
+          {selected && (
+            <>
+              <a
+                className="inline-flex h-8 items-center rounded-control border border-line-strong bg-surface px-3 text-[13px] text-ink-2 transition-colors duration-[120ms] hover:bg-sunken"
+                href={api.exportUrl(selected.id, 'md')}
+              >
+                导出 Markdown
+              </a>
+              <a
+                className="inline-flex h-8 items-center rounded-control bg-accent px-3 text-[13px] text-white transition-colors duration-[120ms] hover:bg-accent-ink"
+                href={api.exportUrl(selected.id, 'epub', epubTemplate)}
+              >
+                导出 EPUB
+              </a>
+            </>
+          )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        <section className="col-span-2 space-y-2">
-          {projects.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setSelected(p)}
-              className={`block w-full rounded border px-4 py-3 text-left ${
-                selected?.id === p.id ? 'border-indigo-500 bg-slate-900' : 'border-slate-800'
-              }`}
-            >
-              <div className="font-medium">{p.name}</div>
-              <div className="text-xs text-slate-500">
-                {p.genre ?? '未定题材'} · {p.tone ?? '未定调性'}
-              </div>
-            </button>
-          ))}
-          {projects.length === 0 && !notice && (
-            <p className="text-sm text-slate-500">还没有项目，先建一个。</p>
-          )}
-        </section>
+      {notice && (
+        <p className="rounded-control border-l-2 border-warn bg-warn-soft p-2.5 text-[13px] text-warn">
+          {notice}
+        </p>
+      )}
 
+      {projects.length === 0 && listError && (
+        <p className="rounded-control border-l-2 border-warn bg-warn-soft p-2.5 text-[13px] text-warn">
+          读取项目列表失败：{listError}。这不是「没有项目」，请确认后端在运行后重试。
+        </p>
+      )}
+      {projects.length === 0 && !listError && (
+        <EmptyState title="还没有项目" hint="用左侧项目选择器新建一个 —— 建项目的入口只有那一处。" />
+      )}
+
+      <div className="grid grid-cols-4 gap-3">
+        {kpis.map((kpi) => (
+          <Card key={kpi.label}>
+            <div className="text-[11px] tracking-[.08em] text-muted">{kpi.label}</div>
+            <div className="mt-1 font-serif text-[26px] leading-tight text-ink tabular-nums">
+              {kpi.value}
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-[1fr_360px] items-start gap-4">
         <div className="space-y-4">
-          <section className="rounded border border-slate-800 p-4">
-            <h3 className="mb-3 text-sm font-medium text-slate-300">体检单</h3>
+          <Card title="体检单">
             {selected ? (
-              <dl className="space-y-2 text-sm">
+              <dl className="space-y-2 text-[13.5px]">
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">字数</dt>
-                  <dd>{report?.total_words ?? 0}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-slate-500">已写场景</dt>
-                  <dd>
-                    {report
-                      ? `${report.scenes - report.scenes_without_body.length} / ${report.scenes}`
-                      : '—'}
+                  <dt className="text-muted">未写场景</dt>
+                  <dd className="text-ink-2 tabular-nums">
+                    {report?.scenes_without_body.length ?? 0}
                   </dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">未回收伏笔</dt>
-                  <dd>{report?.unrecovered_foreshadows.length ?? 0}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-slate-500">未处理告警</dt>
-                  <dd>
-                    {report
-                      ? `审计 ${report.open_audit_issues} · 逻辑 ${report.open_logic_issues}`
-                      : '—'}
+                  <dt className="text-muted">未回收伏笔</dt>
+                  <dd className="text-ink-2 tabular-nums">
+                    {report?.unrecovered_foreshadows.length ?? 0}
                   </dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">锁定对象</dt>
-                  <dd>
+                  <dt className="text-muted">锁定对象</dt>
+                  <dd className="text-ink-2 tabular-nums">
                     {report?.locked_counts
                       ? Object.values(report.locked_counts).reduce((a, b) => a + b, 0)
                       : '—'}
                   </dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">待复核</dt>
-                  <dd>{report?.review_marks ?? 0}</dd>
+                  <dt className="text-muted">待复核</dt>
+                  <dd className="text-ink-2 tabular-nums">{report?.review_marks ?? 0}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">累计调用</dt>
-                  <dd>{cost?.runs ?? 0} 次</dd>
+                  <dt className="text-muted">累计调用</dt>
+                  <dd className="text-ink-2 tabular-nums">{cost?.runs ?? 0} 次</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">累计费用</dt>
-                  <dd>
+                  <dt className="text-muted">累计费用</dt>
+                  <dd className="text-ink-2 tabular-nums">
                     ${(cost?.cost_estimate ?? 0).toFixed(4)}
                     {!!cost?.unpriced_runs && (
-                      <span className="ml-1 text-xs text-amber-400">
+                      <span className="ml-1 text-[11.5px] text-warn">
                         （{cost.unpriced_runs} 次未定价）
                       </span>
                     )}
                   </dd>
                 </div>
                 {!!settings?.budget_alert && (cost?.cost_estimate ?? 0) > settings.budget_alert && (
-                  <p className="rounded border border-amber-900 bg-amber-950/40 p-2 text-xs text-amber-300">
+                  <p className="rounded-control bg-warn-soft p-2 text-[11.5px] text-warn">
                     已超过预算提醒线 ${settings.budget_alert}。只是提醒，不会拦下调用。
                   </p>
                 )}
               </dl>
             ) : (
-              <p className="text-sm text-slate-500">选一个项目看体检单。</p>
+              <p className="text-[13px] text-muted">用左侧项目选择器选一个项目，这里显示它的体检单。</p>
             )}
-          </section>
+          </Card>
 
-          <section className="space-y-3 rounded border border-slate-800 p-4">
-            <h3 className="text-sm font-medium text-slate-300">导出与成品报告</h3>
+          <Card title="最近改动">
+            {selected ? (
+              <ChangeList
+                projectId={selected.id}
+                changes={changes}
+                emptyHint="这个项目还没有改动记录。"
+              />
+            ) : (
+              <p className="text-[13px] text-muted">选一个项目查看改动历史。</p>
+            )}
+          </Card>
+        </div>
+
+        <div className="space-y-4">
+          <Card title="导出与成品报告" className="space-y-3">
             {selected && report ? (
               <>
-                <p className="text-xs text-slate-500">
+                <p className="text-[11.5px] text-muted">
                   共 {report.total_words} 字 · {report.volumes} 卷 {report.chapters} 章 ·{' '}
                   {report.scenes} 场
                 </p>
@@ -267,28 +275,28 @@ export default function Dashboard() {
                   report.unrecovered_foreshadows.length > 0 ||
                   report.open_audit_issues > 0 ||
                   report.open_logic_issues > 0) && (
-                  <p className="rounded border border-amber-900 bg-amber-950/40 p-2 text-xs text-amber-300">
+                  <p className="rounded-control bg-warn-soft p-2 text-[11.5px] text-warn">
                     还有未闭环项：未写场景 {report.scenes_without_body.length}、未回收伏笔{' '}
                     {report.unrecovered_foreshadows.length}、未处理告警{' '}
                     {report.open_audit_issues + report.open_logic_issues}、待复核{' '}
                     {report.review_marks ?? 0}。仍可导出。
                   </p>
                 )}
-                <div className="flex flex-wrap items-center gap-2 text-sm">
+                <div className="flex flex-wrap items-center gap-2">
                   <a
+                    className="inline-flex h-8 items-center rounded-control border border-line-strong bg-surface px-3 text-[13px] text-ink-2 transition-colors duration-[120ms] hover:bg-sunken"
                     href={api.exportUrl(selected.id, 'md')}
-                    className="rounded border border-slate-700 px-3 py-1 text-slate-300 hover:text-white"
                   >
                     Markdown
                   </a>
                   <a
+                    className="inline-flex h-8 items-center rounded-control border border-line-strong bg-surface px-3 text-[13px] text-ink-2 transition-colors duration-[120ms] hover:bg-sunken"
                     href={api.exportUrl(selected.id, 'txt')}
-                    className="rounded border border-slate-700 px-3 py-1 text-slate-300 hover:text-white"
                   >
                     TXT
                   </a>
                   <select
-                    className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-slate-300"
+                    className="h-8 rounded-control border border-line-strong bg-surface px-2.5 pr-6 text-[13px] text-ink-2 outline-none transition-colors duration-[120ms] focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
                     value={epubTemplate}
                     onChange={(event) =>
                       setEpubTemplate(event.target.value as 'plain' | 'classic')
@@ -299,47 +307,50 @@ export default function Dashboard() {
                     <option value="classic">传统</option>
                   </select>
                   <a
+                    className="inline-flex h-8 items-center rounded-control bg-accent px-3 text-[13px] text-white transition-colors duration-[120ms] hover:bg-accent-ink"
                     href={api.exportUrl(selected.id, 'epub', epubTemplate)}
-                    className="rounded border border-slate-700 px-3 py-1 text-slate-300 hover:text-white"
                   >
                     EPUB
                   </a>
                 </div>
 
-                <div className="mt-3 space-y-1 border-t border-slate-800 pt-3 text-sm">
-                  <p className="text-xs text-slate-500">封面</p>
+                <div className="space-y-1 border-t border-line pt-3">
+                  <p className="text-[11.5px] text-muted">封面</p>
                   {coverSet ? (
-                    <div className="flex items-center gap-2 text-xs">
+                    <div className="flex items-center gap-2 text-[11.5px]">
                       <img
                         src={`/api/projects/${selected.id}/cover`}
                         alt="封面"
-                        className="h-16 w-12 rounded border border-slate-700 object-cover"
+                        className="h-16 w-12 rounded-tag border border-line object-cover"
                       />
-                      <button
-                        className="text-slate-400 hover:text-white disabled:opacity-50"
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         disabled={coverBusy}
                         onClick={() => coverInput.current?.click()}
                       >
                         换一张
-                      </button>
-                      <button
-                        className="text-slate-400 hover:text-red-300 disabled:opacity-50"
+                      </Button>
+                      <Button
+                        variant="warn"
+                        size="sm"
                         disabled={coverBusy}
                         onClick={() => void removeCover()}
                       >
                         移除
-                      </button>
+                      </Button>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="text-slate-500">未设置封面，EPUB 不会带封面页。</span>
-                      <button
-                        className="text-slate-400 hover:text-white disabled:opacity-50"
+                    <div className="flex items-center gap-2 text-[11.5px]">
+                      <span className="text-muted">未设置封面，EPUB 不会带封面页。</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         disabled={coverBusy}
                         onClick={() => coverInput.current?.click()}
                       >
                         上传
-                      </button>
+                      </Button>
                     </div>
                   )}
                   <input
@@ -349,13 +360,14 @@ export default function Dashboard() {
                     className="hidden"
                     onChange={(event) => void uploadCover(event.target.files?.[0])}
                   />
-                  <p className="text-xs text-slate-600">PNG 或 JPEG，最大 4 MB。</p>
+                  <p className="text-[11.5px] text-faint">PNG 或 JPEG，最大 4 MB。</p>
                 </div>
               </>
             ) : (
-              <p className="text-sm text-slate-500">选一个项目查看成品报告。</p>
+              <p className="text-[13px] text-muted">选一个项目查看成品报告。</p>
             )}
-          </section>
+          </Card>
+
           {selected && (
             <SnapshotPanel
               projectId={selected.id}
@@ -386,19 +398,6 @@ export default function Dashboard() {
               }}
             />
           )}
-
-          <section className="space-y-3 rounded border border-slate-800 p-4">
-            <h3 className="text-sm font-medium text-slate-300">最近改动</h3>
-            {selected ? (
-              <ChangeList
-                projectId={selected.id}
-                changes={changes}
-                emptyHint="这个项目还没有改动记录。"
-              />
-            ) : (
-              <p className="text-sm text-slate-500">选一个项目查看改动历史。</p>
-            )}
-          </section>
         </div>
       </div>
     </div>

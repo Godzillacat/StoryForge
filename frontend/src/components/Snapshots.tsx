@@ -1,5 +1,9 @@
 import { useState } from 'react'
 import { api, type ChangeRow, type SnapshotView } from '../api/client'
+import { Badge } from '../ui/Badge'
+import { Button } from '../ui/Button'
+import { Card } from '../ui/Card'
+import { Input } from '../ui/Field'
 
 export function SnapshotPanel({
   projectId,
@@ -73,79 +77,62 @@ export function SnapshotPanel({
   }
 
   return (
-    <section className="space-y-3 rounded border border-slate-800 p-4 text-sm">
-      <h3 className="text-sm font-medium text-slate-300">版本与快照</h3>
-      <p className="text-xs text-slate-500">
+    <Card title="版本与快照" className="space-y-3 text-[13.5px]">
+      <p className="text-[11.5px] text-muted">
         快照记下结构与正文。灵感原话、运行记录与修订历史不在快照里，也不会被回滚。
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
-        <input
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm"
+        <Input
+          className="w-40"
           placeholder="快照名称"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <input
-          className="min-w-48 flex-1 rounded border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm"
+        <Input
+          className="min-w-48 flex-1"
           placeholder="备注（可选）"
           value={note}
           onChange={(e) => setNote(e.target.value)}
         />
-        <button
-          className="rounded bg-indigo-600 px-3 py-1.5 disabled:opacity-50"
-          onClick={create}
-          disabled={busy || !name.trim()}
-        >
+        <Button variant="primary" onClick={create} disabled={busy || !name.trim()}>
           新建快照
-        </button>
+        </Button>
       </div>
 
-      {notice && <p className="text-xs text-slate-400">{notice}</p>}
+      {notice && <p className="text-[11.5px] text-muted">{notice}</p>}
 
       {snapshots.length === 0 ? (
-        <p className="text-xs text-slate-500">还没有快照。</p>
+        <p className="text-[11.5px] text-muted">还没有快照。</p>
       ) : (
         <ul className="space-y-1">
           {snapshots.map((row) => (
             <li
               key={row.id}
-              className="flex flex-wrap items-center gap-3 border-t border-slate-800 py-1"
+              className="flex flex-wrap items-center gap-3 border-t border-line py-1"
             >
-              <span className="text-slate-300">{row.name}</span>
-              {row.auto && (
-                <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">
-                  自动备份
-                </span>
-              )}
-              <span className="text-xs text-slate-500">
+              <span className="text-ink-2">{row.name}</span>
+              {row.auto && <Badge>自动备份</Badge>}
+              <span className="text-[11.5px] text-muted">
                 {row.volumes} 卷 / {row.chapters} 章 / {row.scenes} 场 / {row.words} 字
               </span>
-              <span className="text-xs text-slate-500">
+              <span className="text-[11.5px] text-muted">
                 {new Date(row.created_at).toLocaleString()}
               </span>
-              {row.note && <span className="text-xs text-slate-600">{row.note}</span>}
-              <span className="ml-auto space-x-2 text-xs">
-                <button
-                  className="text-amber-400 disabled:opacity-50"
-                  onClick={() => restore(row)}
-                  disabled={busy}
-                >
+              {row.note && <span className="text-[11.5px] text-faint">{row.note}</span>}
+              <span className="ml-auto flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => restore(row)} disabled={busy}>
                   回滚到此
-                </button>
-                <button
-                  className="text-slate-500 disabled:opacity-50"
-                  onClick={() => remove(row)}
-                  disabled={busy}
-                >
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => remove(row)} disabled={busy}>
                   删除
-                </button>
+                </Button>
               </span>
             </li>
           ))}
         </ul>
       )}
-    </section>
+    </Card>
   )
 }
 
@@ -168,29 +155,29 @@ export function ChangeList({
   emptyHint?: string
 }) {
   if (changes.length === 0) {
-    return <p className="text-xs text-slate-500">{emptyHint}</p>
+    return <p className="text-[11.5px] text-muted">{emptyHint}</p>
   }
   return (
-    <ul className="space-y-1 text-sm">
+    <ul className="space-y-1 text-[13.5px]">
       {changes.map((row) => {
         const path = TARGET_PATHS[row.target_type]?.(row.target_id, projectId)
         return (
           <li
             key={row.id}
-            className="flex flex-wrap items-center gap-2 border-t border-slate-800 py-1"
+            className="flex flex-wrap items-center gap-2 border-t border-line py-1"
           >
-            <span className="w-20 text-xs text-slate-500">{row.target_type_label}</span>
+            <span className="w-20 text-[11.5px] text-muted">{row.target_type_label}</span>
             {path ? (
-              <a className="text-indigo-400" href={path}>
+              <a className="text-accent-ink underline-offset-2 hover:underline" href={path}>
                 {row.target_label || '（已删除）'}
               </a>
             ) : (
-              <span className="text-slate-300">{row.target_label || '（已删除）'}</span>
+              <span className="text-ink-2">{row.target_label || '（已删除）'}</span>
             )}
-            <span className="text-xs text-slate-400">{row.action_label}</span>
-            <span className="text-xs text-slate-600">{row.source_label}</span>
-            {row.summary && <span className="text-xs text-slate-500">{row.summary}</span>}
-            <span className="ml-auto text-xs text-slate-600">
+            <span className="text-[11.5px] text-muted">{row.action_label}</span>
+            <span className="text-[11.5px] text-faint">{row.source_label}</span>
+            {row.summary && <span className="text-[11.5px] text-muted">{row.summary}</span>}
+            <span className="ml-auto text-[11.5px] text-faint">
               {new Date(row.created_at).toLocaleString()}
             </span>
           </li>

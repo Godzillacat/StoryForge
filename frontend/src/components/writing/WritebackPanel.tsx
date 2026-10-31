@@ -3,6 +3,8 @@ import type {
   WritebackApplyPayload,
   WritebackSuggestion,
 } from '../../api/client'
+import { Button } from '../../ui/Button'
+import { Input, Textarea } from '../../ui/Field'
 
 interface Props {
   suggestion: WritebackSuggestion | null
@@ -84,26 +86,25 @@ export default function WritebackPanel({
   }
 
   return (
-    <section className="space-y-3 text-sm">
+    <section className="space-y-3 text-[13.5px]">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="font-medium text-slate-300">回写建议</h3>
-        <button
-          type="button"
+        <h3 className="font-medium text-ink-2">回写建议</h3>
+        <Button
+          size="sm"
           disabled={loading || applying || !canRun || !hasBody}
           onClick={onRun}
           title={hasBody ? undefined : '采纳正文后才能生成回写建议'}
-          className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:text-white disabled:opacity-50"
         >
           {loading ? '生成中…' : suggestion ? '重新生成' : '生成建议'}
-        </button>
+        </Button>
       </div>
 
       {!hasBody && (
-        <p className="text-sm text-slate-500">采纳正文后才能生成回写建议。</p>
+        <p className="text-[13.5px] text-muted">采纳正文后才能生成回写建议。</p>
       )}
 
       {suggestion?.warning && (
-        <p className="rounded border border-amber-900 bg-amber-950/40 p-2 text-xs text-amber-300">
+        <p className="rounded-control border border-warn bg-warn-soft p-2 text-[11.5px] text-warn">
           {suggestion.warning}
         </p>
       )}
@@ -111,7 +112,7 @@ export default function WritebackPanel({
       {suggestion?.warnings.map((warning) => (
         <p
           key={warning}
-          className="rounded border border-amber-900 bg-amber-950/40 p-2 text-xs text-amber-300"
+          className="rounded-control border border-warn bg-warn-soft p-2 text-[11.5px] text-warn"
         >
           {warning}
         </p>
@@ -119,8 +120,8 @@ export default function WritebackPanel({
 
       {suggestion?.llm_status === 'ok' && (
         <>
-          <div className="space-y-1 rounded border border-slate-800 p-2">
-            <label className="flex items-center gap-2 text-xs text-slate-400">
+          <div className="space-y-1 rounded-control border border-line p-2">
+            <label className="flex items-center gap-2 text-[11.5px] text-muted">
               <input
                 type="checkbox"
                 checked={useSummary}
@@ -129,21 +130,20 @@ export default function WritebackPanel({
               />
               应用章节摘要
             </label>
-            <textarea
+            <Textarea
               value={summary}
               disabled={applying || !useSummary}
               onChange={(event) => setSummary(event.target.value)}
               rows={4}
-              className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200 disabled:opacity-60"
             />
           </div>
 
           {suggestion.character_updates.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs text-slate-500">人物状态</p>
+              <p className="text-[11.5px] text-muted">人物状态</p>
               {suggestion.character_updates.map((item) => (
-                <div key={item.entry_id} className="space-y-1 rounded border border-slate-800 p-2">
-                  <label className="flex items-center gap-2 text-xs text-slate-300">
+                <div key={item.entry_id} className="space-y-1 rounded-control border border-line p-2">
+                  <label className="flex items-center gap-2 text-[11.5px] text-ink-2">
                     <input
                       type="checkbox"
                       checked={selectedCharacters.has(item.entry_id)}
@@ -152,7 +152,7 @@ export default function WritebackPanel({
                     />
                     {item.name}
                   </label>
-                  <input
+                  <Input
                     value={stateById[item.entry_id] ?? ''}
                     disabled={applying || !selectedCharacters.has(item.entry_id)}
                     onChange={(event) =>
@@ -161,10 +161,9 @@ export default function WritebackPanel({
                         [item.entry_id]: event.target.value,
                       }))
                     }
-                    className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200 disabled:opacity-60"
                   />
                   {item.evidence && (
-                    <p className="text-xs text-slate-500">依据：{item.evidence}</p>
+                    <p className="text-[11.5px] text-muted">依据：{item.evidence}</p>
                   )}
                 </div>
               ))}
@@ -173,11 +172,11 @@ export default function WritebackPanel({
 
           {suggestion.foreshadow_pays.length > 0 && (
             <div className="space-y-1">
-              <p className="text-xs text-slate-500">实际回收的伏笔</p>
+              <p className="text-[11.5px] text-muted">实际回收的伏笔</p>
               {suggestion.foreshadow_pays.map((item) => (
                 <label
                   key={item.foreshadow_id}
-                  className="flex items-start gap-2 rounded border border-slate-800 p-2 text-xs text-slate-300"
+                  className="flex items-start gap-2 rounded-control border border-line p-2 text-[11.5px] text-ink-2"
                 >
                   <input
                     type="checkbox"
@@ -188,7 +187,7 @@ export default function WritebackPanel({
                   <span>
                     {item.name}
                     {item.evidence && (
-                      <span className="block text-slate-500">依据：{item.evidence}</span>
+                      <span className="block text-muted">依据：{item.evidence}</span>
                     )}
                   </span>
                 </label>
@@ -197,7 +196,7 @@ export default function WritebackPanel({
           )}
 
           {suggestion.open_questions.length > 0 && (
-            <div className="text-xs text-slate-500">
+            <div className="text-[11.5px] text-muted">
               <p>没把握的问题：</p>
               <ul className="list-inside list-disc">
                 {suggestion.open_questions.map((question) => (
@@ -207,14 +206,13 @@ export default function WritebackPanel({
             </div>
           )}
 
-          <button
-            type="button"
+          <Button
+            variant="primary"
             disabled={!canApply}
             onClick={apply}
-            className="rounded bg-teal-700 px-3 py-1 text-xs text-white hover:bg-teal-600 disabled:opacity-50"
           >
             {applying ? '应用中…' : '应用所选'}
-          </button>
+          </Button>
         </>
       )}
     </section>

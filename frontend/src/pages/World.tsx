@@ -4,7 +4,6 @@ import {
   api,
   type EntryRelation,
   type EntryTypesResponse,
-  type Project,
   type RunView,
   type SettingEntry,
 } from '../api/client'
@@ -18,6 +17,10 @@ import EntryEditor, {
   splitList,
   type EntryDraft,
 } from '../components/EntryEditor'
+import { useCurrentProject } from '../state/ProjectContext'
+import { Button } from '../ui/Button'
+import { Card } from '../ui/Card'
+import { Icon } from '../ui/icons'
 
 function draftOf(entry: SettingEntry, characterFields: { key: string }[]): EntryDraft {
   return {
@@ -33,8 +36,8 @@ function draftOf(entry: SettingEntry, characterFields: { key: string }[]): Entry
 }
 
 export default function World() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectId, setProjectId] = useState('')
+  // 当前项目由外壳持有；`projects` 只用来核对审校深链带来的 ?project= 是否有效。
+  const { projects, projectId, select } = useCurrentProject()
   const [types, setTypes] = useState<EntryTypesResponse | null>(null)
   const [entries, setEntries] = useState<SettingEntry[]>([])
   const [relations, setRelations] = useState<EntryRelation[]>([])
@@ -42,6 +45,8 @@ export default function World() {
   const [draft, setDraft] = useState<EntryDraft>(EMPTY_DRAFT)
   const [creating, setCreating] = useState(false)
   const [notice, setNotice] = useState('')
+  // 深链失效单独一条：页面里的 notice 会随项目切换被清空，这条不能。
+  const [linkWarning, setLinkWarning] = useState('')
   const [relationDraft, setRelationDraft] = useState({ to_id: '', kind: '', strength: '' })
   const [candidates, setCandidates] = useState<CandidateRow[]>([])
   const [openQuestions, setOpenQuestions] = useState<string[]>([])
@@ -50,6 +55,8 @@ export default function World() {
   // 作废在途候选请求用的令牌。真模型下单次要 100 秒以上，作者在等待期间
   // 切项目是常态；没有它，响应回来会把上一个项目的候选写进当前项目。
   const runToken = useRef(0)
+  // 条目 / 关联的加载令牌：切项目是常驻入口，迟到响应不许覆盖新项目的清单。
+  const dataToken = useRef(0)
   // 审校面板的「改设定 / 改人物」会带 ?entry=<id> 跳过来；等条目加载完再选中。
   const [searchParams] = useSearchParams()
   const deepEntryId = searchParams.get('entry')
@@ -59,16 +66,21 @@ export default function World() {
 
   useEffect(() => {
     api.listEntryTypes().then(setTypes)
-    api.listProjects().then((list) => {
-      setProjects(list)
-      // 审校深链会带上项目 id；不认它就会落到列表第一个（最新）项目。
-      const preferred =
-        requestedProjectId && list.some((project) => project.id === requestedProjectId)
-          ? requestedProjectId
-          : list[0]?.id
-      if (preferred) setProjectId(preferred)
-    })
   }, [])
+
+  // 审校深链会带 `?project=<id>`：认它，但不绕过外壳。
+  // 只认一次 —— 认完就把 URL 忘掉，否则作者在页内切项目会被它一直拽回去。
+  // 链接里的项目不在列表里就明说一句，而不是静默落到别的项目上。
+  useEffect(() => {
+    if (!requestedProjectId || projects.length === 0) return
+    if (deepLinkApplied.current === requestedProjectId) return
+    deepLinkApplied.current = requestedProjectId
+    if (projects.some((project) => project.id === requestedProjectId)) {
+      if (requestedProjectId !== projectId) select(requestedProjectId)
+      return
+    }
+    setLinkWarning('链接里的项目不存在，已显示当前项目')
+  }, [requestedProjectId, projects, projectId, select])
 
   // 类型与硬度是**两份**词表，都从接口来 —— 合到一张 map 里，
   // 否则硬度的键（hard / soft / atmosphere）会在界面上原样露出来。
@@ -81,6 +93,7 @@ export default function World() {
 
   useEffect(() => {
     if (!projectId) return
+    const token = ++dataToken.current
     // 作废在途的候选请求：它属于上一个项目，回来时不能再写当前项目的状态。
     runToken.current++
     // 换项目即整体重置：选中项、草稿、提示都跟着换，避免上一条目的内容
@@ -99,14 +112,25 @@ export default function World() {
     api
       .listEntries(projectId)
       .then((list) => {
+        if (dataToken.current !== token) return
         setEntries(list)
         setLoadedProjectId(projectId)
       })
       .catch((e) => {
+        if (dataToken.current !== token) return
         setNotice((e as Error).message)
         setLoadedProjectId(projectId)
       })
-    api.listRelations(projectId).then(setRelations).catch((e) => setNotice((e as Error).message))
+    api
+      .listRelations(projectId)
+      .then((rows) => {
+        if (dataToken.current !== token) return
+        setRelations(rows)
+      })
+      .catch((e) => {
+        if (dataToken.current !== token) return
+        setNotice((e as Error).message)
+      })
   }, [projectId])
 
   function selectEntry(entry: SettingEntry) {
@@ -288,39 +312,29 @@ export default function World() {
 
   const outgoing = relations.filter((r) => r.from_id === selectedId)
   const nameOf = (id: string) => entries.find((e) => e.id === id)?.name ?? '（已删除）'
+  const current = entries.find((e) => e.id === selectedId)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-xl font-semibold">世界观</h2>
-        <select
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-          value={projectId}
-          onChange={(e) => setProjectId(e.target.value)}
-        >
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <button
-          className="rounded border border-slate-700 px-4 py-2 text-sm disabled:opacity-50"
-          onClick={startCreating}
-          disabled={!projectId}
-        >
-          新建条目
-        </button>
-        <button
-          className="rounded bg-indigo-600 px-4 py-2 text-sm disabled:opacity-50"
-          onClick={suggest}
-          disabled={!projectId || suggesting}
-        >
-          {suggesting ? '生成中…' : '让 AI 提候选'}
-        </button>
+        <h2 className="font-serif text-[19px] font-semibold text-ink">世界观</h2>
+        <div className="ml-auto flex items-center gap-2">
+          <Button onClick={startCreating} disabled={!projectId}>
+            新建条目
+          </Button>
+          <Button variant="primary" onClick={suggest} disabled={!projectId || suggesting}>
+            {suggesting ? '生成中…' : '让 AI 提候选'}
+          </Button>
+        </div>
       </div>
 
-      {notice && <p className="rounded bg-slate-900 p-3 text-sm text-slate-300">{notice}</p>}
+      {linkWarning && (
+        <p className="rounded-control border-l-2 border-warn bg-warn-soft p-2.5 text-[13px] text-warn">
+          {linkWarning}
+        </p>
+      )}
+
+      {notice && <p className="text-[13px] text-muted">{notice}</p>}
 
       {candidates.length > 0 && (
         <CandidateList
@@ -334,41 +348,50 @@ export default function World() {
       )}
 
       {openQuestions.length > 0 && (
-        <section className="rounded border border-slate-800 p-4 text-sm">
-          <h3 className="mb-2 text-sm font-medium text-slate-300">它没把握的问题，等你补</h3>
-          <ul className="list-disc space-y-1 pl-5 text-slate-300">
+        <Card title="它没把握的问题，等你补">
+          <ul className="list-disc space-y-1 pl-5 text-[13.5px] text-ink-2">
             {openQuestions.map((question) => (
               <li key={question}>{question}</li>
             ))}
           </ul>
-        </section>
+        </Card>
       )}
 
       {lastRun && (
-        <section className="space-y-2">
-          <h3 className="text-sm font-medium text-slate-300">最近一次生成</h3>
+        <div className="space-y-2">
+          <h3 className="text-[13.5px] font-semibold text-ink">最近一次生成</h3>
           <RunTrace run={lastRun} />
-        </section>
+        </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
-        <nav className="space-y-3">
+      <div className="grid grid-cols-[308px_1fr] items-start gap-4">
+        <nav className="space-y-4">
           {grouped.map(([type, list]) => (
             <div key={type}>
-              <div className="mb-1 text-xs text-slate-500">{typeLabel(type)}</div>
-              <ul className="space-y-1">
+              <div className="mb-1 text-[11px] tracking-[.08em] text-muted">
+                {typeLabel(type)}
+              </div>
+              <ul className="space-y-0.5">
                 {list.map((entry) => (
                   <li key={entry.id}>
                     <button
+                      type="button"
                       onClick={() => selectEntry(entry)}
-                      className={`block w-full rounded px-3 py-1.5 text-left text-sm ${
-                        selectedId === entry.id ? 'bg-slate-800' : 'hover:bg-slate-900'
+                      className={`flex h-8 w-full items-center gap-2 rounded-control px-2 text-left text-[13.5px] transition-colors duration-[120ms] ${
+                        selectedId === entry.id
+                          ? 'bg-accent-soft font-semibold text-accent-ink'
+                          : 'text-ink-2 hover:bg-sunken hover:text-ink'
                       }`}
                     >
-                      {entry.name}
+                      <span className="truncate">{entry.name}</span>
                       {entry.hardness && (
-                        <span className="ml-2 text-xs text-slate-500">
+                        <span className="ml-auto shrink-0 text-[11px] text-muted">
                           {typeLabel(entry.hardness)}
+                        </span>
+                      )}
+                      {entry.locked && (
+                        <span className="shrink-0 text-warn" title="AI 不会改动这里">
+                          <Icon name="lock" size={12} />
                         </span>
                       )}
                     </button>
@@ -378,27 +401,30 @@ export default function World() {
             </div>
           ))}
           {entries.length === 0 && (
-            <p className="text-sm text-slate-500">
+            <p className="text-[13px] text-muted">
               {projectId
                 ? '还没有设定。点「新建条目」自己写，或者到上面的候选区让 AI 先提一批。'
-                : '先去「故事仪表盘」新建一个项目。'}
+                : '先在左侧项目选择器里新建一个项目。'}
             </p>
           )}
         </nav>
 
         <div className="space-y-4">
           {(creating || selectedId) && (
-            <section className="space-y-4 rounded border border-slate-800 p-4">
+            <Card className="space-y-4">
               {selectedId && projectId && (
-                <div className="space-y-2 border-b border-slate-800 pb-3">
-                  <div className="flex items-center gap-3 text-sm">
-                    <span className="text-slate-400">锁定</span>
+                <div className="space-y-2 border-b border-line pb-3">
+                  <div className="flex items-center gap-2 text-[13px]">
+                    {/* 按钮自己写着「锁定 / 已锁定」，不再另加一个「锁定」标签。 */}
                     <LockToggle
                       targetType="entry"
                       targetId={selectedId}
-                      locked={entries.find((e) => e.id === selectedId)?.locked === true}
+                      locked={current?.locked === true}
                       onChanged={refresh}
                     />
+                    <span className="text-[11.5px] text-muted">
+                      锁上之后 AI 不会改动这一条；你仍然可以编辑。
+                    </span>
                   </div>
                   <ImpactPanel
                     projectId={projectId}
@@ -410,53 +436,51 @@ export default function World() {
               )}
               <EntryEditor draft={draft} types={types} onChange={setDraft} />
               <div className="flex items-center gap-2">
-                <button className="rounded bg-indigo-600 px-4 py-2 text-sm" onClick={save}>
+                <Button variant="primary" onClick={save}>
                   {creating ? '创建' : '保存'}
-                </button>
+                </Button>
                 {!creating && (
-                  <button
-                    className="rounded border border-slate-700 px-4 py-2 text-sm text-amber-400"
-                    onClick={remove}
-                  >
+                  <Button variant="danger" onClick={remove}>
                     删除
-                  </button>
+                  </Button>
                 )}
               </div>
-            </section>
+            </Card>
           )}
 
           {selectedId && (
-            <section className="space-y-3 rounded border border-slate-800 p-4 text-sm">
-              <h3 className="text-sm font-medium text-slate-300">指向别处的关联</h3>
-              <ul className="space-y-1">
+            <Card title="指向别处的关联" className="space-y-3">
+              <ul className="space-y-1 text-[13.5px]">
                 {outgoing.map((relation) => (
                   <li key={relation.id} className="flex items-center gap-3">
-                    <span className="text-slate-400">{relation.kind}</span>
-                    <span className="text-xs text-slate-500">
+                    <span className="text-muted">{relation.kind}</span>
+                    <span className="text-[11.5px] text-muted">
                       强度 {relation.strength ?? '未评'}
                     </span>
-                    <span>{nameOf(relation.to_id)}</span>
-                    <button
-                      className="text-xs text-amber-400"
+                    <span className="text-ink-2">{nameOf(relation.to_id)}</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="ml-auto text-warn"
                       onClick={() => removeRelation(relation.id)}
                     >
                       删除
-                    </button>
+                    </Button>
                   </li>
                 ))}
                 {outgoing.length === 0 && (
-                  <li className="text-xs text-slate-500">还没有指向别处的关联。</li>
+                  <li className="text-[11.5px] text-muted">还没有指向别处的关联。</li>
                 )}
               </ul>
               <div className="flex flex-wrap items-center gap-2">
                 <input
-                  className="w-36 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
+                  className="h-8 w-36 rounded-control border border-line-strong bg-surface px-2.5 text-[13.5px] text-ink outline-none transition-colors duration-[120ms] placeholder:text-faint focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
                   placeholder="关系，如「位于」"
                   value={relationDraft.kind}
                   onChange={(e) => setRelationDraft({ ...relationDraft, kind: e.target.value })}
                 />
                 <select
-                  className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
+                  className="h-8 rounded-control border border-line-strong bg-surface px-2.5 pr-6 text-[13.5px] text-ink outline-none transition-colors duration-[120ms] focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
                   value={relationDraft.strength}
                   onChange={(e) => setRelationDraft({ ...relationDraft, strength: e.target.value })}
                 >
@@ -468,7 +492,7 @@ export default function World() {
                   ))}
                 </select>
                 <select
-                  className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
+                  className="h-8 rounded-control border border-line-strong bg-surface px-2.5 pr-6 text-[13.5px] text-ink outline-none transition-colors duration-[120ms] focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)]"
                   value={relationDraft.to_id}
                   onChange={(e) => setRelationDraft({ ...relationDraft, to_id: e.target.value })}
                 >
@@ -481,14 +505,14 @@ export default function World() {
                       </option>
                     ))}
                 </select>
-                <button className="text-xs text-indigo-400" onClick={addRelation}>
+                <Button variant="accent" size="sm" onClick={addRelation}>
                   建立关联
-                </button>
+                </Button>
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="text-[11.5px] text-muted">
                 关联是有向的：「甲 位于 乙」与「乙 位于 甲」是两条不同的关系。
               </p>
-            </section>
+            </Card>
           )}
         </div>
       </div>

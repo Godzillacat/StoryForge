@@ -6,6 +6,7 @@ import {
   buildCausalRows,
   summarize,
 } from '../../lib/causalMap'
+import { Icon } from '../../ui/icons'
 
 // 节点盒子的高度：ROW_HEIGHT 里剩下的留给节点底下的断点小字。
 const NODE_HEIGHT = 92
@@ -39,14 +40,14 @@ export default function CausalMap({
 }) {
   if (error) {
     return (
-      <p className="rounded border border-rose-900/60 bg-rose-950/20 p-4 text-sm text-rose-300">
+      <p className="rounded-card border-l-2 border-danger bg-surface p-4 text-[13.5px] text-danger">
         读取因果链失败：{error}
       </p>
     )
   }
   if (loading || !data) {
     return (
-      <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+      <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
         正在读取因果链…
       </p>
     )
@@ -58,39 +59,39 @@ export default function CausalMap({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-baseline gap-3">
-        <h3 className="text-sm font-medium text-slate-300">因果链</h3>
-        <span className="text-xs text-slate-500">
+        <h3 className="text-[14px] font-semibold text-ink">因果链</h3>
+        <span className="text-[11.5px] text-muted">
           {summary.scenes} 场 · {summary.breaks} 个断点
         </span>
-        <span className="text-xs text-slate-600">{summary.chapters} 章</span>
-        <span className="text-xs text-slate-600">点节点回到结构设计并选中该场</span>
+        <span className="text-[11.5px] text-faint">{summary.chapters} 章</span>
+        <span className="text-[11.5px] text-faint">点节点回到结构设计并选中该场</span>
       </div>
 
       {logicChecked === false && (
-        <p className="rounded border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-300">
+        <p className="rounded-control bg-warn-soft p-3 text-[13.5px] text-warn">
           还没跑过逻辑自检，图里只标结构断点
         </p>
       )}
 
       {rows.length === 0 ? (
-        <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+        <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
           还没有章节结构。去「结构设计」建卷，或先用 AI 排卷章。
         </p>
       ) : (
         rows.map((row) => (
           <section key={row.chapter.id} className="space-y-2">
             <div className="flex flex-wrap items-baseline gap-2">
-              <span className="text-xs text-slate-500">{row.chapter.volume_label}</span>
-              <span className="text-sm text-slate-200">{row.chapter.label}</span>
-              <span className="text-xs text-slate-600">{row.nodes.length} 场</span>
+              <span className="text-[11.5px] text-muted">{row.chapter.volume_label}</span>
+              <span className="text-[13.5px] text-ink-2">{row.chapter.label}</span>
+              <span className="text-[11.5px] text-faint">{row.nodes.length} 场</span>
             </div>
 
             {row.nodes.length === 0 ? (
-              <p className="rounded border border-slate-800 p-3 text-sm text-slate-500">
+              <p className="rounded-card border border-line bg-surface p-3 text-[13.5px] text-muted">
                 这一章还没有场景卡
               </p>
             ) : (
-              <div className="overflow-x-auto rounded border border-slate-800 bg-slate-950/40 p-3">
+              <div className="overflow-x-auto rounded-card border border-line bg-surface p-3">
                 <div
                   className="relative"
                   style={{ width: row.width, height: ROW_HEIGHT }}
@@ -100,7 +101,7 @@ export default function CausalMap({
                       <span
                         key={`arrow-${node.id}`}
                         aria-hidden="true"
-                        className="absolute top-8 text-center text-sm text-slate-600"
+                        className="absolute top-8 text-center text-[13.5px] text-faint"
                         style={{ left: node.x - NODE_GAP, width: NODE_GAP }}
                       >
                         →
@@ -120,43 +121,43 @@ export default function CausalMap({
                           title={`${node.label}
 目标：${textOrEmpty(node.goal)}
 转折：${textOrEmpty(node.turn)}`}
-                          className={`absolute top-0 flex flex-col gap-0.5 rounded border border-slate-700 bg-slate-900 px-2.5 py-2 text-left text-xs text-slate-300 outline-none hover:border-slate-500 focus:ring-2 focus:ring-indigo-500 ${
+                          className={`absolute top-0 flex flex-col gap-0.5 rounded-control border border-line-strong bg-surface px-2.5 py-2 text-left text-[11.5px] text-ink-2 outline-none transition-colors duration-[120ms] hover:border-accent focus:ring-2 focus:ring-accent-soft ${
                             structural.length > 0
-                              ? 'border-l-4 border-l-amber-500'
+                              ? 'border-l-4 border-l-warn'
                               : ''
                           }`}
                           style={{ left: node.x, width: NODE_WIDTH, height: NODE_HEIGHT }}
                         >
                           <span className="flex items-center justify-between gap-1">
-                            <span className="truncate font-medium text-slate-200">
+                            <span className="truncate font-medium text-ink">
                               {node.label}
                             </span>
                             <span className="flex shrink-0 items-center gap-1">
                               {node.locked && (
-                                <span title="已锁定" aria-label="已锁定">
-                                  🔒
+                                <span className="text-warn" title="已锁定" aria-label="已锁定">
+                                  <Icon name="lock" size={12} />
                                 </span>
                               )}
                               {hasIssue && (
                                 <span
-                                  className="h-2 w-2 rounded-full bg-rose-500"
+                                  className="h-2 w-2 rounded-full bg-danger"
                                   title={issueTooltip(node.issues)}
                                 />
                               )}
                             </span>
                           </span>
                           <span className="block truncate">
-                            <span className="text-slate-500">目标：</span>
+                            <span className="text-muted">目标：</span>
                             {textOrEmpty(node.goal)}
                           </span>
                           <span className="block truncate">
-                            <span className="text-slate-500">转折：</span>
+                            <span className="text-muted">转折：</span>
                             {textOrEmpty(node.turn)}
                           </span>
                         </button>
                         {(structural.length > 0 || hasIssue) && (
                           <span
-                            className="absolute text-[11px] leading-4 text-amber-400"
+                            className="absolute text-[11px] leading-4 text-warn"
                             style={{
                               left: node.x,
                               top: NODE_HEIGHT + 4,
@@ -169,7 +170,7 @@ export default function CausalMap({
                                 .join(' · ')}
                             {structural.length > 0 && hasIssue && ' · '}
                             {hasIssue && (
-                              <span className="text-rose-400">因果问题</span>
+                              <span className="text-danger">因果问题</span>
                             )}
                           </span>
                         )}

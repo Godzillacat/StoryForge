@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import type { EntryTypesResponse, SettingEntry, SuggestedEntry } from '../api/client'
 import EntryEditor, { characterFieldsOf, joinList, type EntryDraft } from './EntryEditor'
+import { Badge } from '../ui/Badge'
+import { Button } from '../ui/Button'
+import { Card } from '../ui/Card'
 
 function draftOf(candidate: SuggestedEntry, characterFields: { key: string }[]): EntryDraft {
   return {
@@ -77,51 +80,50 @@ export default function CandidateList({
   }
 
   return (
-    <section className="space-y-3 rounded border border-slate-800 p-4">
-      <h3 className="text-sm font-medium text-slate-300">
-        候选（{candidates.length} 条，逐条审）
-      </h3>
-
-      <ul className="space-y-2 text-sm">
+    <Card title={`候选（${candidates.length} 条，逐条审）`}>
+      <ul className="space-y-2 text-[13.5px]">
         {candidates.map(({ key, entry: candidate }) => {
           const duplicated = takenNames.has(candidate.name ?? '')
           return (
-            <li key={key} className="space-y-2 border-b border-slate-800 pb-2 last:border-0">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-xs text-slate-500">
+            <li key={key} className="space-y-2 border-b border-line pb-2 last:border-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11.5px] text-muted">
                   {typeLabels.get(candidate.type ?? '') ?? candidate.type ?? '?'}
                 </span>
-                <span className="font-medium">{candidate.name}</span>
-                {duplicated && <span className="text-xs text-amber-400">已存在，默认跳过</span>}
-                <button className="text-xs text-indigo-400" onClick={() => toggle(key, candidate)}>
-                  {openKey === key ? '收起' : '改后采纳'}
-                </button>
-                <button className="text-xs text-slate-500" onClick={() => onDiscard(key)}>
-                  丢弃
-                </button>
-                {!duplicated && (
-                  <button
-                    className="text-xs text-emerald-400 disabled:opacity-50"
-                    disabled={busy}
-                    onClick={() => onAdopt(draftOf(candidate, characterFields), key)}
-                  >
-                    采纳
-                  </button>
-                )}
+                <span className="font-medium text-ink">{candidate.name}</span>
+                {duplicated && <Badge tone="warn">已存在，默认跳过</Badge>}
+                <span className="ml-auto flex items-center gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => toggle(key, candidate)}>
+                    {openKey === key ? '收起' : '改后采纳'}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => onDiscard(key)}>
+                    丢弃
+                  </Button>
+                  {!duplicated && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => onAdopt(draftOf(candidate, characterFields), key)}
+                    >
+                      采纳
+                    </Button>
+                  )}
+                </span>
               </div>
-              <p className="text-xs text-slate-400">{candidate.summary}</p>
+              <p className="text-[11.5px] text-muted">{candidate.summary}</p>
 
               {aliasConflicts(candidate).map((hint) => (
-                <p key={hint} className="text-xs text-amber-400">
+                <p key={hint} className="text-[11.5px] text-warn">
                   {hint}
                 </p>
               ))}
 
               {openKey === key && draft && (
-                <div className="space-y-3 rounded bg-slate-900/60 p-3">
+                <div className="space-y-3 rounded-control bg-sunken p-3">
                   <EntryEditor draft={draft} types={types} onChange={setDraft} />
-                  <button
-                    className="rounded bg-emerald-700 px-4 py-2 text-sm disabled:opacity-50"
+                  <Button
+                    variant="primary"
                     disabled={busy}
                     onClick={async () => {
                       // 采纳**失败时不收**展开区：失败恰恰常发生在作者刚把撞名的
@@ -133,13 +135,13 @@ export default function CandidateList({
                     }}
                   >
                     按改后的内容采纳
-                  </button>
+                  </Button>
                 </div>
               )}
             </li>
           )
         })}
       </ul>
-    </section>
+    </Card>
   )
 }

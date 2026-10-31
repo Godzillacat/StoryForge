@@ -11,7 +11,6 @@ import {
   type ChangeRow,
   type LockState,
   type LogicStage,
-  type Project,
   type RevisionDetail,
   type SceneTextState,
   type VolumeNode,
@@ -24,6 +23,8 @@ import BatchPanel from '../components/writing/BatchPanel'
 import ContextPreview from '../components/writing/ContextPreview'
 import BranchPanel, { BranchBodyEditor } from '../components/writing/BranchPanel'
 import { ChangeList } from '../components/Snapshots'
+import { setProjectGuard } from '../lib/projectGuard'
+import { useCurrentProject } from '../state/ProjectContext'
 import ParagraphLocks from '../components/writing/ParagraphLocks'
 import DiffPanel from '../components/writing/DiffPanel'
 import GenerationStream from '../components/writing/GenerationStream'
@@ -33,6 +34,22 @@ import RevisionHistory from '../components/writing/RevisionHistory'
 import SceneTextView from '../components/writing/SceneTextView'
 import WritebackPanel from '../components/writing/WritebackPanel'
 import WritingTree from '../components/writing/WritingTree'
+import {
+  ASIDE_TABS,
+  readAsideTab,
+  readRightCollapsed,
+  readStoredMode,
+  resolveMode,
+  shapeFor,
+  writeAsideTab,
+  writeMode,
+  writeRightCollapsed,
+  type AsideTab,
+  type WritingMode,
+} from '../lib/writingLayout'
+import { Button, IconButton } from '../ui/Button'
+import { Icon } from '../ui/icons'
+import { Tabs } from '../ui/Tabs'
 
 interface RunInfo {
   run_id: string
@@ -61,9 +78,24 @@ function findScene(volumes: VolumeNode[], sceneId: string) {
 
 export default function Writing() {
   const navigate = useNavigate()
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectsLoading, setProjectsLoading] = useState(true)
-  const [projectId, setProjectId] = useState('')
+  // 当前项目由外壳持有；这里只读。切换项目前的「未保存」确认由 projectGuard 承担。
+  const { projectId, loading: projectsLoading } = useCurrentProject()
+  // 布局：工作态 / 专注态、右栏折叠、左树抽屉。宽度只在**作者没表达过偏好**时
+  // 决定模式；他手动切过就永远以他为准（拉一下窗口不该把他的选择冲掉）。
+  // 注意与下面的 `mode`（正文 / AI 草稿）不是一回事，所以这里叫 layoutMode。
+  const [storedLayoutMode, setStoredLayoutMode] = useState<WritingMode | null>(() =>
+    readStoredMode(),
+  )
+  const [width, setWidth] = useState(() => window.innerWidth)
+  const [rightCollapsed, setRightCollapsed] = useState(() => readRightCollapsed())
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  // 右栏的四个页签：上下文 / 分支 / 审校 / 日志。
+  const [asideTab, setAsideTab] = useState<AsideTab>(() => readAsideTab())
+  // 工具栏的「更多」：次要动作收在这里，免得一行放九个按钮。
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreRef = useRef<HTMLDivElement | null>(null)
+  const layoutMode = resolveMode(storedLayoutMode, width)
+  const shape = shapeFor(layoutMode, rightCollapsed)
   const [volumes, setVolumes] = useState<VolumeNode[]>([])
   const [treeLoading, setTreeLoading] = useState(false)
   const [textLoading, setTextLoading] = useState(false)
@@ -139,17 +171,6 @@ export default function Writing() {
     }, 1000)
   }
 
-  useEffect(() => {
-    api
-      .listProjects()
-      .then((list) => {
-        setProjects(list)
-        if (list[0]) setProjectId(list[0].id)
-      })
-      .catch((error) => setNotice((error as Error).message))
-      .finally(() => setProjectsLoading(false))
-  }, [])
-
   // 页面卸载时中止在途生成，避免流读取器悬挂或向已卸载组件写状态。
   useEffect(
     () => () => {
@@ -162,6 +183,42 @@ export default function Writing() {
     },
     [],
   )
+
+  // 宽度只在作者没表达过偏好时才影响模式，所以存过就根本不挂这个监听。
+  useEffect(() => {
+    if (storedLayoutMode) return
+    const onResize = () => setWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [storedLayoutMode])
+
+  // 抽屉：ESC 关闭。只在打开时挂监听，不在页面上常驻一个 keydown。
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDrawerOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [drawerOpen])
+
+  // 「更多」：点面板外或按 ESC 关掉。点面板内的条目由面板自己的 onClick 收
+  // —— 那样每个条目仍能保留原来的 `onClick={handler}`，不必包一层箭头函数。
+  useEffect(() => {
+    if (!moreOpen) return
+    const onDown = (event: MouseEvent) => {
+      if (!moreRef.current?.contains(event.target as Node)) setMoreOpen(false)
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMoreOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [moreOpen])
 
   useEffect(() => {
     if (!projectId) return
@@ -259,11 +316,13 @@ export default function Writing() {
       (bodyDraft !== (text?.body ?? '') || aiDraft !== (text?.draft?.content ?? ''))) ||
     branchDirty
 
-  const changeProject = (nextId: string) => {
-    if (nextId === projectId) return
-    if (hasUnsaved && !window.confirm('当前场景有未保存的修改，确定切换项目吗？')) return
-    setProjectId(nextId)
-  }
+  // 切项目的入口在外壳里；这里登记一次「还有未保存的改动就别走」。
+  useEffect(() => {
+    setProjectGuard(() =>
+      hasUnsaved ? window.confirm('当前场景有未保存的修改，确定切换项目吗？') : true,
+    )
+    return () => setProjectGuard(null)
+  }, [hasUnsaved])
 
   async function loadBranch(id: string) {
     // 持场景令牌：切场景后迟到的响应不许把旧场景的分支挂到新场景上。
@@ -1013,234 +1072,306 @@ export default function Writing() {
     ? `第${selected.volume.seq + 1}卷 第${selected.chapter.seq + 1}章 场景${selected.scene.seq + 1}`
     : ''
 
+  // 列宽取自 spec §8.2 的预算。注意 spec 那句验算（1440 − 外壳 236 − 左树 236 −
+  // 右栏 336 − 32 间隙 = 600）**漏了页面内边距**：本页由 App 给 p-6（48px），
+  // 实际正文列是 1440 − 236 − 48 − 236 − 336 − 32 = 552，低于 §11 验收的 560 下限。
+  // 故本页不用 App 的 p-6（与阅读器同一例外）、自带 p-4（左右各 16），于是 = 568，
+  // 过了下限；但仍低于 §8.2 写的 600–680 目标区 —— 要达 600 得把右栏缩到 288，
+  // 留待作者裁决。
+  const gridClass =
+    shape.tree === 'drawer'
+      ? shape.aside === 'none'
+        ? 'grid-cols-[minmax(0,1fr)]'
+        : 'grid-cols-[minmax(0,1fr)] pr-[336px]'
+      : shape.aside === 'rail'
+        ? 'grid-cols-[236px_minmax(0,1fr)_44px]'
+        : 'grid-cols-[236px_minmax(0,1fr)_336px]'
+  // 同一棵树要出现在两处（工作态的常驻列 / 专注态的抽屉），抽出来免得写两份。
+  const treePane = treeLoading ? (
+    <p className="text-[13px] text-muted">章节树加载中…</p>
+  ) : (
+    <WritingTree volumes={volumes} selectedSceneId={selectedSceneId} onSelect={selectScene} />
+  )
+
+  function toggleLayoutMode() {
+    const next: WritingMode = layoutMode === 'work' ? 'focus' : 'work'
+    setStoredLayoutMode(next)
+    writeMode(next)
+  }
+
+  function setRightCollapsedPersisted(collapsed: boolean) {
+    setRightCollapsed(collapsed)
+    writeRightCollapsed(collapsed)
+  }
+
+  function setAsideTabPersisted(next: AsideTab) {
+    setAsideTab(next)
+    writeAsideTab(next)
+  }
+
+  // 工具栏的字数跟着**当前在编的那一份**走：正文模式数正文、草稿模式数草稿。
+  // 口径与原先编辑器里那个一致（去掉空白后计字符）—— 只是搬到了工具栏。
+  const editorChars = (mode === 'body' ? bodyDraft : aiDraft).replace(/\s/g, '').length
+
+  // 「更多」面板里的条目：左对齐、可禁用，与 `Button` 的中置对齐不同，所以不用
+  // 组件而直接写类名。**文字色不写在这里**，由每个条目自己给一个 —— 同一元素上
+  // 两个 text-* 谁生效取决于 CSS 顺序（`cn` 不消解冲突）。
+  const moreItemClass =
+    'rounded-control px-2.5 py-1.5 text-left text-[12.5px] transition-colors duration-[120ms] hover:bg-sunken disabled:cursor-not-allowed disabled:opacity-45'
+
   return (
-    <div className="space-y-4">
+    /* 本页自带内边距（App 不对 /write 加 p-6）：三栏宽度按 spec §8.2 的预算算，
+       48px 的内边距会把正文压到验收下限以下，见上面 gridClass 的注释。 */
+    <div className="space-y-4 p-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-xl font-semibold">写作台</h2>
-        <select
-          value={projectId}
-          onChange={(event) => changeProject(event.target.value)}
-          className="rounded border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm"
-        >
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
-        {sceneLabel && <span className="text-xs text-slate-500">{sceneLabel}</span>}
+        <h2 className="font-serif text-[19px] font-semibold text-ink">写作台</h2>
+        {shape.tree === 'drawer' && (
+          <Button size="sm" onClick={() => setDrawerOpen(true)}>
+            章节
+          </Button>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {/* 两种模式都给开关：专注态收起右栏后要能再打开，否则浮层一旦收起就回不来。 */}
+          <Button size="sm" onClick={() => setRightCollapsedPersisted(!rightCollapsed)}>
+            {rightCollapsed ? '展开右栏' : '收起右栏'}
+          </Button>
+          <Button size="sm" onClick={toggleLayoutMode}>
+            {layoutMode === 'work' ? '专注模式' : '工作模式'}
+          </Button>
+        </div>
       </div>
 
-      {notice && (
-        <p className="rounded border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-300">
-          {notice}
-        </p>
-      )}
+      {notice && <p className="text-[13px] text-muted">{notice}</p>}
 
       {projectsLoading ? (
-        <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">加载中…</p>
+        <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
+          加载中…
+        </p>
       ) : !projectId ? (
-        <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
-          先创建一个项目。
+        <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
+          先在左侧项目选择器里新建一个项目。
         </p>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[240px_minmax(0,1fr)_320px]">
-          <aside className="rounded border border-slate-800 p-3">
-            {treeLoading ? (
-              <p className="text-sm text-slate-500">章节树加载中…</p>
-            ) : (
-              <WritingTree
-                volumes={volumes}
-                selectedSceneId={selectedSceneId}
-                onSelect={selectScene}
-              />
-            )}
-          </aside>
+        <div className={`grid items-start gap-4 ${gridClass}`}>
+          {shape.tree === 'column' && (
+            <aside className="rounded-card border border-line bg-surface p-3">{treePane}</aside>
+          )}
 
-          <section className="min-w-0 space-y-3">
+          {/* 正文列的宽度上限：工作态 680、专注态 620（spec §8.2 的区间），
+              余量作左右页边 —— 所以这里居中而不是撑满。 */}
+          <section
+            className={`mx-auto w-full min-w-0 space-y-3 ${
+              layoutMode === 'work' ? 'max-w-[680px]' : 'max-w-[620px]'
+            }`}
+          >
             {!selected ? (
-              <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+              <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
                 从左侧选择一个场景开始写作。
               </p>
             ) : (
               <>
                 {sceneLock?.locked && (
-                  <p className="rounded border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-300">
+                  <p className="rounded-control bg-warn-soft p-3 text-[13.5px] text-warn">
                     这一场已锁定（{sceneLock.label || '上级'}）：AI 不会生成或采纳正文。
                     作者仍可手工编辑与保存。要重新生成，请先在章节页解锁。
                   </p>
                 )}
 
-                <section className="space-y-1 rounded border border-slate-800 p-3 text-sm">
-                  <p className="text-slate-300">
+                <section className="space-y-1 rounded-card border border-line bg-surface p-3 text-[13.5px]">
+                  <p className="text-ink-2">
                     目标：{selected.scene.goal || '（未写目标）'}
                   </p>
-                  <p className="text-slate-400">冲突：{selected.scene.conflict || '（未写）'}</p>
-                  <p className="text-slate-400">转折：{selected.scene.turn || '（未写）'}</p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-muted">冲突：{selected.scene.conflict || '（未写）'}</p>
+                  <p className="text-muted">转折：{selected.scene.turn || '（未写）'}</p>
+                  {/* 字数已移到工具栏（跟着当前在编的那一份走），这里只留目标。 */}
+                  <p className="text-[11.5px] text-muted">
                     目标字数：{selected.scene.target_words_min ?? '?'}–
-                    {selected.scene.target_words_max ?? '?'} · 正文{' '}
-                    {text ? `${text.word_count} 字` : '—'}
+                    {selected.scene.target_words_max ?? '?'}
                   </p>
                 </section>
 
                 {textLoading ? (
-                  <p className="rounded border border-slate-800 p-4 text-sm text-slate-500">
+                  <p className="rounded-card border border-line bg-surface p-4 text-[13.5px] text-muted">
                     正在载入正文与上下文…
                   </p>
                 ) : !text ? (
-                  <p className="rounded border border-slate-800 p-4 text-sm text-amber-300">
+                  <p className="rounded-card border-l-2 border-danger bg-surface p-4 text-[13.5px] text-danger">
                     正文状态未能加载，请重新选择场景。
                   </p>
                 ) : (
                   <>
+                    {/* 工具栏收成一行（spec §9.9）：面包屑 · 保存状态 · 字数 |
+                        生成正文 · 采纳为正文 · 更多。次要动作收进「更多」——
+                        每个按钮的 onClick 与 disabled 表达式逐字保留，只换位置。 */}
                     <div className="flex flex-wrap items-center gap-2">
-                      {generating ? (
-                        <button
-                          type="button"
-                          onClick={stop}
-                          className="rounded bg-amber-600 px-3 py-1.5 text-sm text-white hover:bg-amber-500"
-                        >
-                          停止
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={generate}
+                      <span className="text-[13px] text-ink-2">{sceneLabel}</span>
+                      <span className="text-[11.5px] text-muted">
+                        {hasUnsaved ? '有未保存的改动' : '已保存'}
+                      </span>
+                      <span className="text-[11.5px] text-faint tabular-nums">
+                        {editorChars} 字
+                      </span>
+
+                      <div className="ml-auto flex items-center gap-2">
+                        {generating ? (
+                          <Button variant="warn" onClick={stop}>
+                            停止
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="primary"
+                            onClick={generate}
+                            disabled={
+                              busy ||
+                              stopCooldown ||
+                              auditLoading ||
+                              logicLoading ||
+                              writebackBusy ||
+                              sceneLock?.locked === true
+                            }
+                            title={
+                              sceneLock?.locked
+                                ? '这一场已锁定，AI 不会改动它'
+                                : stopCooldown
+                                  ? '生成刚结束，请稍候'
+                                  : undefined
+                            }
+                          >
+                            生成正文
+                          </Button>
+                        )}
+                        {/* 采纳用 secondary：生成是入口动作、最常点，让它独占主色，
+                            两个同色主按钮会互相稀释。 */}
+                        <Button
+                          onClick={adopt}
                           disabled={
                             busy ||
-                            stopCooldown ||
+                            generating ||
                             auditLoading ||
                             logicLoading ||
                             writebackBusy ||
+                            !text.draft ||
                             sceneLock?.locked === true
                           }
                           title={
                             sceneLock?.locked
-                              ? '这一场已锁定，AI 不会改动它'
-                              : stopCooldown
-                                ? '生成刚结束，请稍候'
-                                : undefined
+                              ? '这一场已锁定，AI 草稿不能采纳'
+                              : undefined
                           }
-                          className="rounded bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-50"
                         >
-                          生成正文
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={runAudit}
-                        disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.has_body}
-                        title={text.has_body ? undefined : '采纳正文后才能审校'}
-                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
-                      >
-                        {auditLoading ? '审校中…' : '审校'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={runLogic}
-                        disabled={
-                          busy ||
-                          generating ||
-                          auditLoading ||
-                          logicLoading ||
-                          writebackBusy ||
-                          (logicStage === 'text' && !text.has_body)
-                        }
-                        title={
-                          logicStage === 'text' && !text.has_body
-                            ? '采纳正文后才能检查正文'
-                            : undefined
-                        }
-                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
-                      >
-                        {logicLoading ? '逻辑检查中…' : '逻辑自检'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={runWriteback}
-                        disabled={
-                          busy ||
-                          generating ||
-                          auditLoading ||
-                          logicLoading ||
-                          writebackBusy ||
-                          !text.has_body
-                        }
-                        title={text.has_body ? undefined : '采纳正文后才能生成回写建议'}
-                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
-                      >
-                        {writebackLoading ? '生成中…' : '回写建议'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={saveBody}
-                        disabled={
-                          busy ||
-                          generating ||
-                          auditLoading ||
-                          logicLoading ||
-                          writebackBusy ||
-                          mode !== 'body' ||
-                          bodyDraft === (text.body ?? '')
-                        }
-                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
-                      >
-                        保存正文
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setBodyDraft(text.body ?? '')}
-                        disabled={
-                          busy ||
-                          generating ||
-                          auditLoading ||
-                          logicLoading ||
-                          writebackBusy ||
-                          mode !== 'body' ||
-                          bodyDraft === (text.body ?? '')
-                        }
-                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-400 hover:text-white disabled:opacity-50"
-                      >
-                        取消修改
-                      </button>
-                      <button
-                        type="button"
-                        onClick={saveDraft}
-                        disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.draft || mode !== 'draft'}
-                        className="rounded border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:text-white disabled:opacity-50"
-                      >
-                        保存草稿
-                      </button>
-                      <button
-                        type="button"
-                        onClick={adopt}
-                        disabled={
-                          busy ||
-                          generating ||
-                          auditLoading ||
-                          logicLoading ||
-                          writebackBusy ||
-                          !text.draft ||
-                          sceneLock?.locked === true
-                        }
-                        title={
-                          sceneLock?.locked
-                            ? '这一场已锁定，AI 草稿不能采纳'
-                            : undefined
-                        }
-                        className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
-                      >
-                        采纳为正文
-                      </button>
-                      <button
-                        type="button"
-                        onClick={discard}
-                        disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.draft}
-                        className="rounded border border-amber-800 px-3 py-1.5 text-sm text-amber-300 hover:text-amber-200 disabled:opacity-50"
-                      >
-                        丢弃草稿
-                      </button>
+                          采纳为正文
+                        </Button>
+                        <div className="relative" ref={moreRef}>
+                          <Button
+                            onClick={() => setMoreOpen((open) => !open)}
+                            aria-expanded={moreOpen}
+                          >
+                            更多
+                          </Button>
+                          {moreOpen && (
+                            /* 点面板里任意一条即收起（靠冒泡），所以每个条目仍能
+                               直接写 onClick={handler}，不必包一层箭头函数。 */
+                            <div
+                              className="absolute right-0 top-9 z-20 flex w-44 flex-col items-stretch gap-0.5 rounded-card border border-line bg-surface p-1.5 shadow-overlay"
+                              onClick={() => setMoreOpen(false)}
+                            >
+                              <button
+                                type="button"
+                                onClick={runAudit}
+                                disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.has_body}
+                                title={text.has_body ? undefined : '采纳正文后才能审校'}
+                                className={`${moreItemClass} text-ink-2`}
+                              >
+                                {auditLoading ? '审校中…' : '审校'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={runLogic}
+                                disabled={
+                                  busy ||
+                                  generating ||
+                                  auditLoading ||
+                                  logicLoading ||
+                                  writebackBusy ||
+                                  (logicStage === 'text' && !text.has_body)
+                                }
+                                title={
+                                  logicStage === 'text' && !text.has_body
+                                    ? '采纳正文后才能检查正文'
+                                    : undefined
+                                }
+                                className={`${moreItemClass} text-ink-2`}
+                              >
+                                {logicLoading ? '逻辑检查中…' : '逻辑自检'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={runWriteback}
+                                disabled={
+                                  busy ||
+                                  generating ||
+                                  auditLoading ||
+                                  logicLoading ||
+                                  writebackBusy ||
+                                  !text.has_body
+                                }
+                                title={text.has_body ? undefined : '采纳正文后才能生成回写建议'}
+                                className={`${moreItemClass} text-ink-2`}
+                              >
+                                {writebackLoading ? '生成中…' : '回写建议'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={saveBody}
+                                disabled={
+                                  busy ||
+                                  generating ||
+                                  auditLoading ||
+                                  logicLoading ||
+                                  writebackBusy ||
+                                  mode !== 'body' ||
+                                  bodyDraft === (text.body ?? '')
+                                }
+                                className={`${moreItemClass} text-ink-2`}
+                              >
+                                保存正文
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setBodyDraft(text.body ?? '')}
+                                disabled={
+                                  busy ||
+                                  generating ||
+                                  auditLoading ||
+                                  logicLoading ||
+                                  writebackBusy ||
+                                  mode !== 'body' ||
+                                  bodyDraft === (text.body ?? '')
+                                }
+                                className={`${moreItemClass} text-ink-2`}
+                              >
+                                取消修改
+                              </button>
+                              <button
+                                type="button"
+                                onClick={saveDraft}
+                                disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.draft || mode !== 'draft'}
+                                className={`${moreItemClass} text-ink-2`}
+                              >
+                                保存草稿
+                              </button>
+                              <button
+                                type="button"
+                                onClick={discard}
+                                disabled={busy || generating || auditLoading || logicLoading || writebackBusy || !text.draft}
+                                className={`${moreItemClass} text-warn`}
+                              >
+                                丢弃草稿
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
                     <GenerationStream text={streamText} generating={generating} />
@@ -1259,7 +1390,7 @@ export default function Writing() {
                           onSaved={() => void loadBranch(branch.id)}
                         />
                         <DiffPanel oldText={text.body ?? ''} newText={branch.content} />
-                        <p className="text-xs text-slate-500">
+                        <p className="text-[11.5px] text-muted">
                           与主版对比在上面。要换掉主版正文，用右栏「合入」。
                         </p>
                       </>
@@ -1267,12 +1398,14 @@ export default function Writing() {
 
                     {!branch && (
                       <>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1">
                       <button
                         type="button"
                         onClick={() => setMode('body')}
-                        className={`rounded px-3 py-1 text-sm ${
-                          mode === 'body' ? 'bg-slate-800 text-white' : 'text-slate-400'
+                        className={`rounded-control px-3 py-1 text-[13px] transition-colors duration-[120ms] ${
+                          mode === 'body'
+                            ? 'bg-accent-soft font-semibold text-accent-ink'
+                            : 'text-muted hover:bg-sunken'
                         }`}
                       >
                         已采纳正文
@@ -1281,8 +1414,10 @@ export default function Writing() {
                         type="button"
                         onClick={() => setMode('draft')}
                         disabled={!text.draft}
-                        className={`rounded px-3 py-1 text-sm disabled:opacity-40 ${
-                          mode === 'draft' ? 'bg-slate-800 text-white' : 'text-slate-400'
+                        className={`rounded-control px-3 py-1 text-[13px] transition-colors duration-[120ms] disabled:opacity-40 ${
+                          mode === 'draft'
+                            ? 'bg-accent-soft font-semibold text-accent-ink'
+                            : 'text-muted hover:bg-sunken'
                         }`}
                       >
                         AI 草稿
@@ -1318,212 +1453,284 @@ export default function Writing() {
             )}
           </section>
 
-          <aside className="min-w-0 space-y-4">
-            {selectedSceneId && sceneChanges.length > 0 && (
-              <section className="space-y-2 rounded border border-slate-800 p-3">
-                <h3 className="text-sm font-medium text-slate-300">这一场的改动</h3>
-                <ChangeList projectId={projectId} changes={sceneChanges} />
-              </section>
-            )}
-            {selectedSceneId && (
-              <AbPanel
-                sceneId={selectedSceneId}
-                locked={sceneLock?.locked === true}
-                disabled={busy || generating || branchBusy}
-                onAdopted={() => {
-                  // 采纳会换正文、删掉两条 A/B 分支：正文、改动历史与左树都要跟上。
-                  // 在途请求可能属于刚切走的场景，捕获当前令牌再比对。
-                  const token = sceneToken.current
-                  const sceneId = selectedSceneId
-                  void refreshText(sceneId).then((state) => {
-                    if (state !== null && sceneToken.current === token) {
-                      void refreshSceneChanges(sceneId, token)
+          {shape.aside === 'rail' ? (
+            <aside className="flex flex-col items-center gap-2 rounded-card border border-line bg-surface py-3">
+              <IconButton label="展开右栏" onClick={() => setRightCollapsedPersisted(false)}>
+                <Icon name="chevron" className="rotate-180" />
+              </IconButton>
+            </aside>
+          ) : shape.aside === 'none' ? null : (
+            /* 专注态下右栏是浮层：正文已经居中收窄（620），浮层落在右侧留白里，
+               不盖住稿子 —— spec §8.2 的「正文让位、不遮挡」。
+               top-20 是给页头留出的高度：浮层若从 top-4 起会盖住页头右侧的
+               模式切换，作者就回不到工作态了。 */
+            <aside
+              className={
+                shape.aside === 'overlay'
+                  ? 'fixed bottom-4 right-4 top-20 z-30 w-[320px] space-y-4 overflow-auto rounded-card border border-line bg-surface p-3 shadow-overlay'
+                  : 'min-w-0 space-y-4'
+              }
+            >
+            <Tabs
+              items={ASIDE_TABS.map((tab) => ({ key: tab.key, label: tab.label }))}
+              active={asideTab}
+              onChange={(key) => {
+                const next = ASIDE_TABS.find((tab) => tab.key === key)
+                if (next) setAsideTabPersisted(next.key)
+              }}
+            />
+
+            {/* 四组都**保持挂载**，只切可见性（`hidden`）—— 面板里各有自己的
+                effect 与在途请求（A/B 与分支的 SSE、批量的轮询），按页签卸载会
+                打断正在跑的那一条。 */}
+            <div className={asideTab === 'context' ? 'space-y-4' : 'hidden'}>
+              {selectedSceneId && (
+                <ParagraphLocks
+                  sceneId={selectedSceneId}
+                  body={text?.body ?? null}
+                  locks={paragraphLocks}
+                  disabled={busy || generating}
+                  onChanged={setParagraphLocks}
+                />
+              )}
+              <ContextPreview
+                data={preview}
+                loading={previewLoading}
+                error={previewError}
+              />
+            </div>
+
+            <div className={asideTab === 'branch' ? 'space-y-4' : 'hidden'}>
+              {selectedSceneId && (
+                <AbPanel
+                  sceneId={selectedSceneId}
+                  locked={sceneLock?.locked === true}
+                  disabled={busy || generating || branchBusy}
+                  onAdopted={() => {
+                    // 采纳会换正文、删掉两条 A/B 分支：正文、改动历史与左树都要跟上。
+                    // 在途请求可能属于刚切走的场景，捕获当前令牌再比对。
+                    const token = sceneToken.current
+                    const sceneId = selectedSceneId
+                    void refreshText(sceneId).then((state) => {
+                      if (state !== null && sceneToken.current === token) {
+                        void refreshSceneChanges(sceneId, token)
+                      }
+                    })
+                    void refreshTree()
+                  }}
+                />
+              )}
+              {selectedSceneId && (
+                <BranchPanel
+                  sceneId={selectedSceneId}
+                  selectedBranchId={branchId}
+                  onSelect={(next) => {
+                    // 离开分支时若有未保存的改动，先问一句 —— 分支正文的
+                    // 编辑器是本地副本，切走就没了。
+                    if (branchDirty && !window.confirm('这条分支有未保存的修改，确定离开吗？')) {
+                      return
                     }
-                  })
-                  void refreshTree()
-                }}
+                    setBranchId(next)
+                  }}
+                  onMerged={() => {
+                    // 合并请求在途时作者可能切了场景：捕获当时的令牌，
+                    // 迟到时用它比对，别把旧场景的正文写进新场景。
+                    const token = sceneToken.current
+                    const sceneId = selectedSceneId
+                    void refreshText(sceneId).then((state) => {
+                      if (state !== null && sceneToken.current === token) {
+                        void refreshSceneChanges(sceneId, token)
+                      }
+                    })
+                    void refreshTree()
+                  }}
+                  disabled={busy || generating}
+                />
+              )}
+            </div>
+
+            <div className={asideTab === 'review' ? 'space-y-4' : 'hidden'}>
+              <AuditPanel
+                issues={auditIssues}
+                lastAuditedAt={auditLastAt}
+                running={auditLoading || busy || writebackBusy}
+                warning={auditWarning}
+                canRun={Boolean(text?.has_body) && !generating && !busy && !auditLoading && !logicLoading && !writebackBusy}
+                hasBody={Boolean(text?.has_body)}
+                onRun={runAudit}
+                onResolve={resolveIssue}
               />
-            )}
-            {selectedSceneId && (
-              <BranchPanel
-                sceneId={selectedSceneId}
-                selectedBranchId={branchId}
-                onSelect={(next) => {
-                  // 离开分支时若有未保存的改动，先问一句 —— 分支正文的
-                  // 编辑器是本地副本，切走就没了。
-                  if (branchDirty && !window.confirm('这条分支有未保存的修改，确定离开吗？')) {
-                    return
-                  }
-                  setBranchId(next)
-                }}
-                onMerged={() => {
-                  // 合并请求在途时作者可能切了场景：捕获当时的令牌，
-                  // 迟到时用它比对，别把旧场景的正文写进新场景。
-                  const token = sceneToken.current
-                  const sceneId = selectedSceneId
-                  void refreshText(sceneId).then((state) => {
-                    if (state !== null && sceneToken.current === token) {
-                      void refreshSceneChanges(sceneId, token)
-                    }
-                  })
-                  void refreshTree()
-                }}
-                disabled={busy || generating}
+              {selectedSceneId && (
+                <LogicChain sceneId={selectedSceneId} body={text?.body} />
+              )}
+              <LogicPanel
+                stage={logicStage}
+                issues={logicIssues}
+                lastCheckedAt={logicLastAt}
+                running={logicLoading || busy || writebackBusy}
+                warning={logicWarning}
+                canRun={
+                  Boolean(selectedSceneId) &&
+                  !generating &&
+                  !busy &&
+                  !auditLoading &&
+                  !logicLoading &&
+                  !writebackBusy
+                }
+                hasBody={Boolean(text?.has_body)}
+                onStageChange={changeLogicStage}
+                onRun={runLogic}
+                onResolve={resolveLogicIssue}
               />
-            )}
-            {selectedSceneId && (
-              <ParagraphLocks
-                sceneId={selectedSceneId}
-                body={text?.body ?? null}
-                locks={paragraphLocks}
-                disabled={busy || generating}
-                onChanged={setParagraphLocks}
+              <WritebackPanel
+                suggestion={writeback}
+                loading={writebackLoading}
+                applying={writebackApplying}
+                canRun={
+                  Boolean(selectedSceneId) &&
+                  !generating &&
+                  !busy &&
+                  !auditLoading &&
+                  !logicLoading &&
+                  !writebackBusy
+                }
+                hasBody={Boolean(text?.has_body)}
+                onRun={runWriteback}
+                onApply={applyWriteback}
               />
-            )}
-            <ContextPreview
-              data={preview}
-              loading={previewLoading}
-              error={previewError}
-            />
-            <AuditPanel
-              issues={auditIssues}
-              lastAuditedAt={auditLastAt}
-              running={auditLoading || busy || writebackBusy}
-              warning={auditWarning}
-              canRun={Boolean(text?.has_body) && !generating && !busy && !auditLoading && !logicLoading && !writebackBusy}
-              hasBody={Boolean(text?.has_body)}
-              onRun={runAudit}
-              onResolve={resolveIssue}
-            />
-            {selectedSceneId && (
-              <LogicChain sceneId={selectedSceneId} body={text?.body} />
-            )}
-            <LogicPanel
-              stage={logicStage}
-              issues={logicIssues}
-              lastCheckedAt={logicLastAt}
-              running={logicLoading || busy || writebackBusy}
-              warning={logicWarning}
-              canRun={
-                Boolean(selectedSceneId) &&
-                !generating &&
-                !busy &&
-                !auditLoading &&
-                !logicLoading &&
-                !writebackBusy
-              }
-              hasBody={Boolean(text?.has_body)}
-              onStageChange={changeLogicStage}
-              onRun={runLogic}
-              onResolve={resolveLogicIssue}
-            />
-            <WritebackPanel
-              suggestion={writeback}
-              loading={writebackLoading}
-              applying={writebackApplying}
-              canRun={
-                Boolean(selectedSceneId) &&
-                !generating &&
-                !busy &&
-                !auditLoading &&
-                !logicLoading &&
-                !writebackBusy
-              }
-              hasBody={Boolean(text?.has_body)}
-              onRun={runWriteback}
-              onApply={applyWriteback}
-            />
-            <BatchPanel
-              job={batchJob}
-              loading={batchLoading}
-              busy={batchBusy}
-              canStart={Boolean(selected)}
-              chapterId={selected?.chapter.id ?? ''}
-              chapterLabel={
-                selected ? `第${selected.chapter.seq + 1}章 ${selected.chapter.title}` : ''
-              }
-              volumeId={selected?.volume.id ?? ''}
-              volumeLabel={
-                selected ? `第${selected.volume.seq + 1}卷 ${selected.volume.name}` : ''
-              }
-              onStart={startBatch}
-              onPause={() => controlBatch(api.pauseBatch)}
-              onResume={() => controlBatch(api.resumeBatch)}
-              onCancel={() => controlBatch(api.cancelBatch)}
-              onRetryFailed={() => controlBatch(api.retryBatchFailed)}
-            />
-            {runInfo && (
-              <section className="space-y-1 rounded border border-slate-800 p-3 text-xs text-slate-400">
-                <h3 className="text-sm font-medium text-slate-300">本次运行</h3>
-                <p>
-                  {runInfo.agent} · {runInfo.model}
-                </p>
-                <p className="text-slate-500">run {runInfo.run_id.slice(0, 8)}</p>
-                <p>估算 {runInfo.estimated_tokens} tokens</p>
-                {runInfo.status && <p>状态：{runInfo.status}</p>}
-                {runInfo.prompt_tokens !== undefined && (
+            </div>
+
+            <div className={asideTab === 'log' ? 'space-y-4' : 'hidden'}>
+              {selectedSceneId && sceneChanges.length > 0 && (
+                <section className="space-y-2 rounded-card border border-line bg-surface p-3">
+                  <h3 className="text-[14px] font-semibold text-ink">这一场的改动</h3>
+                  <ChangeList projectId={projectId} changes={sceneChanges} />
+                </section>
+              )}
+              <BatchPanel
+                job={batchJob}
+                loading={batchLoading}
+                busy={batchBusy}
+                canStart={Boolean(selected)}
+                chapterId={selected?.chapter.id ?? ''}
+                chapterLabel={
+                  selected ? `第${selected.chapter.seq + 1}章 ${selected.chapter.title}` : ''
+                }
+                volumeId={selected?.volume.id ?? ''}
+                volumeLabel={
+                  selected ? `第${selected.volume.seq + 1}卷 ${selected.volume.name}` : ''
+                }
+                onStart={startBatch}
+                onPause={() => controlBatch(api.pauseBatch)}
+                onResume={() => controlBatch(api.resumeBatch)}
+                onCancel={() => controlBatch(api.cancelBatch)}
+                onRetryFailed={() => controlBatch(api.retryBatchFailed)}
+              />
+              {runInfo && (
+                <section className="space-y-1 rounded-card border border-line bg-surface p-3 text-[11.5px] text-muted">
+                  <h3 className="text-[14px] font-semibold text-ink">本次运行</h3>
                   <p>
-                    tokens：{runInfo.prompt_tokens} + {runInfo.completion_tokens ?? 0}
+                    {runInfo.agent} · {runInfo.model}
                   </p>
-                )}
-                {runInfo.cost_estimate !== undefined && (
-                  <p>费用估算：${runInfo.cost_estimate.toFixed(4)}</p>
-                )}
-                {runInfo.duration_ms !== undefined && (
-                  <p>耗时：{(runInfo.duration_ms / 1000).toFixed(1)} 秒</p>
-                )}
-                {runInfo.chars !== undefined && <p>已生成 {runInfo.chars} 字</p>}
-                {runInfo.error && (
-                  <p className="text-amber-300">
-                    {runInfo.error.kind}：{runInfo.error.message}
-                  </p>
-                )}
-                {Object.keys(runInfo.trimmed).length > 0 && (
-                  <details>
-                    <summary className="cursor-pointer text-slate-500">上下文裁剪</summary>
-                    <ul className="mt-1 space-y-1">
-                      {Object.entries(runInfo.trimmed).map(([key, note]) => (
-                        <li key={key}>
-                          {key}：{note}
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-              </section>
-            )}
-            {revision ? (
-              <section className="space-y-2 rounded border border-slate-800 p-3 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-medium text-slate-300">修订全文</h3>
+                  <p className="text-faint">run {runInfo.run_id.slice(0, 8)}</p>
+                  <p>估算 {runInfo.estimated_tokens} tokens</p>
+                  {runInfo.status && <p>状态：{runInfo.status}</p>}
+                  {runInfo.prompt_tokens !== undefined && (
+                    <p>
+                      tokens：{runInfo.prompt_tokens} + {runInfo.completion_tokens ?? 0}
+                    </p>
+                  )}
+                  {runInfo.cost_estimate !== undefined && (
+                    <p>费用估算：${runInfo.cost_estimate.toFixed(4)}</p>
+                  )}
+                  {runInfo.duration_ms !== undefined && (
+                    <p>耗时：{(runInfo.duration_ms / 1000).toFixed(1)} 秒</p>
+                  )}
+                  {runInfo.chars !== undefined && <p>已生成 {runInfo.chars} 字</p>}
+                  {runInfo.error && (
+                    <p className="text-warn">
+                      {runInfo.error.kind}：{runInfo.error.message}
+                    </p>
+                  )}
+                  {Object.keys(runInfo.trimmed).length > 0 && (
+                    <details>
+                      <summary className="cursor-pointer text-muted">上下文裁剪</summary>
+                      <ul className="mt-1 space-y-1">
+                        {Object.entries(runInfo.trimmed).map(([key, note]) => (
+                          <li key={key}>
+                            {key}：{note}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </section>
+              )}
+              {revision ? (
+                <section className="space-y-2 rounded-card border border-line bg-surface p-3 text-[13.5px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-semibold text-ink">修订全文</h3>
+                    <button
+                      type="button"
+                      onClick={() => setRevision(null)}
+                      className="text-[11.5px] text-muted transition-colors duration-[120ms] hover:text-ink-2"
+                    >
+                      关闭
+                    </button>
+                  </div>
+                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-[11.5px] text-ink-2">
+                    {revision.content}
+                  </pre>
                   <button
                     type="button"
-                    onClick={() => setRevision(null)}
-                    className="text-xs text-slate-400 hover:text-white"
+                    disabled={busy || auditLoading || logicLoading || writebackBusy}
+                    onClick={() => restoreRevision(revision.id)}
+                    className="rounded-control border border-line-strong px-2 py-1 text-[11.5px] text-ink-2 transition-colors duration-[120ms] hover:bg-sunken disabled:opacity-50"
                   >
-                    关闭
+                    恢复此版本
                   </button>
-                </div>
-                <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-300">
-                  {revision.content}
-                </pre>
-                <button
-                  type="button"
-                  disabled={busy || auditLoading || logicLoading || writebackBusy}
-                  onClick={() => restoreRevision(revision.id)}
-                  className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:text-white disabled:opacity-50"
-                >
-                  恢复此版本
-                </button>
-              </section>
-            ) : (
-              <RevisionHistory
-                revisions={text?.revisions ?? []}
-                busy={busy}
-                onOpen={openRevision}
-                onRestore={restoreRevision}
-              />
-            )}
+                </section>
+              ) : (
+                <RevisionHistory
+                  revisions={text?.revisions ?? []}
+                  busy={busy}
+                  onOpen={openRevision}
+                  onRestore={restoreRevision}
+                />
+              )}
+            </div>
+            </aside>
+          )}
+        </div>
+      )}
+
+      {/* 底部状态条：只在专注态出现（工作态的字数在工具栏里）。用 sticky 而不是
+          fixed —— fixed 要写死侧栏宽度，而侧栏是可以折叠的。 */}
+      {shape.statusBar && selected && (
+        <div className="sticky bottom-0 z-20 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-card border border-line bg-surface px-3 py-1.5 text-[11.5px] text-muted shadow-overlay">
+          <span className="tabular-nums">{editorChars} 字</span>
+          <span className="tabular-nums">
+            目标 {selected.scene.target_words_min ?? '?'}–
+            {selected.scene.target_words_max ?? '?'}
+          </span>
+          {/* spec 写的是「分支数」，但分支列表在 BranchPanel 内部、页面上没有这个
+              计数（要它得给面板加一个回调）。这里改显示「正在看哪一条」—— 对作者
+              更有用，且只用现有状态。 */}
+          <span>{branch ? `分支「${branch.name}」` : '主版'}</span>
+          <span>{sceneLock?.locked ? '已锁定' : '未锁定'}</span>
+        </div>
+      )}
+
+      {/* 专注态的左树：浮层抽屉。ESC 关闭，点遮罩也关。 */}
+      {shape.tree === 'drawer' && drawerOpen && (
+        <div className="fixed inset-0 z-40">
+          <div
+            className="absolute inset-0 bg-ink/20"
+            onClick={() => setDrawerOpen(false)}
+            aria-hidden="true"
+          />
+          <aside className="relative h-full w-[236px] overflow-auto border-r border-line bg-surface p-3 shadow-overlay">
+            {treePane}
           </aside>
         </div>
       )}

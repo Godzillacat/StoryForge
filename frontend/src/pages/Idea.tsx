@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { api, type Idea as IdeaRow, type Project, type RunView } from '../api/client'
+import { api, type Idea as IdeaRow, type RunView } from '../api/client'
 import RunTrace from '../components/RunTrace'
+import { useCurrentProject } from '../state/ProjectContext'
 
 const FIELD_LABELS: Record<string, string> = {
   genre: '题材',
@@ -15,21 +16,14 @@ const FIELD_LABELS: Record<string, string> = {
 }
 
 export default function Idea() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectId, setProjectId] = useState('')
+  // 当前项目由外壳持有；切换入口在侧栏。
+  const { projectId } = useCurrentProject()
   const [ideas, setIdeas] = useState<IdeaRow[]>([])
   const [draft, setDraft] = useState('')
   const [run, setRun] = useState<RunView | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-
-  useEffect(() => {
-    api.listProjects().then((list) => {
-      setProjects(list)
-      if (list[0]) setProjectId(list[0].id)
-    })
-  }, [])
 
   useEffect(() => {
     if (projectId) api.listIdeas(projectId).then(setIdeas)
@@ -68,18 +62,6 @@ export default function Idea() {
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-semibold">灵感与解析</h2>
-
-      <select
-        className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-        value={projectId}
-        onChange={(e) => setProjectId(e.target.value)}
-      >
-        {projects.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
 
       <section className="space-y-2">
         <div className="text-xs text-amber-400">这段文字 AI 不会改，解析结果只会另起一份。</div>
@@ -123,7 +105,8 @@ export default function Idea() {
 
       {current?.parsed_json && (
         <section className="space-y-3 rounded border border-slate-800 p-4">
-          <h3 className="text-sm font-medium text-slate-300">解析卡（可逐项编辑）</h3>
+          {/* 只读：解析结果没有更新接口，想改就重新解析 —— 不留假入口。 */}
+          <h3 className="text-sm font-medium text-slate-300">解析卡 · 只读</h3>
           {Object.entries(FIELD_LABELS).map(([key, label]) => (
             <div key={key}>
               <div className="text-xs text-slate-500">{label}</div>
