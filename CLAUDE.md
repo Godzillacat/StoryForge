@@ -149,9 +149,9 @@ pnpm run lint                             # oxlint
 `schannel: CRYPT_E_NO_REVOCATION_CHECK`。仓库里已设 `http.schannelCheckRevoke=false` 绕过
 （只影响吊销检查，TLS 校验仍在）。换机器/换网络后可 `git config --unset http.schannelCheckRevoke` 恢复。
 
-**待推送（2026-10-31）**：前端重塑 0a/0b + 批次 1a/1b-1/1b-2 共 28 个提交已合入本地
-master；`git push origin master` 失败（`Failed to connect to github.com:443`）。网络可用后
-直接推送即可，推送前按惯例检查 diff 有无密钥。
+**待推送（2026-10-31）**：前端重塑批次 2 / 3 / 4 共 12 个提交已在本地 master（origin/master
+停在 `93797b7`）；`git push origin master` 失败（`Failed to connect to github.com:443`）。
+网络可用后直接推送即可，推送前按惯例检查 diff 有无密钥。
 
 ---
 
