@@ -71,6 +71,12 @@ it('两种模式的形态：专注态把左树收成抽屉、右栏变浮层、�
     aside: 'overlay',
     statusBar: true,
   })
+  // 专注态收起右栏 = 整个收掉（连 336px 留白一起还回去），而不是留一条 44px 的条。
+  expect(shapeFor('focus', true)).toEqual({
+    tree: 'drawer',
+    aside: 'none',
+    statusBar: true,
+  })
 })
 
 it('右栏页签读回、写坏的值回落第一个', () => {

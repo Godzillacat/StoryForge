@@ -1072,13 +1072,17 @@ export default function Writing() {
     ? `第${selected.volume.seq + 1}卷 第${selected.chapter.seq + 1}章 场景${selected.scene.seq + 1}`
     : ''
 
-  // 列宽取自 spec §8.2 的预算（1440 − 外壳 236 − 左树 236 − 右栏 336 − 32 间隙
-  // = 600，正文落在 600–680 的下沿）。专注态只有一列：左树走抽屉、右栏走浮层，
-  // 并在右侧留出 336px 给浮层 —— 这就是 spec 说的「正文让位」，同时也保证工具栏
-  // 右端（采纳 / 更多）不被浮层盖住。
+  // 列宽取自 spec §8.2 的预算。注意 spec 那句验算（1440 − 外壳 236 − 左树 236 −
+  // 右栏 336 − 32 间隙 = 600）**漏了页面内边距**：本页由 App 给 p-6（48px），
+  // 实际正文列是 1440 − 236 − 48 − 236 − 336 − 32 = 552，低于 §11 验收的 560 下限。
+  // 故本页不用 App 的 p-6（与阅读器同一例外）、自带 p-4（左右各 16），于是 = 568，
+  // 过了下限；但仍低于 §8.2 写的 600–680 目标区 —— 要达 600 得把右栏缩到 288，
+  // 留待作者裁决。
   const gridClass =
     shape.tree === 'drawer'
-      ? 'grid-cols-[minmax(0,1fr)] pr-[336px]'
+      ? shape.aside === 'none'
+        ? 'grid-cols-[minmax(0,1fr)]'
+        : 'grid-cols-[minmax(0,1fr)] pr-[336px]'
       : shape.aside === 'rail'
         ? 'grid-cols-[236px_minmax(0,1fr)_44px]'
         : 'grid-cols-[236px_minmax(0,1fr)_336px]'
@@ -1116,7 +1120,9 @@ export default function Writing() {
     'rounded-control px-2.5 py-1.5 text-left text-[12.5px] transition-colors duration-[120ms] hover:bg-sunken disabled:cursor-not-allowed disabled:opacity-45'
 
   return (
-    <div className="space-y-4">
+    /* 本页自带内边距（App 不对 /write 加 p-6）：三栏宽度按 spec §8.2 的预算算，
+       48px 的内边距会把正文压到验收下限以下，见上面 gridClass 的注释。 */
+    <div className="space-y-4 p-4">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="font-serif text-[19px] font-semibold text-ink">写作台</h2>
         {shape.tree === 'drawer' && (
@@ -1125,11 +1131,10 @@ export default function Writing() {
           </Button>
         )}
         <div className="ml-auto flex items-center gap-2">
-          {layoutMode === 'work' && (
-            <Button size="sm" onClick={() => setRightCollapsedPersisted(!rightCollapsed)}>
-              {rightCollapsed ? '展开右栏' : '收起右栏'}
-            </Button>
-          )}
+          {/* 两种模式都给开关：专注态收起右栏后要能再打开，否则浮层一旦收起就回不来。 */}
+          <Button size="sm" onClick={() => setRightCollapsedPersisted(!rightCollapsed)}>
+            {rightCollapsed ? '展开右栏' : '收起右栏'}
+          </Button>
           <Button size="sm" onClick={toggleLayoutMode}>
             {layoutMode === 'work' ? '专注模式' : '工作模式'}
           </Button>
@@ -1454,7 +1459,7 @@ export default function Writing() {
                 <Icon name="chevron" className="rotate-180" />
               </IconButton>
             </aside>
-          ) : (
+          ) : shape.aside === 'none' ? null : (
             /* 专注态下右栏是浮层：正文已经居中收窄（620），浮层落在右侧留白里，
                不盖住稿子 —— spec §8.2 的「正文让位、不遮挡」。
                top-20 是给页头留出的高度：浮层若从 top-4 起会盖住页头右侧的

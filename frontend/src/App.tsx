@@ -128,8 +128,10 @@ export default function App() {
       <main
         className={cn(
           'flex min-h-0 flex-1 flex-col overflow-auto',
-          // 阅读器要通铺自己的配色与滚动区；其余页面统一内边距（页面级重排在各页批次里做）。
-          routePath === '/read' ? '' : 'p-6',
+          // 阅读器要通铺自己的配色与滚动区；写作台自带内边距（它的三栏宽度按
+          // spec §8.2 的预算算，而那句验算漏了这里的 p-6，48px 会把正文挤到
+          // 验收下限以下）。其余页面统一内边距，页面级重排在各页批次里做。
+          routePath === '/read' || routePath === '/write' ? '' : 'p-6',
           LEGACY_DARK.has(routePath) && 'bg-slate-950 text-slate-100',
         )}
       >

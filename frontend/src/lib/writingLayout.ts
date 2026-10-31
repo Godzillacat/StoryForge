@@ -22,9 +22,11 @@ import {
 export type WritingMode = 'work' | 'focus'
 
 /**
- * 工作态的下限。取自 spec §8.2 的预算：1440 − 外壳 236 − 左树 236 − 右栏 336
- * − 两道 16px 间隙 = 600，正好落在正文目标区间 600–680 的下沿。再窄就放不下，
- * 所以 1280–1439 默认走专注态。
+ * 工作态的下限。取自 spec §8.2 的预算，但要把它漏掉的页面内边距算进去：
+ * 1440 − 外壳 236 − 页面左右内边距 32 − 左树 236 − 右栏 336 − 两道 16px
+ * 间隙 = **568**，刚过 §11 验收的 560 下限；再窄就放不下，所以 1280–1439
+ * 默认走专注态。（spec 写的 600–680 目标区要右栏缩到 288 才够，属作者
+ * 待裁决项，这里不擅自改。）
  */
 export const WORK_MODE_MIN_WIDTH = 1440
 
@@ -35,15 +37,17 @@ export function modeForWidth(width: number): WritingMode {
 export interface LayoutShape {
   /** 左树：三栏里的常驻列，还是工具栏呼出的抽屉。 */
   tree: 'column' | 'drawer'
-  /** 右栏：常驻列、折叠成 44px 的条，还是浮层。 */
-  aside: 'column' | 'rail' | 'overlay'
+  /** 右栏：常驻列、折叠成 44px 的条、浮层、还是整个收起。 */
+  aside: 'column' | 'rail' | 'overlay' | 'none'
   /** 底部状态条只在专注态出现 —— 工作态的字数在工具栏里。 */
   statusBar: boolean
 }
 
 export function shapeFor(mode: WritingMode, rightCollapsed: boolean): LayoutShape {
   if (mode === 'focus') {
-    return { tree: 'drawer', aside: 'overlay', statusBar: true }
+    // 专注态也要能收起右栏：spec §5 的原话是「正文独占、面板浮动让位」，
+    // 收起来时连留白一起还回去，否则「独占」无从谈起。
+    return { tree: 'drawer', aside: rightCollapsed ? 'none' : 'overlay', statusBar: true }
   }
   return { tree: 'column', aside: rightCollapsed ? 'rail' : 'column', statusBar: false }
 }
