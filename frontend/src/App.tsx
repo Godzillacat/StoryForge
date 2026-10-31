@@ -28,7 +28,6 @@ import { Icon } from './ui/icons'
  */
 const LEGACY_DARK = new Set([
   '/studio',
-  '/models',
 ])
 
 export default function App() {

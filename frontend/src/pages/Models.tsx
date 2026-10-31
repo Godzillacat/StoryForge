@@ -10,6 +10,23 @@ import {
 } from '../api/client'
 import { costLabel } from '../lib/format'
 import { useCurrentProject } from '../state/ProjectContext'
+import { Badge } from '../ui/Badge'
+import { Button } from '../ui/Button'
+import { Card } from '../ui/Card'
+import { EmptyState } from '../ui/EmptyState'
+import { Input, Select } from '../ui/Field'
+import { Tabs } from '../ui/Tabs'
+import { Table, Td, Th } from '../ui/Table'
+
+type Tab = 'providers' | 'params' | 'prices' | 'cost' | 'tools'
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'providers', label: '服务商' },
+  { key: 'params', label: '分路与参数' },
+  { key: 'prices', label: '单价' },
+  { key: 'cost', label: '费用' },
+  { key: 'tools', label: '工具库' },
+]
 
 export default function Models() {
   const [providers, setProviders] = useState<ProviderView[]>([])
@@ -27,6 +44,7 @@ export default function Models() {
   const [cost, setCost] = useState<CostSummary | null>(null)
   const [form, setForm] = useState({ name: '', base_url: '', api_key: '' })
   const [notice, setNotice] = useState('')
+  const [tab, setTab] = useState<Tab>('providers')
 
   useEffect(() => {
     api.listProviders().then(setProviders)
@@ -171,273 +189,314 @@ export default function Models() {
   }
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-xl font-semibold">模型与费用</h2>
-      {notice && <p className="rounded bg-slate-900 p-3 text-sm text-slate-300">{notice}</p>}
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="font-serif text-[22px] font-semibold text-ink">模型与费用</h2>
+        <Badge>{providers.length} 服务商</Badge>
+        <Badge>{prices.length} 条单价</Badge>
+      </div>
 
-      <section className="space-y-3 rounded border border-slate-800 p-4">
-        <h3 className="text-sm font-medium text-slate-300">服务商</h3>
-        <div className="flex flex-wrap gap-2">
-          <input
-            className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            placeholder="名称"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-          />
-          <input
-            className="w-80 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            placeholder="接口地址 /v1"
-            value={form.base_url}
-            onChange={(e) => setForm({ ...form, base_url: e.target.value })}
-          />
-          <input
-            className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            type="password"
-            placeholder="API Key（加密存本机）"
-            value={form.api_key}
-            onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-          />
-          <button className="rounded bg-indigo-600 px-4 py-2 text-sm" onClick={addProvider}>
-            添加
-          </button>
-        </div>
+      {notice && <p className="text-[13px] text-muted">{notice}</p>}
 
-        <ul className="space-y-2 text-sm">
-          {providers.map((p) => (
-            <li key={p.id} className="space-y-2 border-b border-slate-800 pb-2 last:border-0">
-              <div className="flex flex-wrap items-center gap-4">
-                <span className="w-32">{p.name}</span>
-                <span className="w-64 truncate text-slate-500">{p.base_url}</span>
-                <span className="font-mono text-xs text-slate-500">{p.api_key_masked || '未设密钥'}</span>
-                {!p.enabled && <span className="text-xs text-amber-400">已停用</span>}
-                <button className="text-xs text-indigo-400" onClick={() => test(p.id)}>
-                  测试连通性
-                </button>
-                <button
-                  className="text-xs text-indigo-400"
-                  onClick={() =>
-                    setEditing({
-                      id: p.id,
-                      name: p.name,
-                      base_url: p.base_url,
-                      api_key: '',
-                      enabled: p.enabled,
-                    })
-                  }
-                >
-                  编辑
-                </button>
-                <button className="text-xs text-amber-400" onClick={() => removeProvider(p.id)}>
-                  删除
-                </button>
-              </div>
+      <Tabs items={TABS} active={tab} onChange={(key) => setTab(key as Tab)} />
 
-              {editing?.id === p.id && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-                    value={editing.name}
-                    onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                  />
-                  <input
-                    className="w-80 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-                    value={editing.base_url}
-                    onChange={(e) => setEditing({ ...editing, base_url: e.target.value })}
-                  />
-                  <input
-                    className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-                    type="password"
-                    placeholder="密钥（留空不修改）"
-                    value={editing.api_key}
-                    onChange={(e) => setEditing({ ...editing, api_key: e.target.value })}
-                  />
-                  <label className="flex items-center gap-2 text-slate-400">
-                    <input
-                      type="checkbox"
-                      checked={editing.enabled}
-                      onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })}
-                    />
-                    启用
-                  </label>
-                  <button className="rounded bg-indigo-600 px-4 py-2 text-sm" onClick={saveProvider}>
-                    保存
-                  </button>
-                  <button
-                    className="rounded border border-slate-700 px-4 py-2 text-sm"
-                    onClick={() => setEditing(null)}
-                  >
-                    取消
-                  </button>
-                </div>
-              )}
-            </li>
-          ))}
-          {providers.length === 0 && <li className="text-slate-500">还没配置服务商。</li>}
-        </ul>
-        <div className="flex items-center gap-3 text-sm">
-          <label className="text-slate-400">测试用模型</label>
-          <input
-            className="w-64 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            placeholder="留空则用已绑定的模型"
-            value={testModel}
-            onChange={(e) => setTestModel(e.target.value)}
-          />
-          <span className="text-slate-500">
-            连通性测试必须带模型名 —— 空模型名的「通过」只证明地址可达。
-          </span>
-        </div>
-      </section>
-
-      <section className="space-y-2 rounded border border-slate-800 p-4 text-sm">
-        <h3 className="text-sm font-medium text-slate-300">上下文预算</h3>
-        <div className="flex items-center gap-3">
-          <input
-            type="number"
-            // key 让服务端值变化时重挂载：作者输入过程中不会被回写打断，
-            // 保存挪到 onBlur 后也不会每敲一个数字就发一次 PUT。
-            key={settings?.context_token_budget ?? 8000}
-            defaultValue={settings?.context_token_budget ?? 8000}
-            className="w-32 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            onBlur={(e) => saveBudget(Number(e.target.value))}
-          />
-          <span className="text-slate-500">tokens。超预算时按优先级裁剪，并明示砍掉了什么。</span>
-        </div>
-      </section>
-
-      <section className="space-y-2 rounded border border-slate-800 p-4 text-sm">
-        <h3 className="text-sm font-medium text-slate-300">请求超时</h3>
-        <div className="flex items-center gap-3">
-          <input
-            type="number"
-            // key 让服务端值变化时重挂载：作者输入过程中不会被回写打断，
-            // 保存挪到 onBlur 后也不会每敲一个数字就发一次 PUT。
-            key={settings?.request_timeout_seconds ?? 300}
-            defaultValue={settings?.request_timeout_seconds ?? 300}
-            className="w-32 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            onBlur={(e) => saveTimeout(Number(e.target.value))}
-          />
-          <span className="text-slate-500">
-            秒。重推理模型在长任务上可能跑两分钟以上，调大可避免半途被掐断。
-          </span>
-        </div>
-      </section>
-
-      <section className="space-y-3 rounded border border-slate-800 p-4 text-sm">
-        <h3 className="text-sm font-medium text-slate-300">模型单价（每百万 token）</h3>
-        <p className="text-xs text-slate-500">
-          单价按「服务商 + 模型」保存，同一个模型绑在多个智能体上只填一次。没配单价的模型，费用会显示为未定价，
-          而不是 0。
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            value={priceForm.provider_id}
-            onChange={(e) => setPriceForm({ ...priceForm, provider_id: e.target.value })}
-          >
-            <option value="">（选服务商）</option>
-            {providers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <input
-            className="w-56 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            placeholder="模型名，例如 qwen3.8-flash"
-            value={priceForm.model}
-            onChange={(e) => setPriceForm({ ...priceForm, model: e.target.value })}
-          />
-          <input
-            className="w-28 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            placeholder="输入单价"
-            value={priceForm.input_price}
-            onChange={(e) => setPriceForm({ ...priceForm, input_price: e.target.value })}
-          />
-          <input
-            className="w-28 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
-            placeholder="输出单价"
-            value={priceForm.output_price}
-            onChange={(e) => setPriceForm({ ...priceForm, output_price: e.target.value })}
-          />
-          <button className="rounded bg-indigo-600 px-4 py-2 text-sm" onClick={savePrice}>
-            保存单价
-          </button>
-        </div>
-
-        <table className="w-full text-left text-xs">
-          <thead className="text-slate-500">
-            <tr>
-              <th className="py-1">服务商</th>
-              <th className="py-1">模型</th>
-              <th className="py-1">输入</th>
-              <th className="py-1">输出</th>
-              <th className="py-1">币种</th>
-              <th className="py-1" />
-            </tr>
-          </thead>
-          <tbody>
-            {prices.map((row) => (
-              <tr key={row.id} className="border-t border-slate-800">
-                <td className="py-1">
-                  {providers.find((p) => p.id === row.provider_id)?.name ?? '已删除的服务商'}
-                </td>
-                <td className="py-1 font-mono">{row.model}</td>
-                <td className="py-1">{row.input_price}</td>
-                <td className="py-1">{row.output_price}</td>
-                <td className="py-1">{row.currency}</td>
-                <td className="py-1 text-right">
-                  <button className="text-amber-400" onClick={() => removePrice(row.id)}>
-                    删除
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {prices.length === 0 && (
-              <tr>
-                <td className="py-2 text-slate-500" colSpan={6}>
-                  还没有配置单价，费用会显示为未定价。
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </section>
-
-      <section className="space-y-2 rounded border border-slate-800 p-4 text-sm">
-        <h3 className="text-sm font-medium text-slate-300">费用</h3>
-        {cost && (
-          <>
-            <p className="text-slate-400">
-              {cost.runs} 次调用 · {cost.prompt_tokens + cost.completion_tokens} tokens ·{' '}
-              {costLabel(cost.cost_estimate)}
-              {cost.unpriced_runs > 0 && (
-                <span className="ml-2 text-amber-400">其中 {cost.unpriced_runs} 次未定价</span>
-              )}
-            </p>
-            {settings?.budget_alert && cost.cost_estimate > settings.budget_alert && (
-              <p className="rounded border border-amber-900 bg-amber-950/40 p-2 text-xs text-amber-300">
-                本项目累计费用已超过预算提醒线 {costLabel(settings.budget_alert)}。这只是提醒，不会拦下调用。
-              </p>
-            )}
-            <div className="grid gap-4 md:grid-cols-2">
-              <Breakdown title="按智能体" rows={cost.by_agent} nameOf={(row) => row.name ?? ''} />
-              <Breakdown title="按任务" rows={cost.by_task} nameOf={(row) => row.label ?? ''} />
+      <div className={tab === 'providers' ? 'space-y-4' : 'hidden'}>
+        <Card title="服务商">
+          <div className="space-y-3">
+            <div className="grid gap-2 md:grid-cols-[160px_minmax(0,1fr)_220px_auto]">
+              <Input
+                aria-label="服务商名称"
+                placeholder="名称"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+              <Input
+                aria-label="接口地址"
+                placeholder="接口地址 /v1"
+                value={form.base_url}
+                onChange={(e) => setForm({ ...form, base_url: e.target.value })}
+              />
+              <Input
+                aria-label="API Key"
+                type="password"
+                placeholder="API Key（加密存本机）"
+                value={form.api_key}
+                onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+              />
+              <Button variant="primary" onClick={addProvider}>
+                添加
+              </Button>
             </div>
-          </>
-        )}
-      </section>
 
-      <section className="space-y-2 rounded border border-slate-800 p-4 text-sm">
-        <h3 className="text-sm font-medium text-slate-300">创作工具库</h3>
-        <ul className="space-y-1">
-          {tools.map((t) => (
-            <li key={t.id}>
-              <span className="text-slate-500">[{t.category}]</span> {t.name}
-              <span className="ml-2 text-xs text-slate-600">{t.description}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+            {providers.length === 0 ? (
+              <EmptyState title="还没配置服务商" hint="填名称与接口地址，API Key 会经 DPAPI 加密存在本机。" />
+            ) : (
+              <ul className="divide-y divide-line">
+                {providers.map((p) => (
+                  <li key={p.id} className="space-y-2 py-3 first:pt-0 last:pb-0">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="w-32 text-[13.5px] font-medium text-ink-2">{p.name}</span>
+                      <span className="w-64 truncate text-[12.5px] text-muted">{p.base_url}</span>
+                      <span className="font-mono text-[11.5px] text-muted">
+                        {p.api_key_masked || '未设密钥'}
+                      </span>
+                      {!p.enabled && <Badge tone="warn">已停用</Badge>}
+                      <div className="ml-auto flex items-center gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => test(p.id)}>
+                          测试连通性
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            setEditing({
+                              id: p.id,
+                              name: p.name,
+                              base_url: p.base_url,
+                              api_key: '',
+                              enabled: p.enabled,
+                            })
+                          }
+                        >
+                          编辑
+                        </Button>
+                        <Button size="sm" variant="warn" onClick={() => removeProvider(p.id)}>
+                          删除
+                        </Button>
+                      </div>
+                    </div>
+
+                    {editing?.id === p.id && (
+                      <div className="grid gap-2 rounded-control border border-line bg-sunken p-2.5 md:grid-cols-[140px_minmax(0,1fr)_200px_auto_auto]">
+                        <Input
+                          aria-label="名称"
+                          value={editing.name}
+                          onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                        />
+                        <Input
+                          aria-label="接口地址"
+                          value={editing.base_url}
+                          onChange={(e) => setEditing({ ...editing, base_url: e.target.value })}
+                        />
+                        <Input
+                          aria-label="密钥"
+                          type="password"
+                          placeholder="密钥（留空不修改）"
+                          value={editing.api_key}
+                          onChange={(e) => setEditing({ ...editing, api_key: e.target.value })}
+                        />
+                        <label className="flex items-center gap-2 text-[12.5px] text-ink-2">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-accent"
+                            checked={editing.enabled}
+                            onChange={(e) => setEditing({ ...editing, enabled: e.target.checked })}
+                          />
+                          启用
+                        </label>
+                        <div className="flex gap-1.5">
+                          <Button size="sm" variant="primary" onClick={saveProvider}>
+                            保存
+                          </Button>
+                          <Button size="sm" onClick={() => setEditing(null)}>
+                            取消
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
+              <span className="text-[12.5px] text-muted">测试用模型</span>
+              <div className="w-64">
+                <Input
+                  aria-label="测试用模型"
+                  placeholder="留空则用已绑定的模型"
+                  value={testModel}
+                  onChange={(e) => setTestModel(e.target.value)}
+                />
+              </div>
+              <span className="text-[11.5px] text-muted">
+                连通性测试必须带模型名 —— 空模型名的「通过」只证明地址可达。
+              </span>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div className={tab === 'params' ? 'space-y-4' : 'hidden'}>
+        <Card title="模型分路">
+          <p className="text-[13px] leading-[1.7] text-ink-2">
+            分路按任务类型配置在设置里（`model_routing`），当前没有图形界面；每个智能体也可以在工作室里显式绑定模型。
+            这里管理两条全局参数。
+          </p>
+        </Card>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card title="上下文预算">
+            <div className="space-y-2">
+              <div className="w-32">
+                <Input
+                  type="number"
+                  aria-label="上下文预算"
+                  // key 让服务端值变化时重挂载：作者输入过程中不会被回写打断，
+                  // 保存挪到 onBlur 后也不会每敲一个数字就发一次 PUT。
+                  key={settings?.context_token_budget ?? 8000}
+                  defaultValue={settings?.context_token_budget ?? 8000}
+                  onBlur={(e) => saveBudget(Number(e.target.value))}
+                />
+              </div>
+              <p className="text-[11.5px] text-muted">
+                tokens。超预算时按优先级裁剪，并明示砍掉了什么。
+              </p>
+            </div>
+          </Card>
+          <Card title="请求超时">
+            <div className="space-y-2">
+              <div className="w-32">
+                <Input
+                  type="number"
+                  aria-label="请求超时"
+                  // key 让服务端值变化时重挂载：作者输入过程中不会被回写打断，
+                  // 保存挪到 onBlur 后也不会每敲一个数字就发一次 PUT。
+                  key={settings?.request_timeout_seconds ?? 300}
+                  defaultValue={settings?.request_timeout_seconds ?? 300}
+                  onBlur={(e) => saveTimeout(Number(e.target.value))}
+                />
+              </div>
+              <p className="text-[11.5px] text-muted">
+                秒。重推理模型在长任务上可能跑两分钟以上，调大可避免半途被掐断。
+              </p>
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      <div className={tab === 'prices' ? 'space-y-4' : 'hidden'}>
+        <Card title="模型单价（每百万 token）">
+          <div className="space-y-3">
+            <p className="text-[11.5px] text-muted">
+              单价按「服务商 + 模型」保存，同一个模型绑在多个智能体上只填一次。没配单价的模型，费用会显示为未定价，
+              而不是 0。
+            </p>
+            <div className="grid gap-2 md:grid-cols-[180px_200px_130px_130px_auto]">
+              <Select
+                aria-label="单价服务商"
+                value={priceForm.provider_id}
+                onChange={(e) => setPriceForm({ ...priceForm, provider_id: e.target.value })}
+                options={[
+                  { value: '', label: '（选服务商）' },
+                  ...providers.map((p) => ({ value: p.id, label: p.name })),
+                ]}
+              />
+              <Input
+                aria-label="模型名"
+                placeholder="模型名，例如 qwen3.8-flash"
+                value={priceForm.model}
+                onChange={(e) => setPriceForm({ ...priceForm, model: e.target.value })}
+              />
+              <Input
+                aria-label="输入单价"
+                placeholder="输入单价"
+                value={priceForm.input_price}
+                onChange={(e) => setPriceForm({ ...priceForm, input_price: e.target.value })}
+              />
+              <Input
+                aria-label="输出单价"
+                placeholder="输出单价"
+                value={priceForm.output_price}
+                onChange={(e) => setPriceForm({ ...priceForm, output_price: e.target.value })}
+              />
+              <Button variant="primary" onClick={savePrice}>
+                保存单价
+              </Button>
+            </div>
+
+            <Table>
+              <thead>
+                <tr>
+                  <Th>服务商</Th>
+                  <Th>模型</Th>
+                  <Th align="right">输入</Th>
+                  <Th align="right">输出</Th>
+                  <Th>币种</Th>
+                  <Th align="right">操作</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {prices.map((row) => (
+                  <tr key={row.id} className="h-11">
+                    <Td>{providers.find((p) => p.id === row.provider_id)?.name ?? '已删除的服务商'}</Td>
+                    <Td className="font-mono text-[12px]">{row.model}</Td>
+                    <Td align="right">{row.input_price}</Td>
+                    <Td align="right">{row.output_price}</Td>
+                    <Td>{row.currency}</Td>
+                    <Td align="right">
+                      <Button size="sm" variant="warn" onClick={() => removePrice(row.id)}>
+                        删除
+                      </Button>
+                    </Td>
+                  </tr>
+                ))}
+                {prices.length === 0 && (
+                  <tr>
+                    <Td colSpan={6} className="text-muted">
+                      还没有配置单价，费用会显示为未定价。
+                    </Td>
+                  </tr>
+                )}
+              </tbody>
+            </Table>
+          </div>
+        </Card>
+      </div>
+
+      <div className={tab === 'cost' ? 'space-y-4' : 'hidden'}>
+        <Card title="费用">
+          {cost ? (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
+                <span className="font-serif text-[28px] font-semibold leading-[1.2] text-ink">
+                  {costLabel(cost.cost_estimate)}
+                </span>
+                <span className="text-[13px] text-muted">
+                  {cost.runs} 次调用 · {cost.prompt_tokens + cost.completion_tokens} tokens
+                </span>
+                {cost.unpriced_runs > 0 && (
+                  <Badge tone="warn">其中 {cost.unpriced_runs} 次未定价</Badge>
+                )}
+              </div>
+              {settings?.budget_alert && cost.cost_estimate > settings.budget_alert && (
+                <p className="rounded-control bg-warn-soft p-2.5 text-[12.5px] text-warn">
+                  本项目累计费用已超过预算提醒线 {costLabel(settings.budget_alert)}。这只是提醒，不会拦下调用。
+                </p>
+              )}
+              <div className="grid gap-5 md:grid-cols-2">
+                <Breakdown title="按智能体" rows={cost.by_agent} nameOf={(row) => row.name ?? ''} />
+                <Breakdown title="按任务" rows={cost.by_task} nameOf={(row) => row.label ?? ''} />
+              </div>
+            </div>
+          ) : (
+            <EmptyState title="还没有费用记录" hint="选一个项目后，这里显示它的调用与花费。" />
+          )}
+        </Card>
+      </div>
+
+      <div className={tab === 'tools' ? 'space-y-4' : 'hidden'}>
+        <Card title="创作工具库" actions={<Badge>{tools.length} 份</Badge>}>
+          <ul className="divide-y divide-line">
+            {tools.map((t) => (
+              <li key={t.id} className="flex flex-wrap items-baseline gap-2 py-2 text-[13px]">
+                <Badge>{t.category}</Badge>
+                <span className="font-medium text-ink-2">{t.name}</span>
+                <span className="text-[11.5px] text-muted">{t.description}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </div>
     </div>
   )
 }
@@ -453,39 +512,39 @@ function Breakdown({
 }) {
   return (
     <div>
-      <h4 className="mb-1 text-xs text-slate-500">{title}</h4>
-      <table className="w-full text-left text-xs">
-        <thead className="text-slate-500">
+      <h4 className="mb-1.5 text-[11px] tracking-[.08em] text-muted">{title}</h4>
+      <Table>
+        <thead>
           <tr>
-            <th className="py-1">名称</th>
-            <th className="py-1">次数</th>
-            <th className="py-1">tokens</th>
-            <th className="py-1">费用</th>
+            <Th>名称</Th>
+            <Th align="right">次数</Th>
+            <Th align="right">tokens</Th>
+            <Th align="right">费用</Th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={`${nameOf(row)}-${index}`} className="border-t border-slate-800">
-              <td className="py-1">{nameOf(row)}</td>
-              <td className="py-1">
+            <tr key={`${nameOf(row)}-${index}`} className="h-11">
+              <Td>{nameOf(row)}</Td>
+              <Td align="right">
                 {row.runs}
                 {row.unpriced_runs > 0 && (
-                  <span className="ml-1 text-amber-400">（{row.unpriced_runs} 未定价）</span>
+                  <span className="ml-1 text-warn">（{row.unpriced_runs} 未定价）</span>
                 )}
-              </td>
-              <td className="py-1">{row.prompt_tokens + row.completion_tokens}</td>
-              <td className="py-1">{costLabel(row.cost_estimate)}</td>
+              </Td>
+              <Td align="right">{row.prompt_tokens + row.completion_tokens}</Td>
+              <Td align="right">{costLabel(row.cost_estimate)}</Td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td className="py-2 text-slate-500" colSpan={4}>
+              <Td colSpan={4} className="text-muted">
                 还没有调用记录。
-              </td>
+              </Td>
             </tr>
           )}
         </tbody>
-      </table>
+      </Table>
     </div>
   )
 }
