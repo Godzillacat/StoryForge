@@ -1073,12 +1073,10 @@ export default function Writing() {
     ? `第${selected.volume.seq + 1}卷 第${selected.chapter.seq + 1}章 场景${selected.scene.seq + 1}`
     : ''
 
-  // 列宽取自 spec §8.2 的预算。注意 spec 那句验算（1440 − 外壳 236 − 左树 236 −
-  // 右栏 336 − 32 间隙 = 600）**漏了页面内边距**：本页由 App 给 p-6（48px），
-  // 实际正文列是 1440 − 236 − 48 − 236 − 336 − 32 = 552，低于 §11 验收的 560 下限。
-  // 故本页不用 App 的 p-6（与阅读器同一例外）、自带 p-4（左右各 16），于是 = 568，
-  // 过了下限；但仍低于 §8.2 写的 600–680 目标区 —— 要达 600 得把右栏缩到 288，
-  // 留待作者裁决。
+  // 列宽取自 spec §8.2 的预算，并把它漏掉的页面内边距算进去：本页不吃 App 的
+  // p-6（与阅读器同一例外），自带 p-4（左右各 16）。右栏按作者裁决从 336 收到
+  // 288：1440 − 外壳 236 − 左右内边距 32 − 左树 236 − 右栏 288 − 两道 16px
+  // 间隙 = **616**，落在 §8.2 的 600–680 目标区内。
   const gridClass =
     shape.tree === 'drawer'
       ? shape.aside === 'none'
@@ -1086,7 +1084,7 @@ export default function Writing() {
         : 'grid-cols-[minmax(0,1fr)] pr-[336px]'
       : shape.aside === 'rail'
         ? 'grid-cols-[236px_minmax(0,1fr)_44px]'
-        : 'grid-cols-[236px_minmax(0,1fr)_336px]'
+        : 'grid-cols-[236px_minmax(0,1fr)_288px]'
   // 同一棵树要出现在两处（工作态的常驻列 / 专注态的抽屉），抽出来免得写两份。
   const treePane = treeLoading ? (
     <div>
