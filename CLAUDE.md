@@ -1746,6 +1746,33 @@ pnpm run lint                             # oxlint
 
 ---
 
+**2026-11-02 · 一键启动 exe 与安装包（重新生成并验证）**
+
+P5c 已有 `app/desktop.py`、`backend/storyforge.spec`、`scripts/build.ps1` 与
+`packaging/installer.iss`；2026-10-25 打包后 pywebview → pythonnet 起不来，当时整体回退。
+本次用当前依赖重新打包并验证。
+
+**结果：**
+
+| 项 | 结果 |
+|---|---|
+| PyInstaller onedir | `backend/dist/StoryForge/StoryForge.exe`（约 41 MB），含 `pythonnet/runtime/Python.Runtime.dll` 与 `clr_loader/ffi/dlls/.../ClrLoader.dll` |
+| 产物自检 | `--selftest` 退出码 0（智能体 10 · 工具库 25） |
+| 双击启动 | 窗口标题 `StoryForge`、`/api/health` 200、页面资源与 `/api/projects` 正常 |
+| Inno 安装包 | `packaging/Output/StoryForge-Setup-0.1.0.exe`（约 23.3 MB） |
+| 安装 → 启动 → 卸载 | 静默安装到临时目录成功；启动窗口正常；卸载后程序目录清空、数据目录保留 |
+| 数据目录 | 全程使用临时数据目录；作者真实库未动 |
+| 模型调用 | 无 |
+
+**一处已记录的限制**：安装路径中若含以点开头的目录（如 `.cache\...`），pythonnet 会报
+`Failed to resolve Python.Runtime.Loader.Initialize`；非点号路径正常（同一份产物实测）。
+安装器默认路径没有这个问题，已写进 `packaging/README.md` 的排障表。
+
+**代码未改**：启动器与打包脚本沿用 P5c 的实现，本次是重新打包、验证与文档；
+`backend/dist/StoryForge/` 与 `packaging/Output/` 都是构建产物，已 gitignore，不入库。
+
+---
+
 ## 8. 变更记录
 
 任何对已定决策的修改，先写进产品设计文档 §9.1 的决策清单，再同步到本文件。
@@ -2043,6 +2070,8 @@ pnpm run lint                             # oxlint
 | 2026-11-02 | 写作台右栏 **336 → 288**，正文列达到 **616**（1440、含滚动条实测 601） | 作者按推荐裁决：原 336 只给正文 568，低于 spec §8.2 的 600–680 目标区；288 是达到 600 的最小调整，四个右栏页签仍可读 |
 | 2026-11-02 | 模型分路**不设**图形界面 | 作者裁决：分路配置继续留在设置里，界面如实说明；不在本轮新增路由编辑器 |
 | 2026-11-02 | 阅读器夜间主题下，应用外壳侧栏**保持现状** | 作者裁决：`/read` 的例外只覆盖页面内边距，不主题化外壳；避免为单页改动外壳规则 |
+| 2026-11-02 | 一键启动沿用 P5c 的 **pywebview 启动器**，重新打包并验证；不另做浏览器启动旁路 | 10-25 的 pythonnet 失败在当前依赖与 PyInstaller 钩子下未复现；桌面窗口是产品既定形态，浏览器旁路会留下第二条生命周期路径 |
+| 2026-11-02 | 安装路径含**以点开头目录**时 pythonnet 失败，记为已知限制而非改代码 | 属 pythonnet/clr_loader 的路径解析边角；安装器默认路径（Program Files / LocalAppData）不受影响，改代码的收益低于风险 |
 
 ---
 

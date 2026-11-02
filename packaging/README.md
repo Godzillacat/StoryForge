@@ -13,6 +13,18 @@ StoryForge.exe（启动器）
 
 后端**同源托管**前端产物（`app/static_site.py`），所以不需要 CORS，也不需要第二个进程。
 
+## 一键启动
+
+两种形态，都已在本机验证（2026-11-02）：
+
+| 形态 | 路径 | 用法 |
+|---|---|---|
+| 便携版 | `backend/dist/StoryForge/StoryForge.exe` | **整个 `StoryForge\` 目录一起保留**，双击 exe 即启动（后台起服务 + 开桌面窗口） |
+| 安装版 | `packaging/Output/StoryForge-Setup-0.1.0.exe` | 双击安装；装完从开始菜单 / 桌面快捷方式启动；卸载只删程序，不碰书稿 |
+
+> 安装版是未签名程序，Windows SmartScreen 可能提示「更多信息 → 仍要运行」。
+> 这是本机自用程序，不做代码签名。
+
 ## 构建
 
 ```powershell
@@ -71,6 +83,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build.ps1
 | 窗口空白 | 前端产物没打进去。跑 `StoryForge.exe --selftest` 看不出这个（它只验后端）；用 `--port 8756` 起一次，浏览器开 `http://127.0.0.1:8756/` 看是否报「还没有前端产物」 |
 | 提示 WebView2 缺失 | 装 Microsoft Edge WebView2 Runtime（Win10/11 一般自带） |
 | 后端 30 秒没就绪 | 数据目录被占用或损坏。看控制台日志；必要时备份并重命名 `%LOCALAPPDATA%\StoryForge\` |
+| 启动即报 `Failed to resolve Python.Runtime.Loader.Initialize` | **安装路径里不要有以点开头的目录**（例如 `...\.cache\...`）。pythonnet 在这种路径下解析 `Python.Runtime.dll` 会失败；安装器默认路径（`Program Files` / `%LOCALAPPDATA%\Programs`）没有这个问题。2026-11-02 实测：同一份产物装在 `D:\sf-install-test\StoryForge` 正常，装在 `.cache\install-test\...` 失败 |
 
 ## 调试
 
