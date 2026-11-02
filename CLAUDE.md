@@ -149,9 +149,7 @@ pnpm run lint                             # oxlint
 `schannel: CRYPT_E_NO_REVOCATION_CHECK`。仓库里已设 `http.schannelCheckRevoke=false` 绕过
 （只影响吊销检查，TLS 校验仍在）。换机器/换网络后可 `git config --unset http.schannelCheckRevoke` 恢复。
 
-**待推送（2026-10-31）**：前端重塑批次 2 / 3 / 4 的实现与文档提交已在本地 master
-（origin/master 停在 `93797b7`）；`git push origin master` 失败（`Failed to connect to
-github.com:443`）。网络可用后直接推送即可，推送前按惯例检查 diff 有无密钥。
+**推送状态（2026-11-02）**：前端重塑全部提交（0a/0b + 批次 1–4）已推送到 `origin/master`。
 
 ---
 
@@ -1741,7 +1739,7 @@ github.com:443`）。网络可用后直接推送即可，推送前按惯例检�
 - **模型分路仍无图形界面**，`分路与参数` 页签只承载上下文预算与请求超时。
 - **阅读器夜间主题下应用外壳侧栏仍是浅色**：`/read` 的例外只覆盖页面内边距。
 - **交互未自动化**：截图只证明布局与配色；手点清单见走查记录 §6。
-- **推送**：本机网络仍连不上 GitHub，合并后记「待推送」。
+- **推送**：2026-11-02 已推送到 `origin/master`。
 
 > **2026-11-02 作者裁决**：正文列宽度按推荐修改（写作台右栏 336 → 288，正文列 616 /
 > 实测 601）；模型分路**不设**图形界面；阅读器夜间主题下外壳侧栏**保持现状**。
