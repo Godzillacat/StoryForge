@@ -1771,6 +1771,14 @@ P5c 已有 `app/desktop.py`、`backend/storyforge.spec`、`scripts/build.ps1` �
 **代码未改**：启动器与打包脚本沿用 P5c 的实现，本次是重新打包、验证与文档；
 `backend/dist/StoryForge/` 与 `packaging/Output/` 都是构建产物，已 gitignore，不入库。
 
+**2026-11-02 补修（真实双击发现的启动崩溃）**：双击（无控制台）启动时
+`sys.stdout` / `sys.stderr` 为 `None`，uvicorn 默认日志格式器调用 `stream.isatty()` 抛
+`AttributeError: 'NoneType' object has no attribute 'isatty'`，窗口还没创建就退出。
+`desktop.py` 新增 `_ensure_streams()`：有真实控制台时原样保留；没有时把两个流接到
+`%LOCALAPPDATA%\StoryForge\launcher.log`，双击失败也能看到原因。补 2 条回归测试
+（后端 **1164 passed**），重新打包并用 `Start-Process`（模拟双击、无控制台）复验：
+窗口标题 `StoryForge`、`/api/health` 200、`launcher.log` 有完整访问日志。
+
 ---
 
 ## 8. 变更记录
@@ -2072,6 +2080,7 @@ P5c 已有 `app/desktop.py`、`backend/storyforge.spec`、`scripts/build.ps1` �
 | 2026-11-02 | 阅读器夜间主题下，应用外壳侧栏**保持现状** | 作者裁决：`/read` 的例外只覆盖页面内边距，不主题化外壳；避免为单页改动外壳规则 |
 | 2026-11-02 | 一键启动沿用 P5c 的 **pywebview 启动器**，重新打包并验证；不另做浏览器启动旁路 | 10-25 的 pythonnet 失败在当前依赖与 PyInstaller 钩子下未复现；桌面窗口是产品既定形态，浏览器旁路会留下第二条生命周期路径 |
 | 2026-11-02 | 安装路径含**以点开头目录**时 pythonnet 失败，记为已知限制而非改代码 | 属 pythonnet/clr_loader 的路径解析边角；安装器默认路径（Program Files / LocalAppData）不受影响，改代码的收益低于风险 |
+| 2026-11-02 | 窗口模式启动前**先补齐 `sys.stdout/stderr`**（接到 `launcher.log`） | 双击的 GUI 程序没有控制台，uvicorn 默认日志格式器会在 `isatty()` 上崩；这是真实双击暴露的缺陷，构建脚本与 `--selftest` 都测不到（它们有控制台） |
 
 ---
 

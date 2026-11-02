@@ -26,6 +26,37 @@ from app import instance
 # 不比对数量就查不出「打包漏了 tools_lib」。
 EXPECTED_TOOLS = 25
 
+# 窗口模式（console=False）下 sys.stdout/stderr 可能是 None。把打开的日志文件
+# 挂在模块级，保证进程存活期间不会被回收。
+_std_stream = None
+
+
+def _ensure_streams() -> None:
+    """保证 `sys.stdout` / `sys.stderr` 不是 None。
+
+    双击启动的 GUI 程序没有控制台，PyInstaller 会把这两个流置成 None；而
+    uvicorn 的默认日志格式器会调用 `stream.isatty()`，于是启动阶段直接抛
+    `AttributeError: 'NoneType' object has no attribute 'isatty'`，窗口还没
+    创建就退出了。
+
+    有真实控制台（开发、构建脚本、`--selftest`）时原样保留；没有时接到数据
+    目录的 `launcher.log`，这样双击失败也还能看到原因。
+    """
+    global _std_stream
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    try:
+        from app.config import data_dir
+
+        stream = open(data_dir() / "launcher.log", "a", encoding="utf-8", buffering=1)
+    except Exception:  # noqa: BLE001 —— 连日志都开不了时，至少别让启动再崩一次
+        stream = open(os.devnull, "w", encoding="utf-8")
+    _std_stream = stream
+    if sys.stdout is None:
+        sys.stdout = stream
+    if sys.stderr is None:
+        sys.stderr = stream
+
 
 def _free_port() -> int:
     """让系统分配一个空闲端口 —— 硬编码迟早撞车。"""
@@ -200,6 +231,7 @@ def _run_locked(port: int | None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _ensure_streams()
     parser = argparse.ArgumentParser(prog="storyforge", description="StoryForge 桌面外壳")
     parser.add_argument("--selftest", action="store_true", help="不开窗口跑一次自检")
     parser.add_argument("--port", type=int, default=None, help="指定后端端口（调试用）")
